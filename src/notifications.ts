@@ -57,7 +57,7 @@ function handleClientEnterView(
   _nickname: string,
 ): NotificationResult {
   const clid = parseUint16(cmd.params["clid"] ?? "");
-  const cid = parseUint64(cmd.params["cid"] ?? "");
+  const ctid = parseUint64(cmd.params["ctid"] ?? "");
   const clientType = parseInt10(cmd.params["client_type"] ?? "");
   const groupsStr = cmd.params["client_servergroups"] ?? "";
 
@@ -65,7 +65,7 @@ function handleClientEnterView(
     id: clid,
     nickname: cmd.params["client_nickname"] ?? "",
     uid: cmd.params["client_unique_identifier"] ?? "",
-    channelID: cid,
+    channelID: ctid,
     type: clientType,
     serverGroups: groupsStr ? groupsStr.split(",") : [],
   };

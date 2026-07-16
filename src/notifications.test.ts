@@ -7,6 +7,30 @@ function makeClients(): Map<number, ClientInfo> {
 }
 
 describe("handleNotification", () => {
+  describe("notifycliententerview", () => {
+    it("uses ctid as the client's channel ID", () => {
+      const clients = makeClients();
+      const cmd = {
+        name: "notifycliententerview",
+        params: {
+          clid: "7",
+          ctid: "42",
+          client_nickname: "Alice",
+          client_unique_identifier: "uid123",
+          client_type: "0",
+          client_servergroups: "6,9",
+        },
+      };
+
+      const result = handleNotification(cmd, 1, clients, "Bot");
+
+      expect(result.kind).toBe("clientEnter");
+      if (result.kind !== "clientEnter") return;
+      expect(result.info.channelID).toBe(42n);
+      expect(clients.get(7)?.channelID).toBe(42n);
+    });
+  });
+
   describe("notifyclientpoke", () => {
     it("parses poke with message", () => {
       const cmd = {
