@@ -13,6 +13,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { generateIdentity } from "./crypto/identity.js";
 import { Client } from "./client.js";
 import { listChannels, listClients, getClientInfo } from "./api.js";
+import type { ClientInfo } from "./types.js";
 
 const ADDR = process.env["TEAMSPEAK_ADDR"];
 const SERVER_PASSWORD = process.env["TEAMSPEAK_SERVER_PASSWORD"] ?? "";
@@ -24,6 +25,7 @@ const USES_CONNECT_AUTH =
 
 // Shared connection — established once for the entire suite
 let sharedClient: Client;
+let selfClientEnter: Promise<ClientInfo>;
 
 beforeAll(async () => {
   if (SKIP) return;
@@ -39,6 +41,11 @@ beforeAll(async () => {
       warn: (msg, ...args) => console.warn("[WARN]", msg, ...args),
       error: (msg, ...args) => console.error("[ERROR]", msg, ...args),
     },
+  });
+  selfClientEnter = new Promise((resolve) => {
+    client.on("clientEnter", (info) => {
+      if (info.id === client.clientID()) resolve(info);
+    });
   });
 
   await client.connect();
@@ -81,6 +88,18 @@ describe.skipIf(SKIP)("Integration — chenkr.cn", () => {
     console.log(`connected: clid=${clid}`);
     expect(clid).toBeGreaterThan(0);
   });
+
+  it("clientEnter reports the server-assigned channel ID", async () => {
+    const info = await Promise.race([
+      selfClientEnter,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("clientEnter timeout")), 8_000),
+      ),
+    ]);
+
+    console.log(`clientEnter: clid=${info.id} cid=${info.channelID}`);
+    expect(info.channelID).toBeGreaterThan(0n);
+  }, 10_000);
 
   it("listClients — finds ourselves in the list", async () => {
     let clients;
