@@ -71,7 +71,7 @@
     "@noble/curves": "^2.0.1"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/node": "^26.1.1",
     "oxfmt": "^0.58.0",
     "oxlint": "^1.59.0",
     "tsx": "^4.21.0",
