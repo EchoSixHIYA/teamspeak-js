@@ -22,8 +22,7 @@ export class Identity {
   }
 
   publicKeyBase64(): string {
-    const pubKey = createPublicKey(this.privateKey);
-    const rawJwk = pubKey.export({ format: "jwk" });
+    const rawJwk = this.privateKey.export({ format: "jwk" });
 
     if (
       rawJwk.x === undefined ||
@@ -104,7 +103,7 @@ export function identityFromString(s: string): Identity {
   const d = padded.toString("base64url");
 
   const jwk = { kty: "EC", crv: "P-256", d, x, y };
-  const privateKey = createPrivateKey({ key: jwk as unknown as string, format: "jwk" });
+  const privateKey = createPrivateKey({ key: jwk, format: "jwk" });
   return new Identity(privateKey, offset);
 }
 
