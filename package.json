@@ -1,6 +1,6 @@
 {
   "name": "@honeybbq/teamspeak-client",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "TeamSpeak 3 client SDK for Node.js — a clean-room TypeScript port of the Go reference implementation",
   "keywords": [
     "client",
@@ -71,13 +71,13 @@
     "@noble/curves": "^2.0.1"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
-    "oxfmt": "^0.44.0",
+    "@types/node": "^26.1.1",
+    "oxfmt": "^0.58.0",
     "oxlint": "^1.59.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vite": "^8.0.8",
-    "vite-plugin-dts": "^4.5.4",
+    "vite-plugin-dts": "^5.0.0",
     "vitest": "^4.1.4"
   },
   "engines": {
