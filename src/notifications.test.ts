@@ -29,6 +29,78 @@ describe("handleNotification", () => {
       expect(result.info.channelID).toBe(42n);
       expect(clients.get(7)?.channelID).toBe(42n);
     });
+
+    it("retains the previous channel when a compressed row omits ctid", () => {
+      const clients = new Map<number, ClientInfo>([
+        [
+          7,
+          {
+            id: 7,
+            nickname: "Alice",
+            uid: "uid123",
+            channelID: 42n,
+            type: 0,
+            serverGroups: [],
+          },
+        ],
+      ]);
+      const result = handleNotification(
+        {
+          name: "notifycliententerview",
+          params: {
+            clid: "7",
+            client_nickname: "Alice",
+            client_unique_identifier: "uid123",
+            client_type: "0",
+          },
+        },
+        1,
+        clients,
+        "Bot",
+      );
+
+      expect(result.kind).toBe("clientEnter");
+      expect(clients.get(7)?.channelID).toBe(42n);
+    });
+  });
+
+  describe("notifyclientleftview", () => {
+    it("treats a non-zero ctid as a move instead of a leave", () => {
+      const clients = new Map<number, ClientInfo>([
+        [
+          7,
+          {
+            id: 7,
+            nickname: "Alice",
+            uid: "uid123",
+            channelID: 1n,
+            type: 0,
+            serverGroups: [],
+          },
+        ],
+      ]);
+      const result = handleNotification(
+        {
+          name: "notifyclientleftview",
+          params: {
+            clid: "7",
+            ctid: "42",
+            reasonid: "0",
+            invokerid: "8",
+            invokername: "Bob",
+            invokeruid: "uid456",
+          },
+        },
+        1,
+        clients,
+        "Bot",
+      );
+
+      expect(result.kind).toBe("clientMoved");
+      if (result.kind !== "clientMoved") return;
+      expect(result.event.targetChannelID).toBe(42n);
+      expect(clients.get(7)?.channelID).toBe(42n);
+    });
   });
 
   describe("notifyclientpoke", () => {
