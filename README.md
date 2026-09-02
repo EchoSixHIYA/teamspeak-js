@@ -1,14 +1,13 @@
 <div align="center">
 
-# @honeybbq/teamspeak-client
+# @echosixhiya/teamspeak-client
 
 **A clean-room TeamSpeak client protocol library written in pure TypeScript.**
 
 Compatible with TeamSpeak 3, 5 & 6. No proprietary SDK. No copy-pasted code.
 
-[![CI](https://github.com/honeybbq/teamspeak-js/actions/workflows/ci.yml/badge.svg)](https://github.com/honeybbq/teamspeak-js/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@honeybbq/teamspeak-client)](https://www.npmjs.com/package/@honeybbq/teamspeak-client)
-[![Node Version](https://img.shields.io/node/v/@honeybbq/teamspeak-client)](package.json)
+[![CI](https://github.com/EchoSixHIYA/teamspeak-js/actions/workflows/ci.yml/badge.svg)](https://github.com/EchoSixHIYA/teamspeak-js/actions/workflows/ci.yml)
+[![Node Version](https://img.shields.io/node/v/@echosixhiya/teamspeak-client)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 </div>
@@ -18,7 +17,9 @@ Compatible with TeamSpeak 3, 5 & 6. No proprietary SDK. No copy-pasted code.
 - **Full protocol handshake** — ECDH key exchange, RSA puzzle, EAX-encrypted transport
 - **Command & notification system** — Send commands, receive server events
 - **Event-driven API** — Register handlers for text messages, client enter/leave, channel moves, kicks, etc.
+- **Live directory snapshots** — Receive the channel tree and all visible clients from the same session, including channel movement updates
 - **Voice data** — Send Opus voice packets (codec 4 & 5)
+- **Whisper voice packets** — Send Opus voice to selected client IDs without a second maintenance connection
 - **File transfers** — Upload, download, and delete files on the server
 - **Address resolution** — SRV records, TSDNS, and direct address support
 - **Middleware** — Pluggable command and event middleware chains
@@ -30,9 +31,9 @@ Compatible with TeamSpeak 3, 5 & 6. No proprietary SDK. No copy-pasted code.
 ## Installation
 
 ```bash
-npm install @honeybbq/teamspeak-client
+npm install @echosixhiya/teamspeak-client
 # or
-pnpm add @honeybbq/teamspeak-client
+pnpm add @echosixhiya/teamspeak-client
 ```
 
 Requires **Node.js 20.19** or later.
@@ -40,7 +41,7 @@ Requires **Node.js 20.19** or later.
 ## Quick Start
 
 ```typescript
-import { Client, generateIdentity } from "@honeybbq/teamspeak-client";
+import { Client, generateIdentity } from "@echosixhiya/teamspeak-client";
 
 // Generate a new identity (or load an existing one)
 const identity = generateIdentity(8);
@@ -59,6 +60,10 @@ client.on("connected", () => {
 
 client.on("textMessage", (msg) => {
   console.log(`[${msg.invokerName}]: ${msg.message}`);
+});
+
+client.on("directorySnapshot", ({ channels, clients }) => {
+  console.log(`Directory: ${channels.length} channels, ${clients.length} clients`);
 });
 
 client.on("disconnected", (err) => {
@@ -98,6 +103,7 @@ process.on("SIGINT", async () => {
 | `on("clientEnter", handler)`  | Fires when a client joins          |
 | `on("clientLeave", handler)`  | Fires when a client leaves         |
 | `on("clientMoved", handler)`  | Fires when a client moves channels |
+| `on("directorySnapshot", handler)` | Fires with the current channel tree and visible clients |
 | `on("kicked", handler)`       | Fires when the bot is kicked       |
 | `on("poke", handler)`         | Fires when poked by a client       |
 | `on("voice", handler)`        | Fires on incoming voice data       |
@@ -110,6 +116,7 @@ process.on("SIGINT", async () => {
 | `clientMove(client, clid, channelID, password?)`     | Move a client to a channel                 |
 | `poke(client, clid, message)`                        | Poke a client                              |
 | `client.sendVoice(data, codec)`                      | Send Opus voice data                       |
+| `client.sendWhisper(data, clientIds, codec)`         | Send Opus voice to selected clients        |
 | `listChannels(client)`                               | List all channels                          |
 | `listClients(client)`                                | List all connected clients                 |
 | `getClientInfo(client, clid)`                        | Get detailed client information            |
@@ -129,7 +136,7 @@ process.on("SIGINT", async () => {
 ### Identity
 
 ```typescript
-import { generateIdentity, identityFromString } from "@honeybbq/teamspeak-client";
+import { generateIdentity, identityFromString } from "@echosixhiya/teamspeak-client";
 
 // Generate a new identity with security level 8
 const identity = generateIdentity(8);
@@ -169,11 +176,11 @@ Connection auth options:
 The package provides granular subpath exports for advanced use cases:
 
 ```typescript
-import { Identity } from "@honeybbq/teamspeak-client/crypto";
-import { Resolver } from "@honeybbq/teamspeak-client/discovery";
-import { PacketHandler } from "@honeybbq/teamspeak-client/transport";
-import { buildCommand, parseCommand } from "@honeybbq/teamspeak-client/command";
-import { processInit1 } from "@honeybbq/teamspeak-client/handshake";
+import { Identity } from "@echosixhiya/teamspeak-client/crypto";
+import { Resolver } from "@echosixhiya/teamspeak-client/discovery";
+import { PacketHandler } from "@echosixhiya/teamspeak-client/transport";
+import { buildCommand, parseCommand } from "@echosixhiya/teamspeak-client/command";
+import { processInit1 } from "@echosixhiya/teamspeak-client/handshake";
 ```
 
 ## Architecture
@@ -186,6 +193,7 @@ teamspeak-js/
 │   ├── commands.ts        # Command sending and response tracking
 │   ├── events.ts          # Event handler registration and middleware
 │   ├── notifications.ts   # Server notification parsing and dispatch
+│   ├── directory.ts       # Live channel/client directory parsing and snapshots
 │   ├── handshake.ts       # Protocol handshake orchestration
 │   ├── transfer.ts        # File transfer operations
 │   ├── throttle.ts        # Token-bucket rate limiter

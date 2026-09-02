@@ -1,7 +1,7 @@
 {
-  "name": "@honeybbq/teamspeak-client",
-  "version": "0.2.3",
-  "description": "TeamSpeak 3 client SDK for Node.js — a clean-room TypeScript port of the Go reference implementation",
+  "name": "@echosixhiya/teamspeak-client",
+  "version": "0.2.4",
+  "description": "TeamSpeak 3/6 client SDK for Node.js — a clean-room TypeScript implementation",
   "keywords": [
     "client",
     "sdk",
@@ -13,7 +13,7 @@
   "author": "honeybbq",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HoneyBBQ/teamspeak-js"
+    "url": "https://github.com/EchoSixHIYA/teamspeak-js"
   },
   "files": [
     "dist"
@@ -56,6 +56,7 @@
   },
   "scripts": {
     "build": "vite build && tsc --emitDeclarationOnly --declaration --declarationMap --outDir dist",
+    "prepare": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint .",
@@ -65,7 +66,7 @@
     "check": "pnpm typecheck && pnpm lint && pnpm fmt:check",
     "prepublishOnly": "pnpm run build",
     "example": "tsx examples/connect.ts",
-    "test:integration": "TEAMSPEAK_ADDR=chenkr.cn vitest run src/integration.test.ts --reporter=verbose"
+    "test:integration": "TEAMSPEAK_ADDR=106.15.36.235:9987 vitest run src/integration.test.ts --reporter=verbose"
   },
   "dependencies": {
     "@noble/curves": "^2.0.1"

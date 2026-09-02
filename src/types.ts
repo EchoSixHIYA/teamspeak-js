@@ -47,6 +47,21 @@ export interface ChannelInfo {
   parentID: bigint;
 }
 
+/** Additional client state included in a live server directory snapshot. */
+export interface DirectoryClientInfo extends ClientInfo {
+  away?: boolean;
+  awayMessage?: string;
+  inputMuted?: boolean;
+  outputMuted?: boolean;
+  channelCommander?: boolean;
+}
+
+/** The channel tree and visible clients maintained by a connected session. */
+export interface DirectorySnapshot {
+  channels: ChannelInfo[];
+  clients: DirectoryClientInfo[];
+}
+
 export interface FileUploadInfo {
   fileTransferKey: string;
   seekPosition: bigint;
@@ -89,6 +104,7 @@ export interface EventMap {
   clientEnter: ClientInfo;
   clientLeave: ClientLeftViewEvent;
   clientMoved: ClientMovedEvent;
+  directorySnapshot: DirectorySnapshot;
   poked: PokeEvent;
   voiceData: VoiceData;
   connected: void;

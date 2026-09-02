@@ -9,6 +9,8 @@ export type {
   ClientLeftViewEvent,
   ClientInfo,
   ChannelInfo,
+  DirectoryClientInfo,
+  DirectorySnapshot,
   PokeEvent,
   VoiceData,
   FileUploadInfo,

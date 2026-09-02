@@ -57,15 +57,17 @@ function handleClientEnterView(
   _nickname: string,
 ): NotificationResult {
   const clid = parseUint16(cmd.params["clid"] ?? "");
-  const ctid = parseUint64(cmd.params["ctid"] ?? "");
+  const ctid = parseUint64(cmd.params["ctid"] ?? cmd.params["cid"] ?? "");
   const clientType = parseInt10(cmd.params["client_type"] ?? "");
   const groupsStr = cmd.params["client_servergroups"] ?? "";
 
+  const previous = clients.get(clid);
   const info: ClientInfo = {
+    ...previous,
     id: clid,
     nickname: cmd.params["client_nickname"] ?? "",
     uid: cmd.params["client_unique_identifier"] ?? "",
-    channelID: ctid,
+    channelID: ctid !== 0n ? ctid : (previous?.channelID ?? 0n),
     type: clientType,
     serverGroups: groupsStr ? groupsStr.split(",") : [],
   };
@@ -84,6 +86,25 @@ function handleClientLeftView(
 ): NotificationResult {
   const clid = parseUint16(cmd.params["clid"] ?? "");
   const reasonID = parseInt10(cmd.params["reasonid"] ?? "");
+  const targetChannelID = parseUint64(cmd.params["ctid"] ?? "");
+
+  if (targetChannelID !== 0n) {
+    if (clid !== 0) {
+      const existing = clients.get(clid);
+      if (existing) clients.set(clid, { ...existing, channelID: targetChannelID });
+    }
+    return {
+      kind: "clientMoved",
+      event: {
+        id: clid,
+        targetChannelID,
+        reasonID,
+        invokerID: parseUint16(cmd.params["invokerid"] ?? ""),
+        invokerName: cmd.params["invokername"] ?? "",
+        invokerUID: cmd.params["invokeruid"] ?? "",
+      },
+    };
+  }
 
   const isSelf = clid === selfCLID;
   if (clid !== 0) clients.delete(clid);
@@ -102,7 +123,7 @@ function handleClientLeftView(
 
 function handleClientMoved(cmd: Command, clients: Map<number, ClientInfo>): NotificationResult {
   const clid = parseUint16(cmd.params["clid"] ?? "");
-  const ctid = parseUint64(cmd.params["ctid"] ?? "");
+  const ctid = parseUint64(cmd.params["ctid"] ?? cmd.params["cid"] ?? "");
 
   if (clid !== 0) {
     const existing = clients.get(clid);

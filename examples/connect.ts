@@ -1,18 +1,18 @@
 /**
- * Minimal example: connect to chenkr.cn and print server info.
+ * Minimal example: connect to a TeamSpeak server and print server info.
  *
  * Run:
  *   pnpm tsx examples/connect.ts
  *
  * Or with a custom address:
- *   TEAMSPEAK_ADDR=chenkr.cn:9987 pnpm tsx examples/connect.ts
+ *   TEAMSPEAK_ADDR=106.15.36.235:9987 pnpm tsx examples/connect.ts
  */
 
 import { generateIdentity } from "../src/crypto/identity.js";
 import { Client } from "../src/client.js";
 import { listChannels, listClients } from "../src/api.js";
 
-const ADDR = process.env["TEAMSPEAK_ADDR"] ?? "chenkr.cn";
+const ADDR = process.env["TEAMSPEAK_ADDR"] ?? "106.15.36.235:9987";
 
 async function main(): Promise<void> {
   console.log(`[example] generating identity (level 8)…`);

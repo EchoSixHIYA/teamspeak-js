@@ -6,6 +6,8 @@ import {
   type Logger,
   type AddrResolver,
   type ClientInfo,
+  type DirectoryClientInfo,
+  type DirectorySnapshot,
   ClientStatus,
   consoleLogger,
 } from "./types.js";
@@ -27,6 +29,12 @@ import { buildCommandChain, buildEventChain } from "./events.js";
 import { processInit1 } from "./handshake/crypt-handshake.js";
 import { handleHandshakeInitIV, handleHandshakeExpand2, handleInitServer } from "./handshake.js";
 import { handleNotification } from "./notifications.js";
+import {
+  applyChannelNotification,
+  cloneDirectorySnapshot,
+  parseDirectoryChannel,
+  parseDirectoryClient,
+} from "./directory.js";
 import { parseCommand } from "./command/parser.js";
 import { CommandThrottle } from "./throttle.js";
 import { splitCommandRows, isAutoNicknameMatch } from "./helpers.js";
@@ -74,7 +82,11 @@ export class Client {
   #throttle = new CommandThrottle();
   #cmdTrack = new CommandTracker();
   #ftTrack = new FileTransferTracker();
-  #clients = new Map<number, ClientInfo>();
+  #clients = new Map<number, DirectoryClientInfo>();
+  #channels = new Map<bigint, import("./types.js").ChannelInfo>();
+  #directorySnapshotHandlers: Array<(snapshot: DirectorySnapshot) => void> = [];
+  #directorySnapshotScheduled = false;
+  #directorySnapshotVersion = 0;
   #connectedResolvers: Array<() => void> = [];
 
   // Event handler lists
@@ -235,6 +247,9 @@ export class Client {
       case "clientMoved":
         this.#clientMoveHandlers.push(handler as AnyHandler);
         break;
+      case "directorySnapshot":
+        this.#directorySnapshotHandlers.push(handler as AnyHandler);
+        break;
       case "poked":
         this.#pokedHandlers.push(handler as AnyHandler);
         break;
@@ -279,6 +294,10 @@ export class Client {
 
   sendVoice(data: Uint8Array, codec: number): void {
     this.handler.sendVoicePacket(data, codec);
+  }
+
+  sendWhisper(data: Uint8Array, targetClientIds: number[], codec: number): void {
+    this.handler.sendWhisperPacket(data, targetClientIds, codec);
   }
 
   // ---- File Transfer -------------------------------------------------------
@@ -376,7 +395,10 @@ export class Client {
     this.handler.onClosed = (err) => this.#handleConnectionClosed(err);
     this.#cmdTrack.reset();
     this.#ftTrack.reset();
+    this.#channels.clear();
     this.#clients.clear();
+    this.#directorySnapshotVersion++;
+    this.#directorySnapshotScheduled = false;
     this.clid = 0;
     this.#finalCmdHandler = this.#buildCmdHandler();
   }
@@ -450,8 +472,10 @@ export class Client {
     if (!cmd || !cmd.name) return;
 
     if (cmd.name.startsWith("notify")) {
+      const directoryChanged = applyChannelNotification(cmd.name, cmd.params, this.#channels);
       const result = handleNotification(cmd, this.clid, this.#clients, this.nickname);
       this.#processNotificationResult(result, cmd.params);
+      if (directoryChanged) this.#scheduleDirectorySnapshot();
       return;
     }
 
@@ -465,6 +489,20 @@ export class Client {
       case "initserver":
         handleInitServer(this, cmd.params);
         break;
+      case "channellist": {
+        const channel = parseDirectoryChannel(cmd.params);
+        if (channel) this.#channels.set(channel.id, channel);
+        this.#cmdTrack.buffer(cmd.params);
+        this.#scheduleDirectorySnapshot();
+        break;
+      }
+      case "channelclientlist": {
+        const client = parseDirectoryClient(cmd.params);
+        if (client) this.#clients.set(client.id, client);
+        this.#cmdTrack.buffer(cmd.params);
+        this.#scheduleDirectorySnapshot();
+        break;
+      }
       case "error":
         this.#handleError(cmd.params);
         break;
@@ -508,7 +546,12 @@ export class Client {
   ): void {
     switch (result.kind) {
       case "clientEnter": {
-        const info = result.info;
+        let info = result.info;
+        const current = this.#clients.get(info.id);
+        if (current && info.channelID === 0n && current.channelID !== 0n) {
+          info = { ...info, channelID: current.channelID };
+          this.#clients.set(info.id, info);
+        }
         if (info.id !== 0 && isAutoNicknameMatch(this.nickname, info.nickname)) {
           this.clid = info.id;
           this.handler.setClientID(info.id);
@@ -517,6 +560,7 @@ export class Client {
           this.#cmdTrack.signalWelcomeComplete();
         }
         this.#dispatchEvent("clientEnter", info);
+        this.#scheduleDirectorySnapshot();
         break;
       }
       case "clientLeave": {
@@ -525,10 +569,12 @@ export class Client {
           const msg = result.event.reasonMsg;
           for (const h of this.#kickedHandlers) setImmediate(() => h(msg));
         }
+        this.#scheduleDirectorySnapshot();
         break;
       }
       case "clientMoved":
         this.#dispatchEvent("clientMoved", result.event);
+        this.#scheduleDirectorySnapshot();
         break;
       case "textMessage":
         this.#dispatchEvent("textMessage", result.message);
@@ -573,6 +619,10 @@ export class Client {
         for (const h of this.#pokedHandlers)
           setImmediate(() => h(payload as import("./types.js").PokeEvent));
         break;
+      case "directorySnapshot":
+        for (const h of this.#directorySnapshotHandlers)
+          setImmediate(() => h(payload as DirectorySnapshot));
+        break;
     }
   }
 
@@ -581,6 +631,18 @@ export class Client {
     this.#status = ClientStatus.Disconnected;
     const handlers = this.#disconnectedHandlers.slice();
     for (const h of handlers) setImmediate(() => h(err ?? undefined));
+  }
+
+  #scheduleDirectorySnapshot(): void {
+    if (this.#directorySnapshotScheduled) return;
+    this.#directorySnapshotScheduled = true;
+    const version = this.#directorySnapshotVersion;
+    setImmediate(() => {
+      this.#directorySnapshotScheduled = false;
+      if (version !== this.#directorySnapshotVersion) return;
+      const snapshot = cloneDirectorySnapshot(this.#channels, this.#clients);
+      this.#dispatchEvent("directorySnapshot", snapshot);
+    });
   }
 
   #buildCmdHandler(): (cmd: string) => Promise<void> {
@@ -594,6 +656,14 @@ export class Client {
     const base = (evt: EventMap[keyof EventMap]): void => {
       // Determine which event type this is by checking the shape
       if (
+        evt !== null &&
+        evt !== undefined &&
+        typeof evt === "object" &&
+        "channels" in evt &&
+        "clients" in evt
+      ) {
+        this.#dispatchEventDirect("directorySnapshot", evt as EventMap["directorySnapshot"]);
+      } else if (
         evt !== null &&
         evt !== undefined &&
         typeof evt === "object" &&
