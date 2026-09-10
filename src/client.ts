@@ -87,7 +87,8 @@ export class Client {
   #directorySnapshotHandlers: Array<(snapshot: DirectorySnapshot) => void> = [];
   #directorySnapshotScheduled = false;
   #directorySnapshotVersion = 0;
-  #connectedResolvers: Array<() => void> = [];
+  #connectedResolvers: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
+  #connectionError: Error | null = null;
 
   // Event handler lists
   #textMsgHandlers: Array<(msg: import("./types.js").TextMessage) => void> = [];
@@ -181,8 +182,9 @@ export class Client {
 
   waitConnected(signal?: AbortSignal): Promise<void> {
     if (this.#status === ClientStatus.Connected) return Promise.resolve();
+    if (this.#connectionError) return Promise.reject(this.#connectionError);
     return new Promise<void>((resolve, reject) => {
-      this.#connectedResolvers.push(resolve);
+      this.#connectedResolvers.push({ resolve, reject });
       if (signal) {
         signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
       }
@@ -379,7 +381,8 @@ export class Client {
   /** @internal */
   _markConnected(): void {
     this.#status = ClientStatus.Connected;
-    for (const resolve of this.#connectedResolvers) resolve();
+    this.#connectionError = null;
+    for (const waiter of this.#connectedResolvers) waiter.resolve();
     this.#connectedResolvers = [];
     const handlers = this.#connectedHandlers.slice();
     for (const h of handlers) setImmediate(() => h());
@@ -395,6 +398,7 @@ export class Client {
     this.handler.onClosed = (err) => this.#handleConnectionClosed(err);
     this.#cmdTrack.reset();
     this.#ftTrack.reset();
+    this.#connectionError = null;
     this.#channels.clear();
     this.#clients.clear();
     this.#directorySnapshotVersion++;
@@ -525,6 +529,17 @@ export class Client {
 
   #handleError(params: Record<string, string>): void {
     const { err, rc } = parseServerError(params);
+
+    // During the initial handshake, TeamSpeak reports authentication and
+    // other clientinit failures as an unsolicited `error` packet. There is no
+    // return_code to resolve, so treating it as an ordinary notification
+    // leaves waitConnected() pending until the caller's timeout. Surface the
+    // actual server error immediately instead.
+    if (err && this.#status === ClientStatus.Connecting) {
+      this.#failConnection(err);
+      return;
+    }
+
     if (rc !== null) {
       this.#cmdTrack.resolve(rc, err);
     } else {
@@ -538,6 +553,16 @@ export class Client {
     if (id === "3329") {
       setImmediate(() => this.disconnect().catch(() => {}));
     }
+  }
+
+  #failConnection(error: Error): void {
+    if (this.#status !== ClientStatus.Connecting) return;
+    this.#connectionError = error;
+    this.#status = ClientStatus.Disconnected;
+    const waiters = this.#connectedResolvers.slice();
+    this.#connectedResolvers = [];
+    for (const waiter of waiters) waiter.reject(error);
+    this.handler.close();
   }
 
   #processNotificationResult(
