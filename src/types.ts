@@ -31,6 +31,11 @@ export interface ClientLeftViewEvent {
   targetID: number;
 }
 
+/** A live update to a client's directory state. */
+export interface ClientUpdatedEvent {
+  info: DirectoryClientInfo;
+}
+
 export interface ClientInfo {
   nickname: string;
   uid: string;
@@ -45,6 +50,8 @@ export interface ChannelInfo {
   description: string;
   id: bigint;
   parentID: bigint;
+  /** ID of the sibling channel after which this channel is placed. */
+  order: bigint;
 }
 
 /** Additional client state included in a live server directory snapshot. */
@@ -104,6 +111,7 @@ export interface EventMap {
   clientEnter: ClientInfo;
   clientLeave: ClientLeftViewEvent;
   clientMoved: ClientMovedEvent;
+  clientUpdated: ClientUpdatedEvent;
   directorySnapshot: DirectorySnapshot;
   poked: PokeEvent;
   voiceData: VoiceData;

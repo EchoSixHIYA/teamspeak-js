@@ -9,6 +9,7 @@ import type {
   FileUploadInfo,
   FileDownloadInfo,
   FileTransferStatusInfo,
+  DirectoryClientInfo,
 } from "./types.js";
 import { parseUint64, parseUint16, parseInt10 } from "./helpers.js";
 
@@ -16,6 +17,7 @@ export type NotificationResult =
   | { kind: "clientEnter"; info: ClientInfo }
   | { kind: "clientLeave"; event: ClientLeftViewEvent; isSelf: boolean }
   | { kind: "clientMoved"; event: ClientMovedEvent }
+  | { kind: "clientUpdated"; event: { info: DirectoryClientInfo } }
   | { kind: "textMessage"; message: TextMessage }
   | { kind: "poked"; event: PokeEvent }
   | { kind: "startUpload"; info: FileUploadInfo }
@@ -26,7 +28,7 @@ export type NotificationResult =
 export function handleNotification(
   cmd: Command,
   selfCLID: number,
-  clients: Map<number, ClientInfo>,
+  clients: Map<number, DirectoryClientInfo>,
   nickname: string,
 ): NotificationResult {
   switch (cmd.name) {
@@ -36,6 +38,8 @@ export function handleNotification(
       return handleClientLeftView(cmd, selfCLID, clients);
     case "notifyclientmoved":
       return handleClientMoved(cmd, clients);
+    case "notifyclientupdated":
+      return handleClientUpdated(cmd, clients);
     case "notifytextmessage":
       return handleTextMessage(cmd, clients);
     case "notifyclientpoke":
@@ -53,7 +57,7 @@ export function handleNotification(
 
 function handleClientEnterView(
   cmd: Command,
-  clients: Map<number, ClientInfo>,
+  clients: Map<number, DirectoryClientInfo>,
   _nickname: string,
 ): NotificationResult {
   const clid = parseUint16(cmd.params["clid"] ?? "");
@@ -62,7 +66,7 @@ function handleClientEnterView(
   const groupsStr = cmd.params["client_servergroups"] ?? "";
 
   const previous = clients.get(clid);
-  const info: ClientInfo = {
+  const info: DirectoryClientInfo = {
     ...previous,
     id: clid,
     nickname: cmd.params["client_nickname"] ?? "",
@@ -82,7 +86,7 @@ function handleClientEnterView(
 function handleClientLeftView(
   cmd: Command,
   selfCLID: number,
-  clients: Map<number, ClientInfo>,
+  clients: Map<number, DirectoryClientInfo>,
 ): NotificationResult {
   const clid = parseUint16(cmd.params["clid"] ?? "");
   const reasonID = parseInt10(cmd.params["reasonid"] ?? "");
@@ -121,7 +125,7 @@ function handleClientLeftView(
   };
 }
 
-function handleClientMoved(cmd: Command, clients: Map<number, ClientInfo>): NotificationResult {
+function handleClientMoved(cmd: Command, clients: Map<number, DirectoryClientInfo>): NotificationResult {
   const clid = parseUint16(cmd.params["clid"] ?? "");
   const ctid = parseUint64(cmd.params["ctid"] ?? cmd.params["cid"] ?? "");
 
@@ -143,7 +147,39 @@ function handleClientMoved(cmd: Command, clients: Map<number, ClientInfo>): Noti
   };
 }
 
-function handleTextMessage(cmd: Command, clients: Map<number, ClientInfo>): NotificationResult {
+function handleClientUpdated(
+  cmd: Command,
+  clients: Map<number, DirectoryClientInfo>,
+): NotificationResult {
+  const clid = parseUint16(cmd.params["clid"] ?? "");
+  const current = clients.get(clid);
+  const ctid = parseUint64(cmd.params["ctid"] ?? cmd.params["cid"] ?? "");
+  const groups = cmd.params["client_servergroups"];
+  const info: DirectoryClientInfo = {
+    ...current,
+    id: clid,
+    nickname: cmd.params["client_nickname"] ?? current?.nickname ?? "",
+    uid: cmd.params["client_unique_identifier"] ?? current?.uid ?? "",
+    channelID: ctid !== 0n ? ctid : (current?.channelID ?? 0n),
+    type: cmd.params["client_type"] !== undefined
+      ? parseInt10(cmd.params["client_type"])
+      : (current?.type ?? 0),
+    serverGroups: groups !== undefined
+      ? (groups ? groups.split(",") : [])
+      : (current?.serverGroups ?? []),
+  };
+
+  if (cmd.params["client_away"] !== undefined) info.away = cmd.params["client_away"] === "1";
+  if (cmd.params["client_away_message"] !== undefined) info.awayMessage = cmd.params["client_away_message"];
+  if (cmd.params["client_input_muted"] !== undefined) info.inputMuted = cmd.params["client_input_muted"] === "1";
+  if (cmd.params["client_output_muted"] !== undefined) info.outputMuted = cmd.params["client_output_muted"] === "1";
+  if (cmd.params["client_is_channel_commander"] !== undefined) info.channelCommander = cmd.params["client_is_channel_commander"] === "1";
+
+  if (clid !== 0) clients.set(clid, info);
+  return { kind: "clientUpdated", event: { info } };
+}
+
+function handleTextMessage(cmd: Command, clients: Map<number, DirectoryClientInfo>): NotificationResult {
   const invokerID = parseUint16(cmd.params["invokerid"] ?? "");
   const invokerInfo = clients.get(invokerID);
 
