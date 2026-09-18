@@ -31,6 +31,11 @@ export interface ClientLeftViewEvent {
   targetID: number;
 }
 
+/** A live update to a client's directory state. */
+export interface ClientUpdatedEvent {
+  info: DirectoryClientInfo;
+}
+
 export interface ClientInfo {
   nickname: string;
   uid: string;
@@ -104,6 +109,7 @@ export interface EventMap {
   clientEnter: ClientInfo;
   clientLeave: ClientLeftViewEvent;
   clientMoved: ClientMovedEvent;
+  clientUpdated: ClientUpdatedEvent;
   directorySnapshot: DirectorySnapshot;
   poked: PokeEvent;
   voiceData: VoiceData;
