@@ -73,11 +73,14 @@ export function applyChannelNotification(
     case "notifychannelmoved": {
       const current = channels.get(id);
       if (!current) return false;
-      channels.set(id, {
+      const next: ChannelInfo = {
         ...current,
         parentID: parseUint64(params["cpid"] ?? params["pid"] ?? ""),
-        order: parseUint64(params["channel_order"] ?? params["order"] ?? ""),
-      });
+      };
+      if (params["channel_order"] !== undefined || params["order"] !== undefined) {
+        next.order = parseUint64(params["channel_order"] ?? params["order"] ?? "");
+      }
+      channels.set(id, next);
       return true;
     }
     case "notifychanneldeleted":

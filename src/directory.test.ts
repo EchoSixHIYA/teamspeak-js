@@ -82,12 +82,18 @@ describe("directory parsing", () => {
       ),
     ).toBe(true);
     expect(channels.get(1n)).toEqual({
-          id: 1n,
-          parentID: 0n,
-          order: 9n,
-          name: "New Lobby",
+      id: 1n,
+      parentID: 0n,
+      order: 9n,
+      name: "New Lobby",
       description: "new",
     });
+
+    expect(
+      applyChannelNotification("notifychannelmoved", { cid: "1", cpid: "2" }, channels),
+    ).toBe(true);
+    expect(channels.get(1n)?.parentID).toBe(2n);
+    expect(channels.get(1n)?.order).toBe(9n);
 
       expect(applyChannelNotification("notifychanneldeleted", { cid: "1" }, channels)).toBe(true);
     expect(channels.size).toBe(0);
