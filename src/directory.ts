@@ -9,6 +9,7 @@ export function parseDirectoryChannel(params: Record<string, string>): ChannelIn
   return {
     id,
     parentID: parseUint64(params["pid"] ?? params["cpid"] ?? ""),
+    order: parseUint64(params["channel_order"] ?? params["order"] ?? ""),
     name: params["channel_name"] ?? "",
     description: params["channel_topic"] ?? params["channel_description"] ?? "",
   };
@@ -63,6 +64,9 @@ export function applyChannelNotification(
       if (params["cpid"] !== undefined || params["pid"] !== undefined) {
         next.parentID = parseUint64(params["cpid"] ?? params["pid"] ?? "");
       }
+      if (params["channel_order"] !== undefined || params["order"] !== undefined) {
+        next.order = parseUint64(params["channel_order"] ?? params["order"] ?? "");
+      }
       channels.set(id, next);
       return true;
     }
@@ -72,6 +76,7 @@ export function applyChannelNotification(
       channels.set(id, {
         ...current,
         parentID: parseUint64(params["cpid"] ?? params["pid"] ?? ""),
+        order: parseUint64(params["channel_order"] ?? params["order"] ?? ""),
       });
       return true;
     }
