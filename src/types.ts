@@ -50,6 +50,8 @@ export interface ChannelInfo {
   description: string;
   id: bigint;
   parentID: bigint;
+  /** ID of the sibling channel after which this channel is placed. */
+  order: bigint;
 }
 
 /** Additional client state included in a live server directory snapshot. */

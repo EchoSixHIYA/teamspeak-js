@@ -12,12 +12,14 @@ describe("directory parsing", () => {
       parseDirectoryChannel({
         cid: "42",
         pid: "1",
+        channel_order: "17",
         channel_name: "Lobby Room",
         channel_topic: "A|B",
       }),
     ).toEqual({
       id: 42n,
       parentID: 1n,
+      order: 17n,
       name: "Lobby Room",
       description: "A|B",
     });
@@ -60,6 +62,7 @@ describe("directory parsing", () => {
         {
           id: 1n,
           parentID: 0n,
+          order: 0n,
           name: "Lobby",
           description: "old",
         },
@@ -73,6 +76,7 @@ describe("directory parsing", () => {
           cid: "1",
           channel_name: "New Lobby",
           channel_topic: "new",
+          channel_order: "9",
         },
         channels,
       ),
@@ -80,11 +84,18 @@ describe("directory parsing", () => {
     expect(channels.get(1n)).toEqual({
       id: 1n,
       parentID: 0n,
+      order: 9n,
       name: "New Lobby",
       description: "new",
     });
 
-    expect(applyChannelNotification("notifychanneldeleted", { cid: "1" }, channels)).toBe(true);
+    expect(
+      applyChannelNotification("notifychannelmoved", { cid: "1", cpid: "2" }, channels),
+    ).toBe(true);
+    expect(channels.get(1n)?.parentID).toBe(2n);
+    expect(channels.get(1n)?.order).toBe(9n);
+
+      expect(applyChannelNotification("notifychanneldeleted", { cid: "1" }, channels)).toBe(true);
     expect(channels.size).toBe(0);
   });
 
