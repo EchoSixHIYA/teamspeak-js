@@ -6,6 +6,7 @@ import {
   type Logger,
   type AddrResolver,
   type ClientInfo,
+  type ClientUpdatedEvent,
   type DirectoryClientInfo,
   type DirectorySnapshot,
   ClientStatus,
@@ -94,6 +95,7 @@ export class Client {
   #clientEnterHandlers: Array<(info: ClientInfo) => void> = [];
   #clientLeaveHandlers: Array<(evt: import("./types.js").ClientLeftViewEvent) => void> = [];
   #clientMoveHandlers: Array<(evt: import("./types.js").ClientMovedEvent) => void> = [];
+  #clientUpdatedHandlers: Array<(evt: ClientUpdatedEvent) => void> = [];
   #pokedHandlers: Array<(evt: import("./types.js").PokeEvent) => void> = [];
   #voiceDataHandlers: Array<(data: import("./types.js").VoiceData) => void> = [];
   #rawNotificationHandlers: Array<(notification: import("./types.js").RawNotification) => void> = [];
@@ -247,6 +249,9 @@ export class Client {
         break;
       case "clientMoved":
         this.#clientMoveHandlers.push(handler as AnyHandler);
+        break;
+      case "clientUpdated":
+        this.#clientUpdatedHandlers.push(handler as AnyHandler);
         break;
       case "directorySnapshot":
         this.#directorySnapshotHandlers.push(handler as AnyHandler);
@@ -580,6 +585,10 @@ export class Client {
         this.#dispatchEvent("clientMoved", result.event);
         this.#scheduleDirectorySnapshot();
         break;
+      case "clientUpdated":
+        this.#dispatchEvent("clientUpdated", result.event);
+        this.#scheduleDirectorySnapshot();
+        break;
       case "textMessage":
         this.#dispatchEvent("textMessage", result.message);
         break;
@@ -621,6 +630,10 @@ export class Client {
       case "clientMoved":
         for (const h of this.#clientMoveHandlers)
           setImmediate(() => h(payload as import("./types.js").ClientMovedEvent));
+        break;
+      case "clientUpdated":
+        for (const h of this.#clientUpdatedHandlers)
+          setImmediate(() => h(payload as ClientUpdatedEvent));
         break;
       case "poked":
         for (const h of this.#pokedHandlers)
@@ -701,6 +714,17 @@ export class Client {
         !("targetMode" in evt)
       ) {
         this.#dispatchEventDirect("poked", evt as EventMap["poked"]);
+      } else if (
+        evt !== null &&
+        evt !== undefined &&
+        typeof evt === "object" &&
+        "info" in evt &&
+        evt.info !== null &&
+        typeof evt.info === "object" &&
+        "id" in evt.info &&
+        "uid" in evt.info
+      ) {
+        this.#dispatchEventDirect("clientUpdated", evt as EventMap["clientUpdated"]);
       } else if (
         evt !== null &&
         evt !== undefined &&

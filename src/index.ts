@@ -8,6 +8,7 @@ export type {
   ClientMovedEvent,
   ClientLeftViewEvent,
   ClientInfo,
+  ClientUpdatedEvent,
   ChannelInfo,
   DirectoryClientInfo,
   DirectorySnapshot,
