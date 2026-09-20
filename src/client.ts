@@ -96,6 +96,7 @@ export class Client {
   #clientMoveHandlers: Array<(evt: import("./types.js").ClientMovedEvent) => void> = [];
   #pokedHandlers: Array<(evt: import("./types.js").PokeEvent) => void> = [];
   #voiceDataHandlers: Array<(data: import("./types.js").VoiceData) => void> = [];
+  #rawNotificationHandlers: Array<(notification: import("./types.js").RawNotification) => void> = [];
   #connectedHandlers: Array<() => void> = [];
   #disconnectedHandlers: Array<(err: Error | undefined) => void> = [];
   #kickedHandlers: Array<(msg: string) => void> = [];
@@ -255,6 +256,9 @@ export class Client {
         break;
       case "voiceData":
         this.#voiceDataHandlers.push(handler as AnyHandler);
+        break;
+      case "rawNotification":
+        this.#rawNotificationHandlers.push(handler as AnyHandler);
         break;
       case "connected":
         this.#connectedHandlers.push(handler as () => void);
@@ -591,6 +595,9 @@ export class Client {
       case "fileTransferStatus":
         this.#ftTrack.notify(result.info.clientFileTransferID, result.info);
         break;
+      case "rawNotification":
+        this.#dispatchEvent("rawNotification", result.notification);
+        break;
     }
   }
 
@@ -622,6 +629,10 @@ export class Client {
       case "directorySnapshot":
         for (const h of this.#directorySnapshotHandlers)
           setImmediate(() => h(payload as DirectorySnapshot));
+        break;
+      case "rawNotification":
+        for (const h of this.#rawNotificationHandlers)
+          setImmediate(() => h(payload as import("./types.js").RawNotification));
         break;
     }
   }
@@ -663,6 +674,15 @@ export class Client {
         "clients" in evt
       ) {
         this.#dispatchEventDirect("directorySnapshot", evt as EventMap["directorySnapshot"]);
+      } else if (
+        evt !== null &&
+        evt !== undefined &&
+        typeof evt === "object" &&
+        "name" in evt &&
+        "params" in evt &&
+        typeof evt.name === "string"
+      ) {
+        this.#dispatchEventDirect("rawNotification", evt as EventMap["rawNotification"]);
       } else if (
         evt !== null &&
         evt !== undefined &&

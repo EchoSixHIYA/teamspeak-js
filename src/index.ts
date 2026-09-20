@@ -13,6 +13,7 @@ export type {
   DirectorySnapshot,
   PokeEvent,
   VoiceData,
+  RawNotification,
   FileUploadInfo,
   FileDownloadInfo,
   FileTransferStatusInfo,
