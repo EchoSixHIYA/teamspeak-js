@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { handleNotification } from "./notifications.js";
-import type { ClientInfo } from "./types.js";
+import type { DirectoryClientInfo } from "./types.js";
 
-function makeClients(): Map<number, ClientInfo> {
+function makeClients(): Map<number, DirectoryClientInfo> {
   return new Map();
 }
 
@@ -31,7 +31,7 @@ describe("handleNotification", () => {
     });
 
     it("retains the previous channel when a compressed row omits ctid", () => {
-      const clients = new Map<number, ClientInfo>([
+      const clients = new Map<number, DirectoryClientInfo>([
         [
           7,
           {
@@ -66,7 +66,7 @@ describe("handleNotification", () => {
 
   describe("notifyclientleftview", () => {
     it("treats a non-zero ctid as a move instead of a leave", () => {
-      const clients = new Map<number, ClientInfo>([
+      const clients = new Map<number, DirectoryClientInfo>([
         [
           7,
           {
@@ -100,6 +100,43 @@ describe("handleNotification", () => {
       if (result.kind !== "clientMoved") return;
       expect(result.event.targetChannelID).toBe(42n);
       expect(clients.get(7)?.channelID).toBe(42n);
+    });
+  });
+
+  describe("notifyclientupdated", () => {
+    it("updates mute state without discarding fields not included in the notification", () => {
+      const clients = new Map<number, DirectoryClientInfo>([
+        [
+          7,
+          {
+            id: 7,
+            nickname: "Alice",
+            uid: "uid123",
+            channelID: 42n,
+            type: 0,
+            serverGroups: ["6"],
+            inputMuted: false,
+            outputMuted: false,
+          },
+        ],
+      ]);
+
+      const result = handleNotification(
+        {
+          name: "notifyclientupdated",
+          params: { clid: "7", client_input_muted: "1" },
+        },
+        1,
+        clients,
+        "Bot",
+      );
+
+      expect(result.kind).toBe("clientUpdated");
+      if (result.kind !== "clientUpdated") return;
+      expect(result.event.info.inputMuted).toBe(true);
+      expect(result.event.info.outputMuted).toBe(false);
+      expect(result.event.info.channelID).toBe(42n);
+      expect(clients.get(7)?.inputMuted).toBe(true);
     });
   });
 
