@@ -97,6 +97,12 @@ export interface VoiceData {
   data: Uint8Array;
 }
 
+/** A server notification that is not yet modeled by the high-level SDK. */
+export interface RawNotification {
+  name: string;
+  params: Record<string, string>;
+}
+
 // ---- Typed event map used by Client.on() ------------------------------------
 
 export interface EventMap {
@@ -107,6 +113,7 @@ export interface EventMap {
   directorySnapshot: DirectorySnapshot;
   poked: PokeEvent;
   voiceData: VoiceData;
+  rawNotification: RawNotification;
   connected: void;
   disconnected: Error | undefined;
   kicked: string;

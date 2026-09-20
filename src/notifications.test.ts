@@ -155,12 +155,17 @@ describe("handleNotification", () => {
     });
   });
 
-  it("returns unknown for unrecognized notifications", () => {
+  it("preserves unrecognized notifications for protocol extensions", () => {
     const cmd = {
-      name: "notifysomethingelse",
-      params: {},
+      name: "notifystreamstarted",
+      params: { id: "stream-1", clid: "7", audio: "1" },
     };
     const result = handleNotification(cmd, 1, makeClients(), "Bot");
-    expect(result.kind).toBe("unknown");
+    expect(result.kind).toBe("rawNotification");
+    if (result.kind !== "rawNotification") return;
+    expect(result.notification).toEqual({
+      name: "notifystreamstarted",
+      params: { id: "stream-1", clid: "7", audio: "1" },
+    });
   });
 });

@@ -9,6 +9,7 @@ import type {
   FileUploadInfo,
   FileDownloadInfo,
   FileTransferStatusInfo,
+  RawNotification,
 } from "./types.js";
 import { parseUint64, parseUint16, parseInt10 } from "./helpers.js";
 
@@ -21,7 +22,7 @@ export type NotificationResult =
   | { kind: "startUpload"; info: FileUploadInfo }
   | { kind: "startDownload"; info: FileDownloadInfo }
   | { kind: "fileTransferStatus"; info: FileTransferStatusInfo }
-  | { kind: "unknown" };
+  | { kind: "rawNotification"; notification: RawNotification };
 
 export function handleNotification(
   cmd: Command,
@@ -47,7 +48,10 @@ export function handleNotification(
     case "notifystatusfiletransfer":
       return { kind: "fileTransferStatus", info: handleFileTransferStatus(cmd) };
     default:
-      return { kind: "unknown" };
+      return {
+        kind: "rawNotification",
+        notification: { name: cmd.name, params: { ...cmd.params } },
+      };
   }
 }
 
