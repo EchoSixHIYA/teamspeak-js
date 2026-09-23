@@ -88,7 +88,8 @@ export class Client {
   #directorySnapshotHandlers: Array<(snapshot: DirectorySnapshot) => void> = [];
   #directorySnapshotScheduled = false;
   #directorySnapshotVersion = 0;
-  #connectedResolvers: Array<() => void> = [];
+  #connectedResolvers: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
+  #connectionError: Error | null = null;
 
   // Event handler lists
   #textMsgHandlers: Array<(msg: import("./types.js").TextMessage) => void> = [];
@@ -184,11 +185,28 @@ export class Client {
 
   waitConnected(signal?: AbortSignal): Promise<void> {
     if (this.#status === ClientStatus.Connected) return Promise.resolve();
+    if (this.#connectionError) return Promise.reject(this.#connectionError);
     return new Promise<void>((resolve, reject) => {
-      this.#connectedResolvers.push(resolve);
-      if (signal) {
-        signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
-      }
+      let waiter: { resolve: () => void; reject: (error: Error) => void };
+      const onAbort = () => {
+        const index = this.#connectedResolvers.indexOf(waiter);
+        if (index >= 0) this.#connectedResolvers.splice(index, 1);
+        const reason = signal?.reason;
+        waiter.reject(reason instanceof Error ? reason : new Error(String(reason ?? "Connection wait aborted")));
+      };
+      waiter = {
+        resolve: () => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve();
+        },
+        reject: (error) => {
+          signal?.removeEventListener("abort", onAbort);
+          reject(error);
+        },
+      };
+      this.#connectedResolvers.push(waiter);
+      if (signal?.aborted) onAbort();
+      else signal?.addEventListener("abort", onAbort, { once: true });
     });
   }
 
@@ -388,7 +406,8 @@ export class Client {
   /** @internal */
   _markConnected(): void {
     this.#status = ClientStatus.Connected;
-    for (const resolve of this.#connectedResolvers) resolve();
+    this.#connectionError = null;
+    for (const waiter of this.#connectedResolvers) waiter.resolve();
     this.#connectedResolvers = [];
     const handlers = this.#connectedHandlers.slice();
     for (const h of handlers) setImmediate(() => h());
@@ -397,6 +416,9 @@ export class Client {
   // ---- Private -------------------------------------------------------------
 
   #resetForConnect(): void {
+    this.#connectionError = null;
+    const staleWaiters = this.#connectedResolvers.splice(0);
+    for (const waiter of staleWaiters) waiter.reject(new Error("Connection attempt was reset"));
     this.handler.close();
     this.crypt = new Crypt(this.#identity);
     this.handler = new PacketHandler(this.crypt, this.logger);
@@ -543,6 +565,14 @@ export class Client {
       this.#cmdTrack.discardBuffer();
     }
 
+    // A TeamSpeak error during the welcome handshake (for example `invalid
+    // parameter size` for clientinit) is the actual connection failure.
+    // Preserve it for waitConnected instead of letting callers report their
+    // unrelated handshake timeout.
+    if (err && this.#status !== ClientStatus.Connected) {
+      this.#rejectPendingConnectionWaiters(err);
+    }
+
     const id = params["id"] ?? "0";
     if (id === "3329") {
       setImmediate(() => this.disconnect().catch(() => {}));
@@ -652,9 +682,18 @@ export class Client {
 
   #handleConnectionClosed(err: Error | null): void {
     if (this.#status === ClientStatus.Disconnected) return;
+    if (this.#status !== ClientStatus.Connected) {
+      this.#rejectPendingConnectionWaiters(err ?? new Error("Connection closed before TeamSpeak handshake completed"));
+    }
     this.#status = ClientStatus.Disconnected;
     const handlers = this.#disconnectedHandlers.slice();
     for (const h of handlers) setImmediate(() => h(err ?? undefined));
+  }
+
+  #rejectPendingConnectionWaiters(error: Error): void {
+    this.#connectionError = error;
+    const waiters = this.#connectedResolvers.splice(0);
+    for (const waiter of waiters) waiter.reject(error);
   }
 
   #scheduleDirectorySnapshot(): void {
