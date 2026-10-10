@@ -65,7 +65,7 @@
     "check": "pnpm typecheck && pnpm lint && pnpm fmt:check",
     "prepublishOnly": "pnpm run build",
     "example": "tsx examples/connect.ts",
-    "test:integration": "TEAMSPEAK_ADDR=chenkr.cn vitest run src/integration.test.ts --reporter=verbose"
+    "test:integration": "TEAMSPEAK_ADDR=127.0.0.1:9987 vitest run src/integration.test.ts --reporter=verbose"
   },
   "dependencies": {
     "@noble/curves": "^2.0.1"

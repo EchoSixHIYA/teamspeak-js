@@ -3,7 +3,8 @@
  *
  * Opt-in: these tests only run when TEAMSPEAK_ADDR is set:
  *
- *   TEAMSPEAK_ADDR=chenkr.cn pnpm test --reporter=verbose src/integration.test.ts
+ *   docker run -d --name ts3 -e TS3SERVER_LICENSE=accept -p 9987:9987/udp teamspeak:latest
+ *   TEAMSPEAK_ADDR=127.0.0.1:9987 pnpm test --reporter=verbose src/integration.test.ts
  *
  * A single shared client is reused across all tests to avoid the TS3
  * anti-flood protection that bans IPs reconnecting too quickly.

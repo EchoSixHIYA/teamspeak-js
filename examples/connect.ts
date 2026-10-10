@@ -1,18 +1,19 @@
 /**
- * Minimal example: connect to chenkr.cn and print server info.
+ * Minimal example: connect to a TeamSpeak server and print server info.
  *
  * Run:
- *   pnpm tsx examples/connect.ts
+ *   TEAMSPEAK_ADDR=127.0.0.1:9987 pnpm tsx examples/connect.ts
  *
- * Or with a custom address:
- *   TEAMSPEAK_ADDR=chenkr.cn:9987 pnpm tsx examples/connect.ts
+ * The address may be a hostname, an IPv4 address, or a bracketed IPv6 literal.
+ * A local server can be started with:
+ *   docker run -d --name ts3 -e TS3SERVER_LICENSE=accept -p 9987:9987/udp teamspeak:latest
  */
 
 import { generateIdentity } from "../src/crypto/identity.js";
 import { Client } from "../src/client.js";
 import { listChannels, listClients } from "../src/api.js";
 
-const ADDR = process.env["TEAMSPEAK_ADDR"] ?? "chenkr.cn";
+const ADDR = process.env["TEAMSPEAK_ADDR"] ?? "127.0.0.1:9987";
 
 async function main(): Promise<void> {
   console.log(`[example] generating identity (level 8)…`);
