@@ -24,6 +24,10 @@ Compatible with TeamSpeak 3, 5 & 6. No proprietary SDK. No copy-pasted code.
 - **Middleware** — Pluggable command and event middleware chains
 - **Built-in rate limiter** — Token-bucket throttling to prevent server-side flood kicks
 - **Identity management** — Generate, import/export, and upgrade security level of identities
+- **Full command set** — 113 typed functions covering every command the voice protocol answers
+- **Reconnection** — Opt-in retry with backoff, tuned for TeamSpeak's antiflood ban
+- **Server capabilities** — Reports the server version and the uid hash it uses (SHA-1 on TS3, SHA-256 on TS6)
+- **Custom transports** — Supply your own socket, for proxies, tunnels or tests
 - **Dual format** — Ships ESM and CJS with full TypeScript declarations
 - **Zero native deps** — Pure TypeScript, no native addons required
 
@@ -81,12 +85,16 @@ process.on("SIGINT", async () => {
 
 ### Client Lifecycle
 
-| Method                                        | Description                         |
-| --------------------------------------------- | ----------------------------------- |
-| `new Client(identity, addr, nickname, opts?)` | Create a new client                 |
-| `connect()`                                   | Initiate connection to the server   |
-| `waitConnected(signal?)`                      | Block until the handshake completes |
-| `disconnect()`                                | Gracefully disconnect               |
+| Method                                        | Description                            |
+| --------------------------------------------- | -------------------------------------- |
+| `new Client(identity, addr, nickname, opts?)` | Create a new client                    |
+| `connect()`                                   | Initiate connection to the server      |
+| `waitConnected(signal?)`                      | Block until the handshake completes    |
+| `disconnect()`                                | Gracefully disconnect                  |
+| `clientID()`                                  | Our clid, assigned by the server       |
+| `channelID()`                                 | The channel we are in                  |
+| `serverCapabilities()`                        | Server version, family and uid hash    |
+| `uniqueIdentifier()`                          | Our own uid, hashed as the server does |
 
 ### Events
 
@@ -104,18 +112,61 @@ process.on("SIGINT", async () => {
 
 ### Commands
 
-| Function                                             | Description                                |
-| ---------------------------------------------------- | ------------------------------------------ |
-| `sendTextMessage(client, targetMode, targetID, msg)` | Send a text message                        |
-| `clientMove(client, clid, channelID, password?)`     | Move a client to a channel                 |
-| `poke(client, clid, message)`                        | Poke a client                              |
-| `client.sendVoice(data, codec)`                      | Send Opus voice data                       |
-| `client.sendWhisper(data, clientIds, codec)`         | Send Opus voice to specific clients        |
-| `listChannels(client)`                               | List all channels                          |
-| `listClients(client)`                                | List all connected clients                 |
-| `getClientInfo(client, clid)`                        | Get detailed client information            |
-| `client.execCommand(cmd, timeout?)`                  | Execute a raw command                      |
-| `client.execCommandWithResponse(cmd, timeout?)`      | Execute a command and return response data |
+Every command the voice protocol answers is a typed function, grouped by area.
+Each takes a single options object and is addressed by branded ids, so a
+`ChannelID` cannot be passed where a `ClientID` is meant.
+
+```typescript
+import {
+  listChannels,
+  createChannel,
+  editChannel,
+  deleteChannel,
+  listClients,
+  moveClient,
+  kickClient,
+  updateClient,
+  getServerInfo,
+  listServerGroups,
+  addServerGroupPermission,
+  listFiles,
+  deleteFile,
+  addBan,
+  sendTextMessage,
+  TextMessageTarget,
+} from "@honeybbq/teamspeak-client";
+
+const channels = await listChannels(client);
+
+const cid = await createChannel(client, {
+  channel_name: "Lounge",
+  channel_topic: "the quiet one",
+  channel_flag_permanent: true,
+});
+
+await moveClient(client, asClientID(client.clientID()), cid, "channel-password");
+await sendTextMessage(client, TextMessageTarget.Channel, "hello", cid);
+```
+
+| Module       | Covers                                                         |
+| ------------ | -------------------------------------------------------------- |
+| `channels`   | Create, edit, move, delete, subscribe, channel permissions     |
+| `clients`    | List, move, kick, poke, edit, the client database, permissions |
+| `server`     | Server and instance settings, groups, temp passwords, bindings |
+| `groups`     | Channel groups, the permission catalogue, tokens               |
+| `moderation` | Bans, complaints, offline messages, text messages, the log     |
+| `files`      | List, delete, rename, create directories, transfer negotiation |
+
+> **Read [docs/voice-protocol-empty-responses.md](docs/voice-protocol-empty-responses.md) before
+> using the administrative commands.** The voice protocol answers `ok` with no
+> data row for a set of commands that ServerQuery answers normally —
+> `servergrouplist`, `permissionlist`, the group permission lists, several
+> client lookups, and the file transfer negotiation. Verified with Server Admin,
+> so these are server behaviour rather than permissions. A function returning
+> `[]` does not mean "nothing there".
+
+For anything outside the typed set, `client.execCommand()` and
+`client.execCommandWithResponse()` take a raw command.
 
 ### File Transfers
 
@@ -165,6 +216,56 @@ Connection auth options:
 - `defaultChannel`: default channel name requested during `clientinit`
 - `defaultChannelPassword`: plain-text password for `defaultChannel`; sent as the TeamSpeak protocol hash
 
+### Reconnection
+
+Off by default: a silent reconnect makes an outage look like a healthy session.
+An explicit `disconnect()` never reconnects, whatever the policy says.
+
+```typescript
+const client = new Client(identity, "ts.example.com", "Bot", {
+  reconnect: {
+    enabled: true,
+    backoff: { initialDelayMs: 1_000, maxDelayMs: 60_000, factor: 2, jitter: 0.2 },
+    // Optional: decide for yourself which failures are worth retrying.
+    shouldRetry: (err, attempt) => attempt < 10,
+  },
+});
+```
+
+The defaults are conservative because TeamSpeak **bans an IP after roughly
+three rapid connects** — a retry loop without a delay bans itself, and the ban
+outlasts the outage it was recovering from. Recovery is also not instant even
+when it succeeds: the server holds the dropped session for a while and refuses a
+reconnect with `521 too many clones already connected` until it reaps it, so the
+loop keeps trying rather than giving up on the first refusal.
+
+### Custom transports
+
+`fileTransferSocketFactory` and `socketFactory` are the only seams into the
+network layer. Without them the SDK always creates its own sockets, so an
+application running behind a proxy has no way through.
+
+```typescript
+const client = new Client(identity, "ts.example.com", "Bot", {
+  // UDP, for the voice and command channel.
+  socketFactory: (family) => createSocket(family === 6 ? "udp6" : "udp4"),
+  // TCP, dialled separately by each file transfer.
+  fileTransferSocketFactory: (host, port) => createConnection({ host, port }),
+});
+```
+
+### Server capabilities
+
+```typescript
+const caps = client.serverCapabilities();
+// { version: "6.0.0-beta13.1", major: 6, family: "ts6", uidAlgorithm: "sha256" }
+```
+
+Read from `initserver` during the handshake, so it costs no extra round trip.
+The uid hash matters because TS3 hashes a client's public key with SHA-1 and TS6
+with SHA-256 — a client that assumes either one computes an identifier the other
+server never sends.
+
 ## Subpath Exports
 
 The package provides granular subpath exports for advanced use cases:
@@ -183,7 +284,17 @@ import { processInit1 } from "@honeybbq/teamspeak-client/handshake";
 teamspeak-js/
 ├── src/
 │   ├── client.ts          # Client lifecycle, connection management
-│   ├── api.ts             # High-level API (messages, channels, clients)
+│   ├── api/               # Typed command layer, one module per area
+│   │   ├── command.ts     #   Shared encoder and field readers
+│   │   ├── channels.ts    #   Channels and channel permissions
+│   │   ├── clients.ts     #   Clients, the client database
+│   │   ├── server.ts      #   Server and instance settings
+│   │   ├── groups.ts      #   Channel groups, permissions, tokens
+│   │   ├── moderation.ts  #   Bans, messages, the log
+│   │   └── files.ts       #   File transfer commands
+│   ├── capabilities.ts    # Server version and uid hash detection
+│   ├── reconnect.ts       # Backoff policy and permanent-failure detection
+│   ├── ids.ts             # Branded ids (ChannelID, ClientID, …)
 │   ├── commands.ts        # Command sending and response tracking
 │   ├── events.ts          # Event handler registration and middleware
 │   ├── notifications.ts   # Server notification parsing and dispatch
@@ -197,6 +308,11 @@ teamspeak-js/
 │   ├── transport/         # UDP packet framing, ACK, compression
 │   ├── command/           # Command builder and parser
 │   └── discovery/         # SRV / TSDNS / direct address resolution
+├── docs/
+│   └── voice-protocol-empty-responses.md   # Which commands answer empty
+├── scripts/
+│   ├── probe-client-commands.mts           # Which commands the protocol accepts
+│   └── survey-voice-empties.mts            # Re-runs the empty-response check
 ├── examples/
 │   └── connect.ts         # Minimal connection example
 ├── vite.config.ts         # Build configuration (Vite library mode)
