@@ -39,17 +39,6 @@ export {
   InvalidIdentityError,
 } from "./errors.js";
 
-// High-level API helpers
-export {
-  sendTextMessage,
-  clientMove,
-  poke,
-  getClientInfo,
-  listChannels,
-  listClients,
-  fileTransferDeleteFile,
-} from "./api.js";
-
 // Typed command layer, one module per area of the protocol.
 export * from "./api/channels.js";
 export * from "./api/clients.js";

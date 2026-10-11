@@ -13,8 +13,16 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { generateIdentity } from "./crypto/identity.js";
 import { Client, ClientStatus } from "./client.js";
-import { listChannels, listClients, getClientInfo } from "./api.js";
-import { getChannelInfo } from "./api/channels.js";
+import {
+  listChannels,
+  getChannelInfo,
+  createChannel,
+  editChannel,
+  deleteChannel,
+} from "./api/channels.js";
+import { listClients, getClientInfo, moveClient } from "./api/clients.js";
+import { sendTextMessage, TextMessageTarget } from "./api/moderation.js";
+import { asChannelID, asClientID } from "./command/ids.js";
 import type { ClientInfo } from "./types.js";
 
 const ADDR = process.env["TEAMSPEAK_ADDR"];
@@ -273,7 +281,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // could not tell one channel's info from another's.
     const channels = await listChannels(sharedClient);
     const first = channels[0]!;
-    const info = await getChannelInfo(sharedClient, first.id);
+    const info = await getChannelInfo(sharedClient, asChannelID(first.id));
 
     console.log(`channelinfo: id=${info.id} name="${info.name}" parent=${info.parentID}`);
     expect(info.id).toBe(first.id);
@@ -328,7 +336,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // protocol — with no data row at all. The same commands return their rows
     // over ServerQuery. Worth pinning: they look like they work, so a caller
     // reading only for errors gets a silent empty result.
-    const me = await getClientInfo(sharedClient, sharedClient.clientID());
+    const me = await getClientInfo(sharedClient, asClientID(sharedClient.clientID()));
     const uid = me["client_unique_identifier"]!;
     const dbid = me["client_database_id"]!;
 
@@ -352,7 +360,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   it("getClientInfo — returns our own nickname", async () => {
     let info;
     try {
-      info = await getClientInfo(sharedClient, sharedClient.clientID());
+      info = await getClientInfo(sharedClient, asClientID(sharedClient.clientID()));
     } catch (err) {
       skipOnPermError(err);
       return;
@@ -379,8 +387,12 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     const target = channels.find((c) => c.name === PASSWORD_CHANNEL);
     expect(target).toBeDefined();
 
-    const { clientMove } = await import("./api.js");
-    await clientMove(sharedClient, sharedClient.clientID(), target!.id, PASSWORD_CHANNEL_PASSWORD);
+    await moveClient(
+      sharedClient,
+      asClientID(sharedClient.clientID()),
+      target!.id,
+      PASSWORD_CHANNEL_PASSWORD,
+    );
   }, 20_000);
 
   it("sendWhisper — delivers a VoiceWhisper frame to the target", async () => {
@@ -410,10 +422,13 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     });
 
     const ownID = sharedClient.clientID();
-    // targetMode=1 = private message to client
     try {
-      const { sendTextMessage } = await import("./api.js");
-      await sendTextMessage(sharedClient, 1, BigInt(ownID), "hello from ts-js-integ");
+      await sendTextMessage(
+        sharedClient,
+        TextMessageTarget.Client,
+        "hello from ts-js-integ",
+        asClientID(ownID),
+      );
     } catch (err) {
       skipOnPermError(err);
       return;
