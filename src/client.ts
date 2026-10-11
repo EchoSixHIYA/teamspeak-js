@@ -459,7 +459,9 @@ export class Client {
     }
 
     if ((pType === 2 /* Command */ || pType === 3) /* CommandLow */ && p.data.length > 0) {
-      this.#handleCommandLines(Buffer.from(p.data).toString("utf8"));
+      const text = Buffer.from(p.data).toString("utf8");
+      if (process.env["TEAMSPEAK_TRACE_RAW"]) process.stderr.write(`S2C ${JSON.stringify(text)}\n`);
+      this.#handleCommandLines(text);
     }
   }
 
@@ -501,6 +503,17 @@ export class Client {
     // command, so the row belongs to whichever command is awaiting a result.
     if (cmd.name === "") {
       if (Object.keys(cmd.params).length > 0) this.#cmdTrack.buffer(cmd.params);
+      return;
+    }
+
+    // `channellistfinished` ends the server's welcome sequence. It carries no
+    // data of its own, so it is the only reliable marker: the guard used to
+    // trip on our own notifycliententerview, which the server sends *in the
+    // middle* of the sequence — the channellist rows after it were then
+    // buffered as if they were the response to the caller's first command,
+    // which is how a channellist could come back with duplicate and empty rows.
+    if (cmd.name === "channellistfinished") {
+      this.#cmdTrack.signalWelcomeComplete();
       return;
     }
 
@@ -562,17 +575,19 @@ export class Client {
     switch (result.kind) {
       case "clientEnter": {
         const info = result.info;
-        // Our own notifycliententerview is the last event in the TS3/TS5
-        // welcome sequence. Identify self by the clid initserver already
-        // assigned rather than by nickname: any other client whose nickname
-        // happens to be "<our nick><digits>" — which is how the server renames
-        // a client whose nickname was taken — would otherwise be mistaken for
-        // us, poisoning every outgoing packet header with a foreign clientID
-        // until the server drops the connection for command-resend timeout.
+        // Identify self by the clid initserver already assigned rather than by
+        // nickname: any other client whose nickname happens to be "<our
+        // nick><digits>" — which is how the server renames a client whose
+        // nickname was taken — would otherwise be mistaken for us, poisoning
+        // every outgoing packet header with a foreign clientID until the server
+        // drops the connection for command-resend timeout.
+        //
+        // This no longer marks the end of the welcome sequence: the server
+        // sends more welcome data after it, and `channellistfinished` is the
+        // real terminator.
         if (info.id !== 0 && info.id === this.clid) {
           // Carries the rename the server applied if our nickname was taken.
           this.nickname = info.nickname;
-          this.#cmdTrack.signalWelcomeComplete();
         } else if (
           info.id !== 0 &&
           this.clid === 0 &&
@@ -584,7 +599,6 @@ export class Client {
           this.clid = info.id;
           this.handler.setClientID(info.id);
           this.nickname = info.nickname;
-          this.#cmdTrack.signalWelcomeComplete();
         }
         this.#dispatchEvent("clientEnter", info);
         break;

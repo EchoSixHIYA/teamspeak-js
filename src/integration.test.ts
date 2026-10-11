@@ -190,6 +190,28 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(self).toBeDefined();
   }, 15_000);
 
+  it("a command issued immediately after connecting is not contaminated", async () => {
+    // The server pushes its own channellist as part of the welcome sequence,
+    // unprompted. Asking for channellist before that sequence ends used to fold
+    // the server's own rows into the response: duplicate cids plus a phantom
+    // cid=0, every time, while the same call a second later was correct.
+    const identity = generateIdentity(8);
+    const fresh = new Client(identity, ADDR!, "ts-js-welcome", {
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+    });
+    await fresh.connect();
+    await fresh.waitConnected(AbortSignal.timeout(30_000));
+
+    const immediate = await listChannels(fresh);
+    const ids = immediate.map((c) => c.id);
+    console.log(`immediate listChannels: ${immediate.length} rows cids=${ids.join(",")}`);
+
+    expect(ids).not.toContain(0n);
+    expect(new Set(ids.map(String)).size).toBe(ids.length);
+
+    await fresh.disconnect();
+  }, 45_000);
+
   it("listChannels — at least one channel exists", async () => {
     let channels;
     try {
