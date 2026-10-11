@@ -114,6 +114,8 @@ export interface RawNotification {
 export interface ServerInfo {
   name: string;
   iconId: number | null;
+  hostBannerGfxUrl: string | null;
+  welcomeMessage: string;
 }
 
 // ---- Typed event map used by Client.on() ------------------------------------

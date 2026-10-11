@@ -41,6 +41,8 @@ export function handleInitServer(client: Client, params: Record<string, string>)
   client._setServerInfo({
     name: (params["virtualserver_name"] ?? "").trim().slice(0, 256),
     iconId: Number.isSafeInteger(parsedIconId) && parsedIconId !== 0 ? parsedIconId : null,
+    hostBannerGfxUrl: params["virtualserver_hostbanner_gfx_url"]?.trim() || null,
+    welcomeMessage: params["virtualserver_welcomemessage"] ?? "",
   });
 
   if (clid > 0) {

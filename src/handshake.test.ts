@@ -85,7 +85,7 @@ describe("sendClientInit", () => {
 });
 
 describe("handleInitServer", () => {
-  it("exposes the virtual-server name and icon included in the connection handshake", () => {
+  it("exposes public virtual-server presentation included in the connection handshake", () => {
     const client = new Client(generateIdentity(0), "localhost", "TS Bot");
     client.sendCommandNoWait = async () => {};
 
@@ -93,9 +93,16 @@ describe("handleInitServer", () => {
       aclid: "42",
       virtualserver_name: "兄弟们的teamspeak",
       virtualserver_icon_id: "123456",
+      virtualserver_hostbanner_gfx_url: "https://example.com/banner.png",
+      virtualserver_welcomemessage: "Welcome message",
     });
 
-    expect(client.serverInfo).toEqual({ name: "兄弟们的teamspeak", iconId: 123456 });
+    expect(client.serverInfo).toEqual({
+      name: "兄弟们的teamspeak",
+      iconId: 123456,
+      hostBannerGfxUrl: "https://example.com/banner.png",
+      welcomeMessage: "Welcome message",
+    });
     expect(client.clientID()).toBe(42);
   });
 
@@ -105,6 +112,6 @@ describe("handleInitServer", () => {
 
     handleInitServer(client, { clid: "42", virtualserver_name: "Friends", virtualserver_icon_id: "invalid" });
 
-    expect(client.serverInfo).toEqual({ name: "Friends", iconId: null });
+    expect(client.serverInfo).toEqual({ name: "Friends", iconId: null, hostBannerGfxUrl: null, welcomeMessage: "" });
   });
 });
