@@ -286,6 +286,33 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(peer).toBe(shared);
   }, 70_000);
 
+  it("clientlookup commands that the voice protocol leaves empty", async () => {
+    // clientgetuidfromclid, clientgetids, clientgetdbidfromuid and friends are
+    // listed by the server documentation and answer `ok` over the voice
+    // protocol — with no data row at all. The same commands return their rows
+    // over ServerQuery. Worth pinning: they look like they work, so a caller
+    // reading only for errors gets a silent empty result.
+    const me = await getClientInfo(sharedClient, sharedClient.clientID());
+    const uid = me["client_unique_identifier"]!;
+    const dbid = me["client_database_id"]!;
+
+    const cases: Array<[string, string]> = [
+      ["clientgetuidfromclid", `clientgetuidfromclid clid=${sharedClient.clientID()}`],
+      ["clientgetids", `clientgetids cluid=${uid}`],
+      ["clientgetdbidfromuid", `clientgetdbidfromuid cluid=${uid}`],
+      ["clientgetnamefromuid", `clientgetnamefromuid cluid=${uid}`],
+      ["clientgetnamefromdbid", `clientgetnamefromdbid cldbid=${dbid}`],
+    ];
+    for (const [name, cmd] of cases) {
+      const rows = await sharedClient.execCommandWithResponse(cmd, 5_000);
+      console.log(`${name}: ${rows.length} rows`);
+      expect(rows).toHaveLength(0);
+    }
+
+    // The uid is still obtainable, just from elsewhere: clientinfo carries it.
+    expect(uid.length).toBeGreaterThan(0);
+  }, 20_000);
+
   it("getClientInfo — returns our own nickname", async () => {
     let info;
     try {
