@@ -34,6 +34,7 @@ import type { FileUploadInfo, FileDownloadInfo } from "./types.js";
 import { CommandTimeoutError, FileTransferTimeoutError, FileTransferError } from "./errors.js";
 import type { Readable, Writable } from "node:stream";
 import type { SocketFactory } from "./types.js";
+import { unknownServerCapabilities, type ServerCapabilities } from "./capabilities.js";
 
 export { ClientStatus };
 
@@ -71,6 +72,8 @@ export class Client {
    * during initserver. TS3 hashes the public key with SHA-1 and TS6 with
    * SHA-256, so anything comparing our UID to the server's needs this.
    */
+  /** @internal */ capabilities: ServerCapabilities = unknownServerCapabilities();
+
   /** @internal */ uidAlgorithm: UidAlgorithm = "sha1";
 
   #identity: Identity;
@@ -298,6 +301,14 @@ export class Client {
 
   clientID(): number {
     return this.clid;
+  }
+
+  /**
+   * What the connected server is: version, generation, and the uid hash it
+   * uses. Populated from `initserver`; before connecting it reads as TS3.
+   */
+  serverCapabilities(): ServerCapabilities {
+    return this.capabilities;
   }
 
   /**

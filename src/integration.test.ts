@@ -151,6 +151,25 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(info.channelID).toBeGreaterThan(0n);
   }, 10_000);
 
+  it("reports the server's version and uid hash", async () => {
+    // Capabilities come from initserver, so they are available as soon as the
+    // handshake completes and need no extra round trip.
+    const caps = sharedClient.serverCapabilities();
+    console.log(
+      `capabilities: version="${caps.version}" family=${caps.family} uid=${caps.uidAlgorithm}`,
+    );
+    expect(caps.version).not.toBe("");
+    expect(["ts3", "ts6"]).toContain(caps.family);
+    expect(caps.uidAlgorithm).toBe(caps.family === "ts6" ? "sha256" : "sha1");
+
+    // The reported hash must be the one the server applies, not just a claim:
+    // uniqueIdentifier() hashes with it, and the server agrees with the result.
+    const mine = sharedClient.uniqueIdentifier();
+    const clients = await listClients(sharedClient);
+    const self = clients.find((c) => c.id === sharedClient.clientID());
+    expect(self?.uid).toBe(mine);
+  }, 15_000);
+
   it("uniqueIdentifier matches what the server reports for us", async () => {
     // TS3 hashes the public key with SHA-1 and TS6 with SHA-256. Hard-coding
     // either one silently never matches on the other server, which is exactly

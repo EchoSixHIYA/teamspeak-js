@@ -53,6 +53,10 @@ export {
 // File transfer utilities
 export { dialFileTransfer, uploadFileData, downloadFileData } from "./transfer.js";
 
+// Server capabilities
+export { parseServerCapabilities, unknownServerCapabilities } from "./capabilities.js";
+export type { ServerCapabilities, ServerFamily } from "./capabilities.js";
+
 // Crypto (re-exported for identity management)
 export {
   Identity,

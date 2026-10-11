@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { buildCommandOrdered, buildCommand } from "./command/command.js";
 import { sign, generateTemporaryKey } from "./crypto/primitives.js";
-import { uidAlgorithmForVersion } from "./crypto/identity.js";
+import { parseServerCapabilities } from "./capabilities.js";
 import { cryptoInit2 } from "./handshake/crypt-init2.js";
 import { PacketType } from "./transport/packet.js";
 import type { Client } from "./client.js";
@@ -44,9 +44,13 @@ export function handleInitServer(client: Client, params: Record<string, string>)
 
   // initserver is the only place the server names itself, and it determines how
   // the server hashes our public key into client_unique_identifier: SHA-1 on
-  // TS3, SHA-256 on TS6.
+  // TS3, SHA-256 on TS6. Recording the whole capability set here keeps callers
+  // from re-deriving it, or assuming one server generation.
   const version = params["virtualserver_version"];
-  if (version) client.uidAlgorithm = uidAlgorithmForVersion(version);
+  if (version) {
+    client.capabilities = parseServerCapabilities(version);
+    client.uidAlgorithm = client.capabilities.uidAlgorithm;
+  }
 
   client.logger.info("connected to server", { selfId: client.clid });
   client._markConnected();
