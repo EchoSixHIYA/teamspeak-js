@@ -4,17 +4,18 @@
  * Run:
  *   pnpm tsx examples/connect.ts
  *
- * Or with a custom address:
- *   TEAMSPEAK_ADDR=teamserver.invalid:9987 pnpm tsx examples/connect.ts
+ * Or set TEAMSPEAK_ADDR to the server host and port before running.
  */
 
 import { generateIdentity } from "../src/crypto/identity.js";
 import { Client } from "../src/client.js";
 import { listChannels, listClients } from "../src/api.js";
 
-const ADDR = process.env["TEAMSPEAK_ADDR"] ?? "teamserver.invalid:9987";
+const ADDR = process.env["TEAMSPEAK_ADDR"];
 
 async function main(): Promise<void> {
+  if (!ADDR) throw new Error("Set TEAMSPEAK_ADDR to a TeamSpeak host and port before running this example.");
+
   console.log(`[example] generating identity (level 8)…`);
   const identity = generateIdentity(8);
   console.log(`[example] identity UID: ${identity.publicKeyBase64().slice(0, 24)}…`);

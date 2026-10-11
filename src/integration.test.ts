@@ -3,7 +3,7 @@
  *
  * Opt-in: these tests only run when TEAMSPEAK_ADDR is set:
  *
- *   TEAMSPEAK_ADDR=teamserver.invalid:9987 pnpm test --reporter=verbose src/integration.test.ts
+ *   Set TEAMSPEAK_ADDR, then run pnpm test --reporter=verbose src/integration.test.ts
  *
  * A single shared client is reused across all tests to avoid the TS3
  * anti-flood protection that bans IPs reconnecting too quickly.
@@ -73,7 +73,7 @@ function skipOnPermError(err: unknown): void {
   throw err;
 }
 
-describe.skipIf(SKIP)("Integration — teamserver.invalid:9987", () => {
+describe.skipIf(SKIP)("Integration — configured TeamSpeak server", () => {
   it("connects with optional handshake auth configuration", () => {
     if (USES_CONNECT_AUTH) {
       console.log(
