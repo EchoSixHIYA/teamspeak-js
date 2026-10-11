@@ -20,30 +20,19 @@ export function parseCommand(s: string): Command | null {
   const parts = s.split(" ");
   if (parts.length === 0) return null;
 
-  // TeamSpeak leaves the command name off response rows. A clientlist reply is
-  // "clid=6 cid=2 ..." and a rejection is "-1 id=2 ...", so the first token is
-  // a name only when it is neither a key=value pair nor a leading-'-' flag.
-  // Deciding that here keeps every consumer from having to re-inspect `name`
-  // for an '=' it was never told about.
+  // A command name is a run of alphanumerics followed by a space — the rule
+  // tsproto-packets uses (CommandParser::new). Anything else means the line is
+  // not a command at all: response rows carry no name ("clid=6 cid=2 ..."),
+  // and negative feedback is "-1 id=2 ...", naming the *rejected* command id
+  // rather than a command of its own. Returning those as a nameless row keeps
+  // the data intact instead of folding the first field into a name, which is
+  // how a clientlist row used to arrive as name="clid=6" and lose its clid.
   const first = parts[0] ?? "";
   if (first === "") return null;
 
   const params: Record<string, string> = {};
-  let name = "";
-  let start = 0;
-
-  if (first.startsWith("-")) {
-    // Negative feedback: "-<cmdId> <error>". The id is the command being
-    // rejected, so the rest of the line carries the error, not this one.
-    params["flag"] = first.slice(1);
-    start = 1;
-  } else if (first.includes("=")) {
-    // A response row — the whole line is data, so parse from the first token.
-    start = 0;
-  } else {
-    name = first;
-    start = 1;
-  }
+  const name = /^[A-Za-z0-9]+$/.test(first) ? first : "";
+  const start = name === "" ? 0 : 1;
 
   for (let i = start; i < parts.length; i++) {
     const p = parts[i];

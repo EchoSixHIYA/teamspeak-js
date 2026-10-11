@@ -482,7 +482,7 @@ export class Client {
     // No name means a response row: the server sends data without echoing the
     // command, so the row belongs to whichever command is awaiting a result.
     if (cmd.name === "") {
-      this.#cmdTrack.buffer(cmd.params);
+      if (Object.keys(cmd.params).length > 0) this.#cmdTrack.buffer(cmd.params);
       return;
     }
 

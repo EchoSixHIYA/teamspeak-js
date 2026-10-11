@@ -103,18 +103,29 @@ describe("parseCommand", () => {
     }
   });
 
-  it("treats negative feedback as an error, not as a name", () => {
+  it("treats negative feedback as data, not as a command named '-1'", () => {
+    // "-<cmdId> <error>" names the command that was rejected; the line itself
+    // is not a command.
     const cmd = parseCommand("-1 id=2 msg=bad\\scommand");
     expect(cmd?.name).toBe("");
-    expect(cmd?.params["flag"]).toBe("1");
     expect(cmd?.params["id"]).toBe("2");
     expect(cmd?.params["msg"]).toBe("bad command");
   });
 
-  it("still parses a real command whose name has no '='", () => {
+  it("still reads a real command name", () => {
     const cmd = parseCommand("clientlist -uid -away");
     expect(cmd?.name).toBe("clientlist");
     expect(cmd?.params["-uid"]).toBe("");
     expect(cmd?.params["-away"]).toBe("");
+  });
+
+  it("keeps a response that happens to carry a parameter name", () => {
+    // A row's first field must not be mistaken for a command name just because
+    // it is bare alphanumerics with no '='.
+    const cmd = parseCommand("clientlistfinished");
+    expect(cmd?.name).toBe("clientlistfinished");
+    const err = parseCommand("error id=0 msg=ok");
+    expect(err?.name).toBe("error");
+    expect(err?.params["id"]).toBe("0");
   });
 });
