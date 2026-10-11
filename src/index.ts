@@ -15,6 +15,7 @@ export type {
   PokeEvent,
   VoiceData,
   RawNotification,
+  ServerInfo,
   FileUploadInfo,
   FileDownloadInfo,
   FileTransferStatusInfo,

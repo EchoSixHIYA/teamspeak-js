@@ -35,6 +35,13 @@ export function handleHandshakeExpand2(client: Client, params: Record<string, st
 export function handleInitServer(client: Client, params: Record<string, string>): void {
   const idStr = params["aclid"] ?? params["clid"] ?? "";
   const clid = idStr ? parseInt(idStr, 10) : 0;
+  const rawIconId = params["virtualserver_icon_id"]?.trim() ?? "";
+  const parsedIconId = /^-?\d{1,12}$/.test(rawIconId) ? Number(rawIconId) : 0;
+
+  client._setServerInfo({
+    name: (params["virtualserver_name"] ?? "").trim().slice(0, 256),
+    iconId: Number.isSafeInteger(parsedIconId) && parsedIconId !== 0 ? parsedIconId : null,
+  });
 
   if (clid > 0) {
     client.clid = clid;

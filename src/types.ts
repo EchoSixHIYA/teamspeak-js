@@ -110,6 +110,12 @@ export interface RawNotification {
   params: Record<string, string>;
 }
 
+/** Public virtual-server properties sent in the connection `initserver` command. */
+export interface ServerInfo {
+  name: string;
+  iconId: number | null;
+}
+
 // ---- Typed event map used by Client.on() ------------------------------------
 
 export interface EventMap {

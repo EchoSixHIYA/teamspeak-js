@@ -9,6 +9,7 @@ import {
   type ClientUpdatedEvent,
   type DirectoryClientInfo,
   type DirectorySnapshot,
+  type ServerInfo,
   ClientStatus,
   consoleLogger,
 } from "./types.js";
@@ -80,6 +81,7 @@ export class Client {
   #resolver: AddrResolver;
   #clientInitOptions: ClientInitOptions;
   #status: ClientStatus = ClientStatus.Disconnected;
+  #serverInfo: ServerInfo | null = null;
   #throttle = new CommandThrottle();
   #cmdTrack = new CommandTracker();
   #ftTrack = new FileTransferTracker();
@@ -136,6 +138,11 @@ export class Client {
 
   get status(): ClientStatus {
     return this.#status;
+  }
+
+  /** Virtual-server name and icon reported by the server during `initserver`. */
+  get serverInfo(): ServerInfo | null {
+    return this.#serverInfo;
   }
 
   /** @internal */
@@ -413,6 +420,11 @@ export class Client {
     for (const h of handlers) setImmediate(() => h());
   }
 
+  /** @internal */
+  _setServerInfo(info: ServerInfo): void {
+    this.#serverInfo = info;
+  }
+
   // ---- Private -------------------------------------------------------------
 
   #resetForConnect(): void {
@@ -431,6 +443,7 @@ export class Client {
     this.#directorySnapshotVersion++;
     this.#directorySnapshotScheduled = false;
     this.clid = 0;
+    this.#serverInfo = null;
     this.#finalCmdHandler = this.#buildCmdHandler();
   }
 

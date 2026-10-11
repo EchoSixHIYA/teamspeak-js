@@ -92,6 +92,7 @@ process.on("SIGINT", async () => {
 | `connect()`                                   | Initiate connection to the server   |
 | `waitConnected(signal?)`                      | Block until the handshake completes |
 | `disconnect()`                                | Gracefully disconnect               |
+| `client.serverInfo`                           | Read the virtual server name and icon ID |
 
 ### Events
 
