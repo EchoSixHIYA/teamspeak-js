@@ -43,6 +43,19 @@ ruled out:
 | `clientgetnamefromuid`  | no rows        | rows        |
 | `clientgetnamefromdbid` | no rows        | rows        |
 | `logview`               | no rows        | —           |
+| `ftinitupload`          | no rows        | `ftkey=…`   |
+| `ftinitdownload`        | no rows        | `ftkey=…`   |
+
+The file transfer negotiation is the consequential one: the same
+`ftinitupload` that returns `ftkey=…` over ServerQuery returns `ok` with no
+rows over the voice protocol, so a client on the voice protocol cannot obtain
+the transfer key through it. Listing and deleting files still work — those are
+`ftgetfilelist`, `ftdeletefile` and friends, which are not in this table — but
+the upload and download handshake is not available.
+
+Note the contrast with `ftgetfilelist`, which _errors_ when there is nothing to
+list (`id=1281 database empty result set`) rather than answering empty. An
+error is a usable answer; an empty success is not.
 
 Ruled out as causes:
 

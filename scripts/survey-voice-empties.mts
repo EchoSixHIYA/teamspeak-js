@@ -35,6 +35,11 @@ const COMMANDS = [
   "logview",
   "banlist",
   "channelpermlist cid=1",
+  // File transfer negotiation: ftinitupload takes proto and all the rest, and
+  // the docs for it are the clearest case of a data-returning command.
+  "ftinitupload cid=1 name=/survey.txt cpw= size=4 clientftfid=0 overwrite=1 resume=0 proto=0",
+  "ftgetfilelist cid=1 cpw= path=/",
+  "ftgetfileinfo cid=1 cpw= name=/survey.txt",
 ];
 
 /** Commands known to work, so a run that reports everything empty is obvious. */

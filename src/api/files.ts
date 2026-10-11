@@ -198,9 +198,17 @@ export async function listActiveTransfers(client: Client): Promise<ActiveTransfe
  * Negotiate an upload.
  *
  * Returns the transfer key and port the caller then dials over TCP; the data
- * itself does not go through this client. `seekPosition` is deliberately absent
- * — see `uploadFileData` in transfer.ts, which always starts at 0 and so does
- * not need the server's resume support.
+ * itself does not go through this client.
+ *
+ * **Unusable over the voice protocol.** `ftinitupload` answers `ok` with no
+ * rows, so there is no key to dial — verified with Server Admin on the same
+ * identity, and the same command returns `ftkey=…` over ServerQuery. This is
+ * the empty-response behaviour documented in
+ * docs/voice-protocol-empty-responses.md, not a permission problem.
+ *
+ * The function exists because the command does, and returns what the server
+ * sends. It will produce `fileTransferKey: ""`, which is the honest result
+ * rather than a throw the caller cannot act on.
  */
 export async function initFileUpload(
   client: Client,
@@ -223,6 +231,9 @@ export async function initFileUpload(
       ["size", size],
       ["overwrite", options.overwrite ?? true],
       ["resume", false],
+      // proto is required: omitting it fails the whole call with 1539
+      // (parameter not found) rather than defaulting.
+      ["proto", 0],
       ["clientftfid", options.clientFileTransferID ?? 0],
       ["cpw", options.password],
     ],
@@ -237,7 +248,12 @@ export async function initFileUpload(
   };
 }
 
-/** Negotiate a download, returning the key and port to dial over TCP. */
+/**
+ * Negotiate a download, returning the key and port to dial over TCP.
+ *
+ * **Unusable over the voice protocol**, for the same reason as
+ * {@link initFileUpload}: `ftinitdownload` answers `ok` with no rows.
+ */
 export async function initFileDownload(
   client: Client,
   cid: ChannelID,
@@ -257,6 +273,7 @@ export async function initFileDownload(
       ["cid", cid],
       ["name", asPath(path)],
       ["seekpos", options.seekPosition ?? 0n],
+      ["proto", 0],
       ["clientftfid", options.clientFileTransferID ?? 0],
       ["cpw", options.password],
     ],

@@ -103,6 +103,9 @@ export interface EventMap {
 /** Creates a UDP socket of the given address family. */
 export type SocketFactory = (family: 4 | 6) => import("node:dgram").Socket;
 
+/** Creates the TCP socket a file transfer runs over, unconnected. */
+export type FileTransferSocketFactory = (host: string, port: number) => import("node:net").Socket;
+
 // ---- Client status ----------------------------------------------------------
 
 export const enum ClientStatus {
@@ -173,6 +176,14 @@ export interface ClientOptions {
    * seam into the transport: without it the SDK always creates its own.
    */
   socketFactory?: SocketFactory;
+  /**
+   * Creates the TCP socket a file transfer runs over.
+   *
+   * Separate from `socketFactory` because file transfer dials its own
+   * connection to a different port, on demand. Set both to route everything
+   * through a proxy.
+   */
+  fileTransferSocketFactory?: FileTransferSocketFactory;
   resolver?: AddrResolver;
   commandMiddleware?: CommandMiddleware[];
   eventMiddleware?: EventMiddleware[];

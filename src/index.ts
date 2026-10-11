@@ -76,6 +76,7 @@ export { dialFileTransfer, uploadFileData, downloadFileData } from "./transfer.j
 // Server capabilities
 export { parseServerCapabilities, unknownServerCapabilities } from "./capabilities.js";
 export type { ServerCapabilities, ServerFamily } from "./capabilities.js";
+export type { SocketFactory, FileTransferSocketFactory } from "./types.js";
 
 // Crypto (re-exported for identity management)
 export {
