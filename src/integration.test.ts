@@ -14,6 +14,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { generateIdentity } from "./crypto/identity.js";
 import { Client, ClientStatus } from "./client.js";
 import { listChannels, listClients, getClientInfo } from "./api.js";
+import { getChannelInfo } from "./api/channels.js";
 import type { ClientInfo } from "./types.js";
 
 const ADDR = process.env["TEAMSPEAK_ADDR"];
@@ -264,6 +265,22 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
 
     expect(self).toBeDefined();
     expect(currentChannel?.name).toBe(DEFAULT_CHANNEL);
+  }, 15_000);
+
+  it("getChannelInfo returns the channel that was asked for", async () => {
+    // channelinfo answers with pid and the settings but no cid — the channel is
+    // whatever was asked for. Reading cid from the row gave 0, so a caller
+    // could not tell one channel's info from another's.
+    const channels = await listChannels(sharedClient);
+    const first = channels[0]!;
+    const info = await getChannelInfo(sharedClient, first.id);
+
+    console.log(`channelinfo: id=${info.id} name="${info.name}" parent=${info.parentID}`);
+    expect(info.id).toBe(first.id);
+    expect(info.name).toBe(first.name);
+    // channellist reports cpid and channelinfo reports pid; both must land in
+    // parentID or one of the two paths silently reads 0.
+    expect(info.parentID).toBe(first.parentID);
   }, 15_000);
 
   it("listChannels — exposes channel_order", async () => {

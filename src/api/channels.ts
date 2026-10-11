@@ -110,10 +110,16 @@ export async function listChannels(client: Client): Promise<Channel[]> {
   return (await query(client, "channellist")).map(parseChannel);
 }
 
-/** One channel's full settings. */
+/**
+ * One channel's full settings.
+ *
+ * `channelinfo` answers with `pid` and the settings but no `cid` — the channel
+ * is whatever was asked for — so the id is taken from the argument rather than
+ * read from the row, where it would come back 0.
+ */
 export async function getChannelInfo(client: Client, cid: ChannelID): Promise<Channel> {
   const rows = await query(client, "channelinfo", [["cid", cid]]);
-  return parseChannel(rows[0] ?? {});
+  return { ...parseChannel(rows[0] ?? {}), id: cid };
 }
 
 /** The channel's description, which `listChannels` omits for bandwidth. */
