@@ -98,6 +98,11 @@ export interface EventMap {
   kicked: string;
 }
 
+// ---- Transport seam ---------------------------------------------------------
+
+/** Creates a UDP socket of the given address family. */
+export type SocketFactory = (family: 4 | 6) => import("node:dgram").Socket;
+
 // ---- Client status ----------------------------------------------------------
 
 export const enum ClientStatus {
@@ -159,6 +164,15 @@ export interface AddrResolver {
 
 export interface ClientOptions {
   logger?: Logger;
+  /**
+   * Creates the UDP socket the client talks through, given the address family
+   * the server's address resolved to.
+   *
+   * Supplying one lets an application route traffic through a proxy or tunnel,
+   * or drive the client from something other than a real socket. It is the only
+   * seam into the transport: without it the SDK always creates its own.
+   */
+  socketFactory?: SocketFactory;
   resolver?: AddrResolver;
   commandMiddleware?: CommandMiddleware[];
   eventMiddleware?: EventMiddleware[];

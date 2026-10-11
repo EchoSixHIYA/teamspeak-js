@@ -140,10 +140,7 @@ export function uidAlgorithmForVersion(version: string): UidAlgorithm {
   return Number.isNaN(major) || major < 6 ? "sha1" : "sha256";
 }
 
-export function getUidFromPublicKey(
-  publicKey: string,
-  algorithm: UidAlgorithm = "sha1",
-): string {
+export function getUidFromPublicKey(publicKey: string, algorithm: UidAlgorithm = "sha1"): string {
   const sum = createHash(algorithm).update(publicKey).digest();
   return Buffer.from(sum).toString("base64");
 }

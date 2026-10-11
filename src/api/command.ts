@@ -94,8 +94,7 @@ async function query(
 }
 
 /** Read a base64/escaped string field, tolerating absence. */
-const str = (row: Record<string, string>, key: string): string =>
-  unescape(row[key] ?? "");
+const str = (row: Record<string, string>, key: string): string => unescape(row[key] ?? "");
 
 /** Read a bigint field, tolerating absence. */
 const big = (row: Record<string, string>, key: string): bigint => {

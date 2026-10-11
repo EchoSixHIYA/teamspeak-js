@@ -40,10 +40,16 @@ export interface ChannelCreateOptions {
 }
 
 /** Create a channel and return the id the server assigned. */
-export async function createChannel(client: Client, options: ChannelCreateOptions): Promise<ChannelID> {
-  const rows = await query(client, "channelcreate", Object.entries(options) as Array<[string, ParamValue]>, [
-    "channel_password",
-  ]);
+export async function createChannel(
+  client: Client,
+  options: ChannelCreateOptions,
+): Promise<ChannelID> {
+  const rows = await query(
+    client,
+    "channelcreate",
+    Object.entries(options) as Array<[string, ParamValue]>,
+    ["channel_password"],
+  );
   return asChannelID(big(rows[0] ?? {}, "cid"));
 }
 
@@ -78,10 +84,12 @@ export async function editChannel(
   cid: ChannelID,
   options: Omit<ChannelEditOptions, "cid">,
 ): Promise<void> {
-  await exec(client, "channeledit", [
-    ["cid", cid],
-    ...(Object.entries(options) as Array<[string, ParamValue]>),
-  ], ["channel_password"]);
+  await exec(
+    client,
+    "channeledit",
+    [["cid", cid], ...(Object.entries(options) as Array<[string, ParamValue]>)],
+    ["channel_password"],
+  );
 }
 
 /**
@@ -115,7 +123,10 @@ export async function getChannelDescription(client: Client, cid: ChannelID): Pro
 }
 
 /** Channels whose name contains `pattern`. */
-export async function findChannels(client: Client, pattern: string): Promise<Array<{ id: ChannelID; name: string }>> {
+export async function findChannels(
+  client: Client,
+  pattern: string,
+): Promise<Array<{ id: ChannelID; name: string }>> {
   const rows = await query(client, "channelfind", [["pattern", pattern]]);
   return rows.map((row) => ({ id: asChannelID(big(row, "cid")), name: str(row, "channel_name") }));
 }
@@ -202,7 +213,10 @@ const parsePermission = (row: Record<string, string>): PermissionEntry => ({
 });
 
 /** Permissions set directly on a channel. */
-export async function listChannelPermissions(client: Client, cid: ChannelID): Promise<PermissionEntry[]> {
+export async function listChannelPermissions(
+  client: Client,
+  cid: ChannelID,
+): Promise<PermissionEntry[]> {
   return (await query(client, "channelpermlist", [["cid", cid]])).map(parsePermission);
 }
 

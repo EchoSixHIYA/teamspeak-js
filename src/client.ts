@@ -33,6 +33,7 @@ import { splitCommandRows, isAutoNicknameMatch } from "./helpers.js";
 import type { FileUploadInfo, FileDownloadInfo } from "./types.js";
 import { CommandTimeoutError, FileTransferTimeoutError, FileTransferError } from "./errors.js";
 import type { Readable, Writable } from "node:stream";
+import type { SocketFactory } from "./types.js";
 
 export { ClientStatus };
 
@@ -76,6 +77,7 @@ export class Client {
   #addr: string;
   #resolver: AddrResolver;
   #clientInitOptions: ClientInitOptions;
+  #socketFactory: SocketFactory | undefined;
   #status: ClientStatus = ClientStatus.Disconnected;
   #throttle = new CommandThrottle();
   #cmdTrack = new CommandTracker();
@@ -108,9 +110,10 @@ export class Client {
     this.logger = options.logger ?? consoleLogger;
     this.#resolver = options.resolver ?? new Resolver(this.logger);
     this.#clientInitOptions = normalizeClientInitOptions(options);
+    this.#socketFactory = options.socketFactory;
 
     this.crypt = new Crypt(identity);
-    this.handler = new PacketHandler(this.crypt, this.logger);
+    this.handler = new PacketHandler(this.crypt, this.logger, this.#socketFactory);
     this.handler.onPacket = (p) => this.#handlePacket(p);
     this.handler.onClosed = (err) => this.#handleConnectionClosed(err);
 
@@ -419,7 +422,7 @@ export class Client {
     this.#connectionError = null;
     this.handler.close();
     this.crypt = new Crypt(this.#identity);
-    this.handler = new PacketHandler(this.crypt, this.logger);
+    this.handler = new PacketHandler(this.crypt, this.logger, this.#socketFactory);
     this.handler.onPacket = (p) => this.#handlePacket(p);
     this.handler.onClosed = (err) => this.#handleConnectionClosed(err);
     this.#cmdTrack.reset();

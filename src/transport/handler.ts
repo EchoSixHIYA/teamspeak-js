@@ -1,5 +1,5 @@
 import { createSocket, type Socket as UdpSocket } from "node:dgram";
-import { isIP } from "node:net";
+import { lookup } from "node:dns/promises";
 import { splitHostPort } from "../address.js";
 import type { Crypt } from "../crypto/crypt.js";
 import type { Logger } from "../types.js";
@@ -37,12 +37,22 @@ interface ResendPacket {
   nextInterval: number;
 }
 
+/**
+ * Creates the UDP socket the client talks through.
+ *
+ * Receives the resolved address family (4 or 6) and returns a socket of that
+ * family. Supplying one lets an application route through a proxy or tunnel,
+ * or drive the client from something other than a real socket.
+ */
+export type SocketFactory = (family: 4 | 6) => UdpSocket;
+
 export class PacketHandler {
   onPacket: ((p: Packet) => void) | null = null;
   onClosed: ((err: Error | null) => void) | null = null;
 
   readonly #crypt: Crypt;
   readonly #logger: Logger;
+  readonly #socketFactory: SocketFactory | undefined;
 
   #conn: UdpSocket | null = null;
   #clientID = 0;
@@ -64,26 +74,42 @@ export class PacketHandler {
   #ackManager = new Map<number, ResendPacket>();
   #initPacketCheck: ResendPacket | null = null;
 
-  constructor(crypt: Crypt, logger: Logger = noopLogger) {
+  constructor(crypt: Crypt, logger: Logger = noopLogger, socketFactory?: SocketFactory) {
     this.#crypt = crypt;
     this.#logger = logger;
+    this.#socketFactory = socketFactory;
   }
 
   setClientID(id: number): void {
     this.#clientID = id;
   }
 
-  connect(addr: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const { host, port } = splitHostPort(addr);
+  async connect(addr: string): Promise<void> {
+    const { host, port } = splitHostPort(addr);
+    const portNumber = parseInt(port, 10);
 
-      const socket = createSocket(isIP(host) === 6 ? "udp6" : "udp4");
+    // Resolve before choosing a socket family. `isIP()` only recognises literal
+    // addresses and returns 0 for every hostname, so picking the family from it
+    // sent every hostname to a udp4 socket — and a udp4 socket handed a name
+    // that resolves to IPv6 drops the datagrams with no error at all. On a
+    // stock macOS/Linux box `localhost` resolves to ::1 first, so that path
+    // silently never connected. Let DNS decide, then match the family.
+    const { address, family } = await lookup(host);
+
+    const family6 = family === 6;
+    const socket = this.#socketFactory
+      ? this.#socketFactory(family6 ? 6 : 4)
+      : createSocket(family6 ? "udp6" : "udp4");
+
+    await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => {
         socket.close();
         reject(error);
       };
       socket.once("error", onError);
-      socket.connect(parseInt(port, 10), host, () => {
+      // Connect to the resolved address, not the original host, so the socket
+      // cannot end up talking to a different family than it was created for.
+      socket.connect(portNumber, address, () => {
         socket.off("error", onError);
         this.start(socket);
         resolve();
