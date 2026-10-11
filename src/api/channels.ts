@@ -8,12 +8,12 @@
  * one more thing to translate.
  */
 
-import { exec, query, parseChannel, big, str, num } from "./command.js";
+import { exec, query, parseChannel, parsePermission, big, str } from "./command.js";
 import type { ParamValue } from "./command.js";
 import type { Client } from "../client.js";
 import type { ChannelID, ClientDBID, PermissionID } from "../command/ids.js";
 import { asChannelID } from "../command/ids.js";
-import type { Channel } from "./command.js";
+import type { Channel, PermissionEntry } from "./command.js";
 
 export interface ChannelCreateOptions {
   channel_name: string;
@@ -193,24 +193,6 @@ export async function deleteChannelPermission(
     ["permsid", options.permsid],
   ]);
 }
-
-/** One entry of a channel's or client's permission list. */
-export interface PermissionEntry {
-  /** Absent when the server answered by name instead of id. */
-  permid: PermissionID | undefined;
-  permsid: string;
-  value: number;
-  negated: boolean;
-  skip: boolean;
-}
-
-const parsePermission = (row: Record<string, string>): PermissionEntry => ({
-  permid: row["permid"] === undefined ? undefined : (big(row, "permid") as PermissionID),
-  permsid: str(row, "permsid"),
-  value: num(row, "permvalue"),
-  negated: num(row, "permnegated") !== 0,
-  skip: num(row, "permskip") !== 0,
-});
 
 /** Permissions set directly on a channel. */
 export async function listChannelPermissions(

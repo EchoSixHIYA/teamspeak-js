@@ -17,7 +17,7 @@ import { buildCommandOrdered, unescape } from "../command/command.js";
 import { prepareClientPassword } from "../handshake.js";
 import type { Client } from "../client.js";
 import { asChannelID } from "../command/ids.js";
-import type { ChannelID, IconID } from "../command/ids.js";
+import type { ChannelID, IconID, PermissionID } from "../command/ids.js";
 
 const DEFAULT_TIMEOUT = 10_000;
 
@@ -168,3 +168,29 @@ function parseChannel(row: Record<string, string>): Channel {
 }
 
 export { parseChannel };
+
+/** One entry of a permission list. */
+export interface PermissionEntry {
+  /** Absent when the server answered by name instead of id. */
+  permid: PermissionID | undefined;
+  permsid: string;
+  value: number;
+  negated: boolean;
+  skip: boolean;
+}
+
+/**
+ * Parse one permission row.
+ *
+ * A permission is addressable by id or by name, and the server answers in
+ * whichever form the request used, so exactly one of the two is populated.
+ */
+export function parsePermission(row: Record<string, string>): PermissionEntry {
+  return {
+    permid: row["permid"] === undefined ? undefined : (big(row, "permid") as PermissionID),
+    permsid: str(row, "permsid"),
+    value: num(row, "permvalue"),
+    negated: bool(row, "permnegated"),
+    skip: bool(row, "permskip"),
+  };
+}
