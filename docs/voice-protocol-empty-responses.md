@@ -31,18 +31,18 @@ error id=0 msg=ok
 Verified with the bot holding **Server Admin** (`sgid=6`), so permissions are
 ruled out:
 
-| Command | Voice protocol | ServerQuery |
-|---|---|---|
-| `servergrouplist` | no rows | rows |
-| `channelgrouplist` | no rows | rows |
-| `permissionlist` | no rows | rows |
-| `servergrouppermlist` | no rows | rows |
-| `clientgetuidfromclid` | no rows | rows |
-| `clientgetids` | no rows | rows |
-| `clientgetdbidfromuid` | no rows | rows |
-| `clientgetnamefromuid` | no rows | rows |
-| `clientgetnamefromdbid` | no rows | rows |
-| `logview` | no rows | — |
+| Command                 | Voice protocol | ServerQuery |
+| ----------------------- | -------------- | ----------- |
+| `servergrouplist`       | no rows        | rows        |
+| `channelgrouplist`      | no rows        | rows        |
+| `permissionlist`        | no rows        | rows        |
+| `servergrouppermlist`   | no rows        | rows        |
+| `clientgetuidfromclid`  | no rows        | rows        |
+| `clientgetids`          | no rows        | rows        |
+| `clientgetdbidfromuid`  | no rows        | rows        |
+| `clientgetnamefromuid`  | no rows        | rows        |
+| `clientgetnamefromdbid` | no rows        | rows        |
+| `logview`               | no rows        | —           |
 
 Ruled out as causes:
 

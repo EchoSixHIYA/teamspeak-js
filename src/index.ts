@@ -50,6 +50,37 @@ export {
   fileTransferDeleteFile,
 } from "./api.js";
 
+// Typed command layer, one module per area of the protocol.
+export * from "./api/channels.js";
+export * from "./api/clients.js";
+export * from "./api/server.js";
+export * from "./api/groups.js";
+export * from "./api/moderation.js";
+export * from "./api/files.js";
+export type { PermissionEntry } from "./api/command.js";
+
+// Branded ids: a ChannelID cannot be passed where a ClientID is meant.
+export {
+  asChannelID,
+  asChannelGroupID,
+  asClientDBID,
+  asClientID,
+  asIconID,
+  asPermissionID,
+  asServerGroupID,
+  asUID,
+} from "./command/ids.js";
+export type {
+  ChannelGroupID,
+  ChannelID,
+  ClientDBID,
+  ClientID,
+  IconID,
+  PermissionID,
+  ServerGroupID,
+  UID,
+} from "./command/ids.js";
+
 // File transfer utilities
 export { dialFileTransfer, uploadFileData, downloadFileData } from "./transfer.js";
 
