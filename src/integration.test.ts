@@ -11,15 +11,10 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { createSocket } from "node:dgram";
 import { generateIdentity } from "./crypto/identity.js";
 import { Client, ClientStatus } from "./client.js";
-import {
-  listChannels,
-  getChannelInfo,
-  createChannel,
-  editChannel,
-  deleteChannel,
-} from "./api/channels.js";
+import { listChannels, getChannelInfo } from "./api/channels.js";
 import { listClients, getClientInfo, moveClient } from "./api/clients.js";
 import { sendTextMessage, TextMessageTarget } from "./api/moderation.js";
 import { asChannelID, asClientID } from "./command/ids.js";
@@ -394,6 +389,73 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
       PASSWORD_CHANNEL_PASSWORD,
     );
   }, 20_000);
+
+  it("reconnects after a dropped connection", async () => {
+    // The socket is dropped underneath the client, which is what a network
+    // failure looks like. A bot that cannot recover is not usable unattended.
+    //
+    // Recovery is not immediate: the server still holds the old session and
+    // refuses a reconnect from the same identity with 521 "too many clones
+    // already connected" until it reaps the zombie, so the loop has to keep
+    // trying rather than give up on the first refusal.
+    let socket: import("node:dgram").Socket | undefined;
+    const recovering = new Client(generateIdentity(8), ADDR!, "ts-js-reconnect", {
+      defaultChannel: DEFAULT_CHANNEL,
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      reconnect: { enabled: true, backoff: { initialDelayMs: 500, maxDelayMs: 4_000 } },
+      socketFactory: (family) => {
+        socket = createSocket(family === 6 ? "udp6" : "udp4");
+        return socket;
+      },
+    });
+
+    await recovering.connect();
+    await recovering.waitConnected(AbortSignal.timeout(30_000));
+    const firstID = recovering.clientID();
+    expect(firstID).toBeGreaterThan(0);
+
+    socket!.close();
+
+    const recovered = await new Promise<boolean>((resolve) => {
+      const poll = setInterval(() => {
+        if (recovering.status === ClientStatus.Connected && recovering.clientID() !== firstID) {
+          clearInterval(poll);
+          resolve(true);
+        }
+      }, 250);
+      setTimeout(() => {
+        clearInterval(poll);
+        resolve(false);
+      }, 60_000);
+    });
+
+    console.log(`reconnect: ${firstID} -> ${recovering.clientID()}`);
+    expect(recovered).toBe(true);
+
+    // A reconnect is a fresh session, so it must be usable, not merely
+    // connected.
+    const channels = await listChannels(recovering);
+    expect(channels.length).toBeGreaterThan(0);
+
+    await recovering.disconnect();
+  }, 110_000);
+
+  it("does not reconnect after an explicit disconnect", async () => {
+    // A deliberate disconnect means the caller is done. Retrying would keep a
+    // process alive that asked to stop.
+    const client = new Client(generateIdentity(8), ADDR!, "ts-js-noreconnect", {
+      defaultChannel: DEFAULT_CHANNEL,
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      reconnect: { enabled: true, backoff: { initialDelayMs: 200 } },
+    });
+
+    await client.connect();
+    await client.waitConnected(AbortSignal.timeout(30_000));
+    await client.disconnect();
+
+    await new Promise((r) => setTimeout(r, 2_500));
+    expect(client.status).toBe(ClientStatus.Disconnected);
+  }, 45_000);
 
   it("sendWhisper — delivers a VoiceWhisper frame to the target", async () => {
     // Reuses the observer from the batch test to stay within the antiflood

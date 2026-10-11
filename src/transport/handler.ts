@@ -243,7 +243,20 @@ export class PacketHandler {
     this.#closed = true;
     this.#stopPing?.();
     this.#stopResend?.();
-    this.#conn?.close();
+
+    // The socket may already be closed — this runs from its own "close" event
+    // when a connection drops — and dgram throws ERR_SOCKET_DGRAM_NOT_RUNNING
+    // on a second close. Letting that escape would surface as an uncaught
+    // exception inside an event callback, taking the process with it instead of
+    // reporting a dropped connection.
+    const conn = this.#conn;
+    this.#conn = null;
+    if (conn === null) return;
+    try {
+      conn.close();
+    } catch (error: unknown) {
+      this.#logger.debug("socket already closed", { error: String(error) });
+    }
   }
 
   // ---- Private ---------------------------------------------------------------

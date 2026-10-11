@@ -29,12 +29,18 @@ import { handleHandshakeInitIV, handleHandshakeExpand2, handleInitServer } from 
 import { handleNotification } from "./notifications.js";
 import { parseCommand } from "./command/parser.js";
 import { CommandThrottle } from "./throttle.js";
-import { splitCommandRows, isAutoNicknameMatch } from "./helpers.js";
+import { splitCommandRows, isAutoNicknameMatch, sleep } from "./helpers.js";
 import type { FileUploadInfo, FileDownloadInfo } from "./types.js";
 import { CommandTimeoutError, FileTransferTimeoutError, FileTransferError } from "./errors.js";
 import type { Readable, Writable } from "node:stream";
-import type { SocketFactory } from "./types.js";
+import type { SocketFactory, FileTransferSocketFactory } from "./types.js";
 import { unknownServerCapabilities, type ServerCapabilities } from "./capabilities.js";
+import {
+  backoffDelay,
+  isPermanentFailure,
+  resolveBackoffPolicy,
+  type ReconnectOptions,
+} from "./reconnect.js";
 
 export { ClientStatus };
 
@@ -81,6 +87,15 @@ export class Client {
   #resolver: AddrResolver;
   #clientInitOptions: ClientInitOptions;
   #socketFactory: SocketFactory | undefined;
+  #fileTransferSocketFactory: FileTransferSocketFactory | undefined;
+  #reconnectOptions: ReconnectOptions;
+  /**
+   * Set while a reconnect attempt is in flight, so overlapping failures do not
+   * start competing loops.
+   */
+  #reconnecting = false;
+  /** Set by an explicit disconnect(), which must never be undone by a retry. */
+  #stopped = false;
   #status: ClientStatus = ClientStatus.Disconnected;
   #throttle = new CommandThrottle();
   #cmdTrack = new CommandTracker();
@@ -114,6 +129,8 @@ export class Client {
     this.#resolver = options.resolver ?? new Resolver(this.logger);
     this.#clientInitOptions = normalizeClientInitOptions(options);
     this.#socketFactory = options.socketFactory;
+    this.#fileTransferSocketFactory = options.fileTransferSocketFactory;
+    this.#reconnectOptions = options.reconnect ?? {};
 
     this.crypt = new Crypt(identity);
     this.handler = new PacketHandler(this.crypt, this.logger, this.#socketFactory);
@@ -147,6 +164,8 @@ export class Client {
   // ---- Connection -----------------------------------------------------------
 
   async connect(): Promise<void> {
+    this.#stopped = false;
+
     if (this.#status !== ClientStatus.Disconnected) {
       throw new AlreadyConnectedError();
     }
@@ -160,6 +179,10 @@ export class Client {
   }
 
   async disconnect(): Promise<void> {
+    // Recorded before anything else: a dropped socket during the shutdown
+    // command below must not be mistaken for an outage worth retrying.
+    this.#stopped = true;
+
     if (this.#status === ClientStatus.Disconnected) return;
 
     const wasConnected = this.#status === ClientStatus.Connected;
@@ -404,11 +427,11 @@ export class Client {
   }
 
   uploadFileData(host: string, info: FileUploadInfo, data: Readable): Promise<void> {
-    return uploadFileData(host, info, data);
+    return uploadFileData(host, info, data, this.#fileTransferSocketFactory);
   }
 
   downloadFileData(host: string, info: FileDownloadInfo, dest: Writable): Promise<void> {
-    return downloadFileData(host, info, dest);
+    return downloadFileData(host, info, dest, this.#fileTransferSocketFactory);
   }
 
   // ---- Internal (package-visible) ------------------------------------------
@@ -687,6 +710,67 @@ export class Client {
     this.#status = ClientStatus.Disconnected;
     const handlers = this.#disconnectedHandlers.slice();
     for (const h of handlers) setImmediate(() => h(err ?? undefined));
+
+    // Announced first, then retried: a caller watching `disconnected` should
+    // hear about the drop even when a reconnect is already on its way, because
+    // a silent recovery hides an outage.
+    void this.#scheduleReconnect(err ?? undefined);
+  }
+
+  /**
+   * Retry a dropped connection according to the reconnect policy.
+   *
+   * Never runs after an explicit disconnect, and never more than one at a time:
+   * two failures in quick succession would otherwise start competing loops, and
+   * a loop shorter than the server's antiflood window bans the IP rather than
+   * reconnecting it.
+   */
+  async #scheduleReconnect(err: Error | undefined): Promise<void> {
+    const options = this.#reconnectOptions;
+    if (!options.enabled || this.#stopped || this.#reconnecting) return;
+
+    const policy = resolveBackoffPolicy(options);
+    const shouldRetry =
+      options.shouldRetry ?? ((error: Error | undefined) => !isPermanentFailure(error));
+
+    this.#reconnecting = true;
+
+    try {
+      for (let attempt = 1; policy.maxAttempts === 0 || attempt <= policy.maxAttempts; attempt++) {
+        if (this.#stopped) return;
+        if (!shouldRetry(err, attempt)) {
+          this.logger.info("not retrying", { attempt, reason: err?.message });
+          return;
+        }
+
+        const delay = backoffDelay(policy, attempt);
+        this.logger.info("reconnecting", { attempt, delayMs: delay });
+        await sleep(delay, () => this.#stopped);
+        if (this.#stopped) return;
+
+        try {
+          await this.connect();
+          await this.waitConnected();
+          this.logger.info("reconnected", { attempt });
+          return;
+        } catch (retryErr) {
+          err = retryErr instanceof Error ? retryErr : new Error(String(retryErr));
+          // A refusal on the retry is as permanent as one on the first attempt.
+          if (isPermanentFailure(err) && options.shouldRetry === undefined) {
+            this.logger.info("reconnect refused", {
+              attempt,
+              reason: err.message,
+              name: err.name,
+              id: (err as { id?: string }).id,
+            });
+            return;
+          }
+        }
+      }
+      this.logger.warn("reconnect attempts exhausted", { attempts: policy.maxAttempts });
+    } finally {
+      this.#reconnecting = false;
+    }
   }
 
   /**

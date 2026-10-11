@@ -1,3 +1,5 @@
+import type { ReconnectOptions } from "./reconnect.js";
+
 // ---- Branded primitive types ------------------------------------------------
 
 /** A TS3-escaped string. Obtained only via escape(). */
@@ -176,6 +178,13 @@ export interface ClientOptions {
    * seam into the transport: without it the SDK always creates its own.
    */
   socketFactory?: SocketFactory;
+  /**
+   * Reconnect after a dropped connection.
+   *
+   * Off by default: a silent reconnect makes an outage look like an ordinary
+   * session. An explicit `disconnect()` never reconnects regardless.
+   */
+  reconnect?: ReconnectOptions;
   /**
    * Creates the TCP socket a file transfer runs over.
    *

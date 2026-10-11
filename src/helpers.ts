@@ -78,3 +78,27 @@ function fieldName(token: string): string {
   const equalIndex = token.indexOf("=");
   return equalIndex > 0 ? token.slice(0, equalIndex) : token;
 }
+
+/**
+ * Sleep, or wake early once `cancelled` reports true.
+ *
+ * Polling rather than an abort signal, because the caller that cancels is a
+ * flag on the client rather than a signal it hands around.
+ */
+export function sleep(ms: number, cancelled?: () => boolean): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = setInterval(
+      () => {
+        if (cancelled?.() || Date.now() - started >= ms) {
+          clearInterval(tick);
+          resolve();
+        }
+      },
+      Math.min(50, ms),
+    );
+    tick.unref?.();
+  });
+}

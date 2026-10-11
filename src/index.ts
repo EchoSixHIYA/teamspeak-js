@@ -78,6 +78,10 @@ export { parseServerCapabilities, unknownServerCapabilities } from "./capabiliti
 export type { ServerCapabilities, ServerFamily } from "./capabilities.js";
 export type { SocketFactory, FileTransferSocketFactory } from "./types.js";
 
+// Reconnection policy
+export { backoffDelay, isPermanentFailure, defaultBackoffPolicy } from "./reconnect.js";
+export type { ReconnectOptions, BackoffPolicy } from "./reconnect.js";
+
 // Crypto (re-exported for identity management)
 export {
   Identity,
