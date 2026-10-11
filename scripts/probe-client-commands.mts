@@ -8,8 +8,8 @@
  * Run against a local server as Server Admin so permissions do not mask
  * protocol availability.
  */
-import { generateIdentity } from "./src/crypto/identity.js";
-import { Client } from "./src/client.js";
+import { generateIdentity } from "../src/crypto/identity.js";
+import { Client } from "../src/client.js";
 
 const quiet = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 const c = new Client(generateIdentity(8), process.env["ADDR"] ?? "127.0.0.1:9987", "js-cmdprobe", {

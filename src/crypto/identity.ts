@@ -123,8 +123,28 @@ export function generateIdentity(targetLevel: number): Identity {
   }
 }
 
-export function getUidFromPublicKey(publicKey: string): string {
-  const sum = createHash("sha1").update(publicKey).digest();
+/**
+ * The hash a server uses for `client_unique_identifier`, keyed by the server's
+ * major version.
+ *
+ * TeamSpeak 3 hashes the canonical public key with SHA-1 (20 bytes); TeamSpeak
+ * 6 switched to SHA-256 (32 bytes). The algorithm is not negotiable on the
+ * wire, so a client that guesses wrong computes a UID that matches nothing the
+ * server ever sends — self-identification by UID silently fails.
+ */
+export type UidAlgorithm = "sha1" | "sha256";
+
+/** Pick the UID hash from a `virtualserver_version` string, e.g. "6.0.0-beta13.1". */
+export function uidAlgorithmForVersion(version: string): UidAlgorithm {
+  const major = Number.parseInt(version, 10);
+  return Number.isNaN(major) || major < 6 ? "sha1" : "sha256";
+}
+
+export function getUidFromPublicKey(
+  publicKey: string,
+  algorithm: UidAlgorithm = "sha1",
+): string {
+  const sum = createHash(algorithm).update(publicKey).digest();
   return Buffer.from(sum).toString("base64");
 }
 

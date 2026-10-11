@@ -151,6 +151,28 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(info.channelID).toBeGreaterThan(0n);
   }, 10_000);
 
+  it("uniqueIdentifier matches what the server reports for us", async () => {
+    // TS3 hashes the public key with SHA-1 and TS6 with SHA-256. Hard-coding
+    // either one silently never matches on the other server, which is exactly
+    // how a UID-based self-identification passed on TS3 and failed on TS6.
+    const mine = sharedClient.uniqueIdentifier();
+    // The algorithm comes from the server's version, so it must be stable
+    // within one connection.
+    expect(sharedClient.uniqueIdentifier()).toBe(mine);
+
+    let clients;
+    try {
+      clients = await listClients(sharedClient);
+    } catch (err) {
+      skipOnPermError(err);
+      return;
+    }
+
+    const self = clients.find((c) => c.id === sharedClient.clientID());
+    console.log(`uid: ours=${mine} server=${self?.uid}`);
+    expect(self?.uid).toBe(mine);
+  }, 15_000);
+
   it("listClients — finds ourselves in the list", async () => {
     let clients;
     try {

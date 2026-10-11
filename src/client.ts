@@ -10,7 +10,7 @@ import {
   consoleLogger,
 } from "./types.js";
 import { AlreadyConnectedError } from "./errors.js";
-import { Identity, Crypt } from "./crypto/index.js";
+import { Identity, Crypt, getUidFromPublicKey, type UidAlgorithm } from "./crypto/index.js";
 import { Resolver } from "./discovery/resolver.js";
 import { PacketHandler } from "./transport/handler.js";
 import { PacketType } from "./transport/packet.js";
@@ -65,6 +65,12 @@ export class Client {
   /** @internal */ logger: Logger;
   /** @internal */ nickname: string;
   /** @internal */ clid = 0;
+  /**
+   * The UID hash the connected server uses, learned from `virtualserver_version`
+   * during initserver. TS3 hashes the public key with SHA-1 and TS6 with
+   * SHA-256, so anything comparing our UID to the server's needs this.
+   */
+  /** @internal */ uidAlgorithm: UidAlgorithm = "sha1";
 
   #identity: Identity;
   #addr: string;
@@ -289,6 +295,18 @@ export class Client {
 
   clientID(): number {
     return this.clid;
+  }
+
+  /**
+   * Our own `client_unique_identifier`, hashed with the algorithm the connected
+   * server uses.
+   *
+   * TS3 uses SHA-1 and TS6 SHA-256, so this reads the algorithm learned during
+   * initserver rather than assuming one. Comparing a hard-coded SHA-1 UID to a
+   * TS6 server silently never matches.
+   */
+  uniqueIdentifier(): string {
+    return getUidFromPublicKey(this.#identity.publicKeyBase64(), this.uidAlgorithm);
   }
 
   channelID(): bigint {
