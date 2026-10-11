@@ -78,4 +78,43 @@ describe("parseCommand", () => {
     const cmd = parseCommand("\x01\x02error id=0 msg=ok");
     expect(cmd?.name).toBe("error");
   });
+
+  // The server never echoes the command name on a response row, so a data line
+  // has no name at all. Getting this wrong silently dropped the row's first
+  // field — clientlist arrived as name="clid=6" and every column shifted.
+  it("treats a response row as nameless data, keeping its first field", () => {
+    const cmd = parseCommand("clid=10 cid=2 client_database_id=10 client_nickname=raw-probe1");
+    expect(cmd?.name).toBe("");
+    expect(cmd?.params["clid"]).toBe("10");
+    expect(cmd?.params["cid"]).toBe("2");
+    expect(cmd?.params["client_nickname"]).toBe("raw-probe1");
+  });
+
+  it("keeps the first field of every row in a batched response", () => {
+    const rows = [
+      ["cid=1 pid=0 channel_order=0 channel_name=Default\\sChannel", "1", "0"],
+      ["cid=2 pid=0 channel_order=1 channel_name=Alpha", "2", "1"],
+    ];
+    for (const [row, cid, order] of rows) {
+      const cmd = parseCommand(row!);
+      expect(cmd?.name).toBe("");
+      expect(cmd?.params["cid"]).toBe(cid);
+      expect(cmd?.params["channel_order"]).toBe(order);
+    }
+  });
+
+  it("treats negative feedback as an error, not as a name", () => {
+    const cmd = parseCommand("-1 id=2 msg=bad\\scommand");
+    expect(cmd?.name).toBe("");
+    expect(cmd?.params["flag"]).toBe("1");
+    expect(cmd?.params["id"]).toBe("2");
+    expect(cmd?.params["msg"]).toBe("bad command");
+  });
+
+  it("still parses a real command whose name has no '='", () => {
+    const cmd = parseCommand("clientlist -uid -away");
+    expect(cmd?.name).toBe("clientlist");
+    expect(cmd?.params["-uid"]).toBe("");
+    expect(cmd?.params["-away"]).toBe("");
+  });
 });

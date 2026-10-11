@@ -477,7 +477,14 @@ export class Client {
 
   #handleCommandStr(s: string): void {
     const cmd = parseCommand(s);
-    if (!cmd || !cmd.name) return;
+    if (!cmd) return;
+
+    // No name means a response row: the server sends data without echoing the
+    // command, so the row belongs to whichever command is awaiting a result.
+    if (cmd.name === "") {
+      this.#cmdTrack.buffer(cmd.params);
+      return;
+    }
 
     if (cmd.name.startsWith("notify")) {
       const result = handleNotification(cmd, this.clid, this.#clients, this.nickname);
@@ -498,20 +505,10 @@ export class Client {
       case "error":
         this.#handleError(cmd.params);
         break;
-      default: {
-        // TS5/TS6 servers send data rows without a command-name prefix.
-        // In that case our parser treats the first key=value pair as the
-        // "command name" (e.g. name="clid=1827"). Reconstruct full params.
-        let params = cmd.params;
-        if (cmd.name.includes("=")) {
-          const eqIdx = cmd.name.indexOf("=");
-          const k = cmd.name.slice(0, eqIdx);
-          const v = cmd.name.slice(eqIdx + 1);
-          params = { [k]: v, ...cmd.params };
-        }
-        this.#cmdTrack.buffer(params);
+      default:
+        // A command the SDK does not model, carrying its own data rows.
+        this.#cmdTrack.buffer(cmd.params);
         break;
-      }
     }
   }
 
