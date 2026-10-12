@@ -8,7 +8,7 @@ import {
   type BackoffPolicy,
 } from "./reconnect.js";
 import { ServerError } from "@honeybbq/teamspeak-core";
-import { FileTransferError } from "./errors.js";
+import { AlreadyConnectedError, FileTransferError } from "./errors.js";
 
 const policy = (overrides: Partial<BackoffPolicy> = {}): BackoffPolicy => ({
   ...defaultBackoffPolicy,
@@ -96,6 +96,10 @@ describe("defaultShouldRetry", () => {
   it("treats a transport failure as worth retrying", () => {
     expect(defaultShouldRetry(new Error("read ECONNRESET"))).toBe(true);
     expect(defaultShouldRetry(new FileTransferError("connection timeout"))).toBe(true);
+  });
+
+  it("stops once the client is connected already", () => {
+    expect(defaultShouldRetry(new AlreadyConnectedError())).toBe(false);
   });
 
   it("treats no error at all as worth retrying", () => {

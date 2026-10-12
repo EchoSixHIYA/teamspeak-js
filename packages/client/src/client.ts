@@ -1180,10 +1180,17 @@ export class Client implements CommandExecutor, AsyncDisposable {
         // nothing but stay connected would otherwise exit during the wait.
         await sleep(delay, stop.signal);
         if (this.#stopped) return;
+        // Connected, or connecting, by hand during the wait: nothing is left to
+        // retry, and an attempt now would only fail with AlreadyConnectedError.
+        if (this.#status !== ClientStatus.Disconnected) {
+          this.#logger.info("reconnect loop ended: connected by other means", { attempt });
+          return;
+        }
 
         try {
           await this.connect({ signal: AbortSignal.timeout(RECONNECT_ATTEMPT_TIMEOUT_MS) });
-          if (this.#status === ClientStatus.Connected) {
+          // Read afresh: the status may have changed while connect() resolved.
+          if (this.status === ClientStatus.Connected) {
             this.#logger.info("reconnected", { attempt });
             return;
           }
@@ -1192,6 +1199,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
           // loop running and left the retrying to it.
           err = this.#lastDrop ?? new TeamspeakError("connection closed");
         } catch (retryErr) {
+          if (retryErr instanceof AlreadyConnectedError) return;
           err = retryErr instanceof Error ? retryErr : new TeamspeakError(String(retryErr));
         }
       }

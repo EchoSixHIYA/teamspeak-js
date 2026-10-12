@@ -14,7 +14,11 @@ async function until(condition: () => boolean): Promise<void> {
 }
 
 /** A reconnecting client on fake sockets, with what it logged. */
-function reconnectingClient(): { client: Client; sockets: FakeSocket[]; logs: string[] } {
+function reconnectingClient(delayMs = 20): {
+  client: Client;
+  sockets: FakeSocket[];
+  logs: string[];
+} {
   const sockets: FakeSocket[] = [];
   const logs: string[] = [];
   const logger: Logger = {
@@ -30,7 +34,7 @@ function reconnectingClient(): { client: Client; sockets: FakeSocket[]; logs: st
       sockets.push(socket);
       return socket;
     },
-    reconnect: { backoff: { initialDelayMs: 20, maxDelayMs: 20, jitter: 0 } },
+    reconnect: { backoff: { initialDelayMs: delayMs, maxDelayMs: delayMs, jitter: 0 } },
   });
   return { client, sockets, logs };
 }
@@ -69,6 +73,28 @@ describe("the reconnect loop", () => {
 
     finishHandshake(client, sockets[2]!);
     await until(() => logs.includes("reconnected"));
+    expect(client.status).toBe("connected");
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("ends when the client is connected by hand during the wait", async () => {
+    // A long wait, for the user's connect() to land in.
+    const { client, sockets, logs } = reconnectingClient(150);
+    const first = client.connect();
+    await until(() => sockets.length === 1);
+    finishHandshake(client, sockets[0]!);
+    await first;
+
+    sockets[0]!.close();
+    await until(() => client.status === "disconnected");
+    const byHand = client.connect();
+    await until(() => sockets.length === 2);
+    finishHandshake(client, sockets[1]!);
+    await byHand;
+
+    await until(() => logs.some((l) => l.startsWith("reconnect loop ended")));
+    await sleep(200);
+    expect(sockets).toHaveLength(2);
     expect(client.status).toBe("connected");
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
