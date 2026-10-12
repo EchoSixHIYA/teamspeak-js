@@ -16,7 +16,12 @@ export type ParamValue = string | number | bigint | boolean | undefined;
 
 /** A command and its parameters, in the order they are sent. */
 export interface CommandRequest {
+  /** The command's name, such as `clientlist`. */
   readonly command: string;
+  /**
+   * Its parameters, as wire name and value pairs, in the order they are sent;
+   * an undefined value is omitted.
+   */
   readonly params?: ReadonlyArray<readonly [string, ParamValue]>;
   /** Names of the parameters that carry a channel password. */
   readonly passwords?: readonly string[];

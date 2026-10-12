@@ -21,7 +21,9 @@ const P256_POINT_PREFIX = 0x04;
  * `export()` is the one way to get the secret form, for storing it.
  */
 export class Identity {
+  /** The P-256 private key. Treat it as a secret. */
   readonly privateKey: KeyObject;
+  /** The counter whose hash with the public key sets the security level. */
   offset: bigint;
 
   constructor(privateKey: KeyObject, offset: bigint) {
@@ -29,6 +31,7 @@ export class Identity {
     this.offset = offset;
   }
 
+  /** The public key in TeamSpeak's encoding: base64 of its DER form. */
   publicKeyBase64(): string {
     const rawJwk = this.privateKey.export({ format: "jwk" });
 
@@ -70,10 +73,12 @@ export class Identity {
     return `identity ${getUidFromPublicKey(this.publicKeyBase64())} (private key redacted)`;
   }
 
+  /** The same as `toString()`, so serialising an identity cannot leak its key. */
   toJSON(): string {
     return this.toString();
   }
 
+  /** The security level: trailing zero bits in SHA-1 of the public key and offset. */
   securityLevel(): number {
     const h = createHash("sha1");
     h.update(this.publicKeyBase64());
@@ -202,6 +207,10 @@ export function uidAlgorithmForVersion(version: string): UidAlgorithm {
   return Number.isNaN(major) || major < 6 ? "sha1" : "sha256";
 }
 
+/**
+ * The unique identifier of a public key, in TeamSpeak's encoding, hashed with
+ * `algorithm`: SHA-1 on TeamSpeak 3, SHA-256 on TeamSpeak 6.
+ */
 export function getUidFromPublicKey(publicKey: string, algorithm: UidAlgorithm = "sha1"): string {
   const sum = createHash(algorithm).update(publicKey).digest();
   return Buffer.from(sum).toString("base64");

@@ -44,6 +44,7 @@ export const defaultBackoffPolicy: Readonly<BackoffPolicy> = Object.freeze({
   maxAttempts: 0,
 });
 
+/** Whether and how a client reconnects after its connection drops. */
 export interface ReconnectOptions {
   /**
    * Reconnect after a dropped connection. Off by default.

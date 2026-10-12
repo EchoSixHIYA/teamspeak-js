@@ -19,10 +19,7 @@ import {
   str,
   big,
   num,
-  bool,
   date,
-  durationMs,
-  MILLISECOND,
 } from "./command.js";
 import type { PageOptions, PermissionEntry, WireNames } from "./command.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
@@ -34,17 +31,10 @@ import type {
   ServerGroupID,
   UID,
 } from "../command/ids.js";
-import {
-  asChannelID,
-  asChannelGroupID,
-  asClientDBID,
-  asClientID,
-  asServerGroupID,
-  asUID,
-} from "../command/ids.js";
+import { asClientDBID, asClientID, asUID } from "../command/ids.js";
 import type { Permission } from "../permission.js";
 import { Reason } from "../reason.js";
-import { parseClient, parseServerGroups } from "./parse.js";
+import { parseClient } from "./parse.js";
 
 /** A connected client, as `clientlist` reports one. */
 export interface ClientEntry {

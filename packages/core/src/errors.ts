@@ -1,5 +1,9 @@
 import { ErrorCode } from "./errorcode.js";
 
+/**
+ * The base of every error the SDK throws, so `instanceof TeamspeakError` tells
+ * the SDK's failures from anything else.
+ */
 export class TeamspeakError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -38,7 +42,12 @@ export class ServerError extends TeamspeakError {
   }
 }
 
+/**
+ * A command's answer did not arrive within its timeout. The command may still
+ * have taken effect on the server.
+ */
 export class CommandTimeoutError extends TeamspeakError {
+  /** The name of the command that timed out; never its parameters. */
   readonly command: string;
 
   constructor(command: string) {

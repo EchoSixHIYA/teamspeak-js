@@ -14,6 +14,11 @@ const ESCAPE_MAP: [string, string][] = [
   ["\x0B", "\\v"],
 ];
 
+/**
+ * Escape a value for the command line: the characters that delimit a command
+ * (space, `|`, `/`, the backslash itself, control characters) become their
+ * two-character escapes.
+ */
 export function escape(s: string): EscapedString {
   let result = s;
   for (const [from, to] of ESCAPE_MAP) {
@@ -22,6 +27,7 @@ export function escape(s: string): EscapedString {
   return result as EscapedString;
 }
 
+/** Undo {@link escape}, in one pass so that `\\s` comes back as `\s`, not a space. */
 export function unescape(s: string): string {
   // Process escape sequences in a single pass to avoid double-substitution
   let result = "";
@@ -87,8 +93,11 @@ export function unescape(s: string): string {
   return result;
 }
 
+/** A command line, parsed. */
 export interface Command {
+  /** The command's name, or `""` for a data row, which carries no name. */
   name: string;
+  /** Its parameters, unescaped. A flag such as `-uid` maps to `""`. */
   params: Record<string, string>;
 }
 

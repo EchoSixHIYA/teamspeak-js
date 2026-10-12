@@ -13,6 +13,11 @@ export function isCommandName(token: string): boolean {
   return /^[A-Za-z0-9]+$/.test(token);
 }
 
+/**
+ * Parse one command line, or one row of it. Returns null for an empty line.
+ * A line whose first token is not a command name is a data row, with `name`
+ * `""`.
+ */
 export function parseCommand(s: string): Command | null {
   if (s === "") return null;
 

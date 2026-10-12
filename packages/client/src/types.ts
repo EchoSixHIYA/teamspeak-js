@@ -14,9 +14,13 @@ import type { ReconnectOptions } from "./reconnect.js";
 
 // ---- Events ---------------------------------------------------------------
 
+/** A text message, sent privately, to a channel, or to the whole server. */
 export interface TextMessage {
+  /** The sender's nickname. */
   readonly invokerName: string;
+  /** The sender's unique identifier. */
   readonly invokerUID: UID;
+  /** The message, unescaped. */
   readonly message: string;
   /** The sender's server groups, as this client last saw them. */
   readonly invokerGroups: readonly ServerGroupID[];
@@ -27,28 +31,42 @@ export interface TextMessage {
    * carry no target, so it is 0 for them.
    */
   readonly targetID: ClientID;
+  /** The sender. */
   readonly invokerID: ClientID;
 }
 
+/** A client changing channel, of its own accord or moved by someone. */
 export interface ClientMovedEvent {
+  /** Who moved the client; the client itself for a move of its own. */
   readonly invokerName: string;
+  /** The mover's unique identifier. */
   readonly invokerUID: UID;
+  /** The channel the client is now in. */
   readonly targetChannelID: ChannelID;
   /** Why the client moved; compare it with `Reason`. */
   readonly reason: number;
+  /** The client that moved. */
   readonly id: ClientID;
+  /** The mover. */
   readonly invokerID: ClientID;
 }
 
+/**
+ * A client going out of view: leaving the server, kicked or banned from it, or
+ * in a channel that stopped being subscribed.
+ */
 export interface ClientLeftViewEvent {
   /** The reason given for a kick or a ban, or the client's own parting message. */
   readonly reasonMessage: string;
   /** Why the client left; compare it with `Reason`. */
   readonly reason: number;
+  /** The client that left. */
   readonly id: ClientID;
   /** Who kicked or banned the client; empty otherwise. */
   readonly invokerName: string;
+  /** The kicker's unique identifier; empty unless kicked or banned. */
   readonly invokerUID: UID;
+  /** The kicker; 0 unless kicked or banned. */
   readonly invokerID: ClientID;
 }
 
@@ -58,8 +76,11 @@ export interface KickedEvent {
   readonly reasonMessage: string;
   /** `Reason.KickChannel`, `Reason.KickServer` or `Reason.KickServerBan`. */
   readonly reason: number;
+  /** Who kicked this client. */
   readonly invokerName: string;
+  /** The kicker's unique identifier. */
   readonly invokerUID: UID;
+  /** The kicker. */
   readonly invokerID: ClientID;
 }
 
@@ -70,13 +91,19 @@ export interface KickedEvent {
  */
 export type ClientInfo = ClientEntry;
 
+/** This client being poked. */
 export interface PokeEvent {
+  /** Who poked. */
   readonly invokerName: string;
+  /** The poker's unique identifier. */
   readonly invokerUID: UID;
+  /** The poker. */
   readonly invokerID: ClientID;
+  /** The poke's message, unescaped. */
   readonly message: string;
 }
 
+/** Audio from another client, in the channel or whispered. */
 export interface VoiceData {
   /** Who is speaking. */
   readonly clientID: ClientID;
@@ -99,17 +126,24 @@ export interface RawNotification {
 
 /** The events `Client.on()` takes, and what each delivers. */
 export interface EventMap {
+  /** A text message to this client, its channel or the server. */
   textMessage: TextMessage;
+  /** A client coming into view, including every client already there on connecting. */
   clientEnter: ClientInfo;
+  /** A client going out of view. */
   clientLeave: ClientLeftViewEvent;
+  /** A client changing channel. */
   clientMoved: ClientMovedEvent;
+  /** This client being poked. */
   poked: PokeEvent;
+  /** Audio from another client. Only decoded with a listener or event middleware. */
   voiceData: VoiceData;
   /**
    * Every notification the server sends, modelled or not, after any event it
    * produces.
    */
   notification: RawNotification;
+  /** The handshake completing, on `connect()` and on every reconnection. */
   connected: void;
   /**
    * `undefined` after `disconnect()`, and the cause otherwise: a failed
@@ -157,10 +191,15 @@ export interface DatagramSocket {
   send(data: Uint8Array, callback: (error: Error | null) => void): void;
   /** Close the socket; it then emits `close`. */
   close(): void;
+  /** Listen for each datagram received. */
   on(event: "message", listener: (message: Uint8Array) => void): unknown;
+  /** Listen for a failure, which ends the connection. */
   on(event: "error", listener: (error: Error) => void): unknown;
+  /** Listen for the socket closing. */
   on(event: "close", listener: () => void): unknown;
+  /** Listen for the next failure only, while connecting. */
   once(event: "error", listener: (error: Error) => void): unknown;
+  /** Stop listening for failures. */
   off(event: "error", listener: (error: Error) => void): unknown;
 }
 
@@ -177,11 +216,16 @@ export type FileTransferSocketFactory = (host: string, port: number) => Duplex;
 
 // ---- Client status ----------------------------------------------------------
 
+/** Where a client is in its connection's life. */
 export const ClientStatus = {
+  /** Not connected: before `connect()`, after `disconnect()`, or after a drop. */
   Disconnected: "disconnected",
+  /** Connecting: `connect()` is waiting for the handshake. */
   Connecting: "connecting",
+  /** Connected: the handshake completed and commands can be sent. */
   Connected: "connected",
 } as const;
+/** One of {@link ClientStatus}. */
 export type ClientStatus = (typeof ClientStatus)[keyof typeof ClientStatus];
 
 /** Wraps the delivery of server events; it may observe, alter or drop them. */
@@ -189,20 +233,31 @@ export type EventMiddleware = (next: (event: ServerEvent) => void) => (event: Se
 
 // ---- Resolved address (from discovery) --------------------------------------
 
+/** An address a server's name resolved to. */
 export interface ResolvedAddr {
+  /** The endpoint, as `host:port`. */
   addr: string;
+  /** How it was found: an SRV record, TSDNS, or the address as given. */
   source: string;
+  /** When the answer stops being valid. */
   expiry: Date;
 }
 
 // ---- AddrResolver interface -------------------------------------------------
 
+/**
+ * Turns the address a client was given — a host, `host:port`, or a TeamSpeak
+ * name — into endpoints to connect to. The default follows SRV records and
+ * TSDNS, as the TeamSpeak application does.
+ */
 export interface AddrResolver {
+  /** The endpoints for `addr`, best first. An empty answer falls back to `addr` itself. */
   resolve(addr: string, signal?: AbortSignal): Promise<ResolvedAddr[]>;
 }
 
 // ---- ClientOptions ----------------------------------------------------------
 
+/** How a `Client` connects, logs and behaves; every field is optional. */
 export interface ClientOptions {
   /** Where the client logs. Silent unless set: a library has no business writing to the console. */
   logger?: Logger;
@@ -230,8 +285,11 @@ export interface ClientOptions {
    * through a proxy.
    */
   fileTransferSocketFactory?: FileTransferSocketFactory;
+  /** Replaces the SRV and TSDNS resolution `connect()` performs. */
   resolver?: AddrResolver;
+  /** Wraps every command line sent, outermost first. Fixed for the client's life. */
   commandMiddleware?: CommandMiddleware[];
+  /** Wraps the delivery of every server event, outermost first. Fixed for the client's life. */
   eventMiddleware?: EventMiddleware[];
   /** Server password sent during the initial `clientinit` handshake. */
   serverPassword?: string;

@@ -10,10 +10,21 @@
  * an icon — are `number` brands; the 64-bit ones are `bigint` brands.
  */
 
+/** A channel (`cid`). */
 export type ChannelID = bigint & { readonly __brand: "ChannelID" };
+/**
+ * A connected client (`clid`): an id for this connection only, assigned anew
+ * every time the client connects.
+ */
 export type ClientID = number & { readonly __brand: "ClientID" };
+/**
+ * A client's database record (`cldbid`): stable across connections, unlike its
+ * ClientID.
+ */
 export type ClientDBID = bigint & { readonly __brand: "ClientDBID" };
+/** A server group (`sgid`). */
 export type ServerGroupID = bigint & { readonly __brand: "ServerGroupID" };
+/** A channel group (`cgid`). */
 export type ChannelGroupID = bigint & { readonly __brand: "ChannelGroupID" };
 /** A permission's numeric id (`permid`), a 32-bit value assigned by the server build. */
 export type PermissionID = number & { readonly __brand: "PermissionID" };
@@ -23,11 +34,17 @@ export type PermissionID = number & { readonly __brand: "PermissionID" };
  */
 export type IconID = number & { readonly __brand: "IconID" };
 
+/** Brand a channel id, from a number or a bigint. */
 export const asChannelID = (v: bigint | number): ChannelID => BigInt(v) as ChannelID;
+/** Brand a client id. */
 export const asClientID = (v: number): ClientID => v as ClientID;
+/** Brand a client database id, from a number or a bigint. */
 export const asClientDBID = (v: bigint | number): ClientDBID => BigInt(v) as ClientDBID;
+/** Brand a server group id, from a number or a bigint. */
 export const asServerGroupID = (v: bigint | number): ServerGroupID => BigInt(v) as ServerGroupID;
+/** Brand a channel group id, from a number or a bigint. */
 export const asChannelGroupID = (v: bigint | number): ChannelGroupID => BigInt(v) as ChannelGroupID;
+/** Brand a permission id. */
 export const asPermissionID = (v: number): PermissionID => v as PermissionID;
 /**
  * Brand an icon id. A negative value is taken as the signed form of the same
@@ -56,4 +73,5 @@ export function parseIconID(raw: string | undefined): IconID | undefined {
  * assuming either width.
  */
 export type UID = string & { readonly __brand: "UID" };
+/** Brand a unique identifier. */
 export const asUID = (v: string): UID => v as UID;

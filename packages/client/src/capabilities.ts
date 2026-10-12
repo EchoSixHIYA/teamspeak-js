@@ -20,6 +20,7 @@ import { uidAlgorithmForVersion, type UidAlgorithm } from "./crypto/identity.js"
 /** The server generation a version string belongs to. */
 export type ServerFamily = "ts3" | "ts6" | "unknown";
 
+/** What a server said about itself in the handshake. */
 export interface ServerCapabilities {
   /** The `virtualserver_version` string, exactly as the server sent it. */
   readonly version: string;

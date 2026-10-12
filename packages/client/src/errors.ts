@@ -1,5 +1,6 @@
 import { Reason, TeamspeakError } from "@honeybbq/teamspeak-core";
 
+/** `connect()` was called on a client that is connecting or connected. */
 export class AlreadyConnectedError extends TeamspeakError {
   constructor() {
     super("already connecting or connected");
@@ -7,6 +8,10 @@ export class AlreadyConnectedError extends TeamspeakError {
   }
 }
 
+/**
+ * A packet failed authentication: it was corrupted, or not from the server.
+ * The packet is dropped; it never reaches a caller.
+ */
 export class EAXTagMismatchError extends TeamspeakError {
   constructor() {
     super("EAX tag mismatch");
@@ -14,6 +19,10 @@ export class EAXTagMismatchError extends TeamspeakError {
   }
 }
 
+/**
+ * A packet sent before encryption was set up failed its integrity check. The
+ * packet is dropped; it never reaches a caller.
+ */
 export class FakeSignatureMismatchError extends TeamspeakError {
   constructor() {
     super("fake signature mismatch");
@@ -21,6 +30,7 @@ export class FakeSignatureMismatchError extends TeamspeakError {
   }
 }
 
+/** A file transfer connection failed: it could not be opened, or broke during the transfer. */
 export class FileTransferError extends TeamspeakError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -28,6 +38,7 @@ export class FileTransferError extends TeamspeakError {
   }
 }
 
+/** The handshake could not set up encryption, usually because the server's answer was malformed. */
 export class CryptoInitError extends TeamspeakError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -35,6 +46,7 @@ export class CryptoInitError extends TeamspeakError {
   }
 }
 
+/** An identity string `parseIdentity()` cannot read. */
 export class InvalidIdentityError extends TeamspeakError {
   constructor(message = "invalid identity format") {
     super(message);

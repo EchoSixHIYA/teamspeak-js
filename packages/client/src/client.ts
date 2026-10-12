@@ -217,6 +217,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     );
   }
 
+  /** Where the client is in its connection's life. */
   get status(): ClientStatus {
     return this.#status;
   }

@@ -26,7 +26,7 @@ export function handleNotification(
   cmd: Command,
   selfCLID: number,
   clients: Map<number, ClientInfo>,
-  nickname: string,
+  _nickname: string,
 ): NotificationResult {
   switch (cmd.name) {
     case "notifycliententerview":

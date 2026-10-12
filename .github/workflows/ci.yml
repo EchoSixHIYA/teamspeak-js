@@ -69,6 +69,8 @@ jobs:
       - run: pnpm build
       # Lint what npm would receive, not the workspace: the published
       # package.json is rewritten by publishConfig, and workspace:* by pack.
+      # Every exported symbol, as a user imports it, has a doc comment.
+      - run: pnpm check:docs
       - name: Check the packed packages
         run: |
           mkdir -p "$RUNNER_TEMP/packs"
