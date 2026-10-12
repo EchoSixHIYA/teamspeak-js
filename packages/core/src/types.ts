@@ -1,9 +1,6 @@
 import type { ClientFileTransferID, ServerFileTransferID } from "./command/ids.js";
 import type { CommandExecutor } from "./command/request.js";
 
-/** A TS3-escaped string. Obtained only via escape(). */
-export type EscapedString = string & { readonly __escaped: unique symbol };
-
 // ---- Middleware types --------------------------------------------------------
 
 /**

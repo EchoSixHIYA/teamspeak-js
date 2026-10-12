@@ -3,12 +3,15 @@ import {
   NotConnectedError,
   TeamspeakError,
   encodeRequest,
-  parseCommand,
   type CommandExecutor,
   type CommandOptions,
   type CommandRequest,
 } from "@honeybbq/teamspeak-core";
-import { parseServerError, splitCommandRows } from "@honeybbq/teamspeak-core/internal";
+import {
+  parseCommand,
+  parseServerError,
+  splitCommandRows,
+} from "@honeybbq/teamspeak-core/internal";
 import type { QueryTransport } from "./transport.js";
 
 /** How long a command waits for its answer unless told otherwise. */

@@ -1,5 +1,3 @@
-import type { EscapedString } from "../types.js";
-
 const ESCAPE_MAP: [string, string][] = [
   ["\\", "\\\\"],
   ["/", "\\/"],
@@ -19,12 +17,12 @@ const ESCAPE_MAP: [string, string][] = [
  * (space, `|`, `/`, the backslash itself, control characters) become their
  * two-character escapes.
  */
-export function escape(s: string): EscapedString {
+export function escape(s: string): string {
   let result = s;
   for (const [from, to] of ESCAPE_MAP) {
     result = result.split(from).join(to);
   }
-  return result as EscapedString;
+  return result;
 }
 
 /** Undo {@link escape}, in one pass so that `\\s` comes back as `\s`, not a space. */
@@ -96,16 +94,16 @@ export function unescape(s: string): string {
 /** A command line, parsed. */
 export interface Command {
   /** The command's name, or `""` for a data row, which carries no name. */
-  name: string;
+  readonly name: string;
   /** Its parameters, unescaped. A flag such as `-uid` maps to `""`. */
-  params: Record<string, string>;
+  readonly params: Readonly<Record<string, string>>;
 }
 
-/** Build a TS3 command string from an unordered params map. */
-export function buildCommand(cmd: string, params: Record<string, string>): string {
+/** Build a command line from a parameter map; keys and values are escaped alike. */
+export function buildCommand(cmd: string, params: Readonly<Record<string, string>>): string {
   const parts: string[] = [escape(cmd)];
   for (const [k, v] of Object.entries(params)) {
-    parts.push(`${k}=${escape(v)}`);
+    parts.push(`${escape(k)}=${escape(v)}`);
   }
   return parts.join(" ");
 }
@@ -120,7 +118,7 @@ export function buildCommandOrdered(
     // A flag such as `-uid` is a bare switch. `-uid=1` happens to be accepted
     // over the voice protocol, but it is not the documented form and nothing
     // promises another transport tolerates it.
-    parts.push(k.startsWith("-") && v === "" ? k : `${k}=${escape(v)}`);
+    parts.push(k.startsWith("-") && v === "" ? escape(k) : `${escape(k)}=${escape(v)}`);
   }
   return parts.join(" ");
 }

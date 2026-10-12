@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { Client } from "./client.js";
 import { generateIdentitySync } from "./crypto/identity.js";
 import { sendClientInit } from "./handshake.js";
-import { parseCommand } from "@honeybbq/teamspeak-core";
+import { parseCommand } from "@honeybbq/teamspeak-core/internal";
 import { PacketType } from "./transport/packet.js";
 import type { ClientOptions } from "./types.js";
 

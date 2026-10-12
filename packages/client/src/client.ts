@@ -47,7 +47,7 @@ import {
 import { encodeRequest } from "@honeybbq/teamspeak-core";
 import type { CommandExecutor, CommandRequest } from "@honeybbq/teamspeak-core";
 import { handleNotification } from "./notifications.js";
-import { parseCommand } from "@honeybbq/teamspeak-core";
+import { parseCommand } from "@honeybbq/teamspeak-core/internal";
 import { CommandThrottle } from "./throttle.js";
 import { splitCommandRows, sleep } from "@honeybbq/teamspeak-core/internal";
 import { isAutoNicknameMatch } from "./helpers.js";

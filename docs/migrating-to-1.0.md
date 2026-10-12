@@ -136,6 +136,13 @@ constructor: `asChannelID(5)`, `asClientID(3)`.
 Many queries were answered with nothing in 0.x, because the server sends their
 data in a notification. They now return the data.
 
+## Raw commands
+
+`escape` and `unescape` stay public, for a raw line sent with `client.exec`.
+`parseCommand`, `buildCommand`, `buildCommandOrdered` and the `Command` and
+`EscapedString` types are no longer exported: build the line yourself with
+`escape`, or use a typed command. `escape` returns a plain `string`.
+
 ## Errors
 
 ```ts

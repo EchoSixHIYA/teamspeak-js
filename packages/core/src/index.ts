@@ -6,10 +6,8 @@
  * the voice protocol — which re-exports everything here.
  */
 
-// The command language: escaping, parsing, building.
-export { escape, unescape, buildCommand, buildCommandOrdered } from "./command/command.js";
-export type { Command } from "./command/command.js";
-export { parseCommand } from "./command/parser.js";
+// Escaping, for a raw line sent with a client's `exec`.
+export { escape, unescape } from "./command/command.js";
 
 // Requests and the connections that execute them.
 export { encodeRequest } from "./command/request.js";
@@ -73,13 +71,7 @@ export { permissionByID, permissionByName } from "./permission.js";
 export type { Permission } from "./permission.js";
 
 export { noopLogger, consoleLogger } from "./types.js";
-export type {
-  CommandMiddleware,
-  EscapedString,
-  FileDownloadInfo,
-  FileUploadInfo,
-  Logger,
-} from "./types.js";
+export type { CommandMiddleware, FileDownloadInfo, FileUploadInfo, Logger } from "./types.js";
 
 // Typed commands, one module per area of the protocol.
 export * from "./api/channels.js";

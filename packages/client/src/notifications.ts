@@ -1,4 +1,4 @@
-import type { Command } from "@honeybbq/teamspeak-core";
+import type { Command } from "@honeybbq/teamspeak-core/internal";
 import type {
   ClientEnterEvent,
   ClientLeaveEvent,

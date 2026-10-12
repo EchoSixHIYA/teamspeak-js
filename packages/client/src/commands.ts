@@ -1,4 +1,4 @@
-import { parseCommand } from "@honeybbq/teamspeak-core";
+import { parseCommand } from "@honeybbq/teamspeak-core/internal";
 import { ServerError } from "@honeybbq/teamspeak-core";
 import { parseErrorCode } from "@honeybbq/teamspeak-core/internal";
 

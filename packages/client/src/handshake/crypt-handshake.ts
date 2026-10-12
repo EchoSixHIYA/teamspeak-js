@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { buildCommandOrdered } from "@honeybbq/teamspeak-core";
+import { buildCommandOrdered } from "@honeybbq/teamspeak-core/internal";
 import type { Crypt } from "../crypto/crypt.js";
 import { CryptoInitError } from "../errors.js";
 

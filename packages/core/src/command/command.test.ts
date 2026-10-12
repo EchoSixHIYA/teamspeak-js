@@ -129,3 +129,10 @@ describe("parseCommand", () => {
     expect(err?.params["id"]).toBe("0");
   });
 });
+
+describe("buildCommand keys", () => {
+  it("escapes keys as well as values, so a key cannot inject a parameter", () => {
+    expect(buildCommand("x", { "a b=c": "1" })).toBe("x a\\sb=c=1");
+    expect(buildCommandOrdered("x", [["a|b", "2"]])).toBe("x a\\pb=2");
+  });
+});

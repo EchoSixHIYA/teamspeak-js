@@ -6,11 +6,12 @@
  * released together, each depending on this exact version, so this can change
  * in any release.
  *
- * @internal
  * @packageDocumentation
  */
 
-export { isCommandName } from "./command/parser.js";
+export { isCommandName, parseCommand } from "./command/parser.js";
+export { buildCommand, buildCommandOrdered } from "./command/command.js";
+export type { Command } from "./command/command.js";
 export { parseClient } from "./api/parse.js";
 export { parseIconID } from "./command/ids.js";
 export { responseSpec } from "./command/responses.js";

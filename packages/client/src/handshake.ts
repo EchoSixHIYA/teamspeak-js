@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { buildCommandOrdered, buildCommand } from "@honeybbq/teamspeak-core";
+import { buildCommandOrdered, buildCommand } from "@honeybbq/teamspeak-core/internal";
 import { sign, generateTemporaryKey } from "./crypto/primitives.js";
 import { identityPrivateKey } from "./crypto/identity.js";
 import { parseServerCapabilities } from "./capabilities.js";
