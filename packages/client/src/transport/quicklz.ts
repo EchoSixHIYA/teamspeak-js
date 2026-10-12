@@ -9,6 +9,14 @@ const TABLE_SIZE = 4096;
  */
 export const MAX_DECOMPRESSED_SIZE: number = 1 << 20;
 
+/**
+ * How much larger than its compressed bytes a level-1 block can be. The most
+ * a 3-byte back-reference yields is 255 bytes, and every 32 entries also cost
+ * a 4-byte control word, which bounds the ratio at about 82; a block declaring
+ * more cannot be honest, and is refused before its output is allocated.
+ */
+const MAX_EXPANSION = 128;
+
 interface QlzState {
   control: number;
   sourcePos: number;
@@ -44,6 +52,11 @@ export class Qlz {
       return data.slice(headerLen, headerLen + decompressedSize);
     }
 
+    if (decompressedSize > (data.length - headerLen) * MAX_EXPANSION) {
+      throw new QuickLZError(
+        `declared size ${decompressedSize} is more than ${data.length - headerLen} bytes can expand to`,
+      );
+    }
     const dest = new Uint8Array(decompressedSize);
     this.#hashtable.fill(0);
 

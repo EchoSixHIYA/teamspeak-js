@@ -42,6 +42,21 @@ const RESEND_LOOP_INTERVAL_MS = 100;
 const MAX_REASSEMBLED_SIZE = 1 << 20;
 
 /**
+ * The largest datagram taken. TeamSpeak's packets are at most 500 bytes; a
+ * larger one is no packet of the protocol's, and is dropped before anything
+ * is decrypted or held.
+ */
+export const MAX_DATAGRAM_SIZE: number = 4096;
+
+/**
+ * The most command bytes held, across both receive queues, waiting for the
+ * packets before them. A server's in-order traffic drains at once and a full
+ * window of real packets is under a megabyte; past this, a packet is dropped
+ * unacknowledged, so the server sends it again once there is room.
+ */
+export const MAX_QUEUED_BYTES: number = 1 << 20;
+
+/**
  * The packet types the server may send unencrypted: voice, which TeamSpeak
  * never encrypts, ping and pong, and acknowledgements — TS3 3.13 and TS6 6.0
  * both acknowledge commands with plaintext Acks once crypto init has
@@ -98,6 +113,8 @@ export class PacketHandler {
 
   #commandQueue = new Map<number, Packet>();
   #commandLowQueue = new Map<number, Packet>();
+  /** The bytes held in both command queues; see MAX_QUEUED_BYTES. */
+  #queuedBytes = 0;
   #ackManager = new Map<number, ResendPacket>();
   #initPacketCheck: ResendPacket | null = null;
   /**
@@ -439,6 +456,10 @@ export class PacketHandler {
 
   #handleRawPacket(raw: Uint8Array): void {
     if (raw.length < 11) return;
+    if (raw.length > MAX_DATAGRAM_SIZE) {
+      this.#logger.debug("dropped an oversized datagram", { size: raw.length });
+      return;
+    }
 
     const tag = raw.slice(0, TAG_SIZE);
     const header = raw.slice(TAG_SIZE, TAG_SIZE + 3);
@@ -574,6 +595,15 @@ export class PacketHandler {
       }
       return false;
     }
+    const queue = pType === PacketType.Command ? this.#commandQueue : this.#commandLowQueue;
+    const held = queue.get(p.id)?.data.length ?? 0;
+    // The packet the queue waits for is always taken: it is what drains it.
+    const next = pType === PacketType.Command ? this.#_nextCommandID : this.#_nextCommandLowID;
+    if (p.id !== next && this.#queuedBytes - held + p.data.length > MAX_QUEUED_BYTES) {
+      // Not acknowledged: the server sends it again.
+      this.#logger.debug("dropped a command packet: the receive queues are full", { id: p.id });
+      return false;
+    }
     this.#sendAck(p.id, ackType, dummyUsed);
     return true;
   }
@@ -601,7 +631,7 @@ export class PacketHandler {
     const queue = isCommand ? this.#commandQueue : this.#commandLowQueue;
     const win = isCommand ? this.#recvWindowCommand : this.#recvWindowCommandLow;
 
-    queue.set(p.id, p);
+    this.#hold(queue, p);
 
     if (isCommand) {
       this.#fastForwardMissingPackets(queue, win, true);
@@ -630,6 +660,20 @@ export class PacketHandler {
     }
   }
 
+  /** Put a packet in its queue, counting its bytes; one with the same id is replaced. */
+  #hold(queue: Map<number, Packet>, p: Packet): void {
+    this.#release(queue, p.id);
+    queue.set(p.id, p);
+    this.#queuedBytes += p.data.length;
+  }
+
+  #release(queue: Map<number, Packet>, id: number): void {
+    const held = queue.get(id);
+    if (held === undefined) return;
+    queue.delete(id);
+    this.#queuedBytes -= held.data.length;
+  }
+
   #_nextCommandID = 0;
   #_nextCommandLowID = 0;
 
@@ -654,7 +698,7 @@ export class PacketHandler {
     win: GenerationWindow,
   ): [reassembled: Packet | null, newNextID: number] | null {
     if ((packetFlags(startPacket) & PacketFlags.Fragmented) === 0) {
-      queue.delete(nextID);
+      this.#release(queue, nextID);
       win.advance(1);
       return [startPacket, (nextID + 1) & 0xffff];
     }
@@ -674,7 +718,7 @@ export class PacketHandler {
         // Dropped whole, so the window moves past it rather than waiting on
         // the rest of a command that will never be accepted.
         for (let i = 0; i < fragments.length; i++) {
-          queue.delete(nextID);
+          this.#release(queue, nextID);
           win.advance(1);
           nextID = (nextID + 1) & 0xffff;
         }
@@ -702,7 +746,7 @@ export class PacketHandler {
     for (const frag of fragments) {
       combined.set(frag.data, pos);
       pos += frag.data.length;
-      queue.delete(nextID);
+      this.#release(queue, nextID);
       win.advance(1);
       nextID = (nextID + 1) & 0xffff;
     }

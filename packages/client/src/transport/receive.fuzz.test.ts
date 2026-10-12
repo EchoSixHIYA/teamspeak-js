@@ -13,6 +13,7 @@ import { Client } from "../client.js";
 import { CryptoInitError } from "../errors.js";
 import { generateIdentitySync } from "../crypto/identity.js";
 import { MAX_DECOMPRESSED_SIZE, Qlz, QuickLZError } from "./quicklz.js";
+import { MAX_DATAGRAM_SIZE, MAX_QUEUED_BYTES } from "./handler.js";
 import { Crypt } from "../crypto/crypt.js";
 import {
   FakeSocket,
@@ -344,6 +345,40 @@ describe("the receive path", () => {
   });
 });
 
+describe("memory", () => {
+  const acks = (socket: FakeSocket): number =>
+    socket.sent.filter((d) => (d[12]! & 0x0f) === 6 || (d[12]! & 0x0f) === 7).length;
+
+  it(`drops a datagram over ${MAX_DATAGRAM_SIZE} bytes unread`, async () => {
+    const { client, socket } = await startedClient();
+    const crypt = clientInternals(client).crypt;
+    socket.deliver(dummyPacket(crypt, 2, 0x20, 1, new Uint8Array(MAX_DATAGRAM_SIZE).fill(0x61)));
+    socket.deliver(dummyPacket(crypt, 2, 0x20, 2, new Uint8Array(100).fill(0x61)));
+    expect(acks(socket)).toBe(1);
+    await client.disconnect();
+  });
+
+  // Packets ahead of a missing one wait for it. A server sending a full
+  // window of the largest datagrams on both queues made a client hold 120 MB.
+  it(`holds at most ${MAX_QUEUED_BYTES} bytes waiting, and still takes the packet they wait for`, async () => {
+    const { client, socket } = await startedClient();
+    const crypt = clientInternals(client).crypt;
+    const payload = new Uint8Array(MAX_DATAGRAM_SIZE - 64).fill(0x61);
+    for (let id = 1; id < 1024; id++) {
+      for (const type of [2, 3]) socket.deliver(dummyPacket(crypt, type, 0x20, id, payload));
+    }
+    const taken = acks(socket);
+    expect(taken * payload.length).toBeLessThanOrEqual(MAX_QUEUED_BYTES);
+    expect((taken + 1) * payload.length).toBeGreaterThan(MAX_QUEUED_BYTES);
+
+    // The missing packet drains what waited for it, which makes room again.
+    socket.deliver(dummyPacket(crypt, 2, 0x20, 0, payload));
+    socket.deliver(dummyPacket(crypt, 2, 0x20, 1000, payload));
+    expect(acks(socket)).toBe(taken + 2);
+    await client.disconnect();
+  });
+});
+
 describe("generations", () => {
   // The receive window places every id in its generation. A packet that
   // decrypts only under another one is not for this place in the stream: under
@@ -521,5 +556,12 @@ describe("QuickLZ", () => {
   it("refuses a declared size over the cap before allocating", () => {
     const header = Uint8Array.of(0x07, 9, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0);
     expect(() => new Qlz().decompress(header)).toThrow(/exceeds/);
+  });
+
+  // A few bytes declaring a megabyte each would otherwise allocate it for
+  // every command, before failing.
+  it("refuses a declared size its compressed bytes could not expand to", () => {
+    const header = Uint8Array.of(0x07, 13, 0, 0, 0, 0x00, 0x00, 0x10, 0x00, 0, 0, 0, 0);
+    expect(() => new Qlz().decompress(header)).toThrow(/expand to/);
   });
 });
