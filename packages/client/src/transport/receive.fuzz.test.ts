@@ -292,6 +292,36 @@ describe("the receive path", () => {
     expect(client.status).toBe("disconnected");
   });
 
+  it("answers one RSA challenge per connection attempt", async () => {
+    const { client, socket } = await startedClient();
+    const step3 = new Uint8Array(233);
+    step3[0] = 3;
+    step3[128] = 1; // a non-zero modulus
+    new DataView(step3.buffer).setUint32(129, 10, false);
+
+    const before = socket.sent.length;
+    socket.deliver(init1Packet(step3));
+    expect(socket.sent.length - before).toBe(1);
+    const answer = socket.sent.at(-1)!;
+    const alpha = Uint8Array.from(clientInternals(client).crypt.alpha);
+
+    // The same challenge again: the answer was lost, and is sent again as it was.
+    socket.deliver(init1Packet(step3));
+    expect(socket.sent.length - before).toBe(2);
+    expect(socket.sent.at(-1)!.subarray(13)).toEqual(answer.subarray(13));
+
+    // Other challenges, as a server trying to pin the event loop would send,
+    // get no answer at all.
+    for (let i = 0; i < 5; i++) {
+      new DataView(step3.buffer).setUint32(129, 100 + i, false);
+      socket.deliver(init1Packet(step3));
+    }
+    expect(socket.sent.length - before).toBe(2);
+    expect(clientInternals(client).crypt.alpha).toEqual(alpha);
+    expect(client.status).toBe("connecting");
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
   it("ignores Init1 and dummy-keyed commands once connected", async () => {
     const { client, socket } = await connectedClient();
     const messages: string[] = [];

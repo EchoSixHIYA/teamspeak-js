@@ -9,6 +9,12 @@ const INIT_VERSION_LEN = 4;
 const INIT_TYPE_LEN = 1;
 const INIT_STEP_LEN = 21;
 
+/** The RSA challenge each connection attempt, by its Crypt, has answered. */
+const answeredChallenges = new WeakMap<
+  Crypt,
+  { readonly challenge: Uint8Array; readonly answer: Uint8Array }
+>();
+
 /**
  * Handle the TS3INIT1 handshake steps.
  * Returns the response bytes to send, or null if nothing should be sent.
@@ -92,6 +98,15 @@ function buildInit1Step3Packet(data: Uint8Array): Uint8Array | null {
 
 function buildInit1Step4Packet(crypt: Crypt, data: Uint8Array): Uint8Array | null {
   if (data.length !== INIT_TYPE_LEN + 64 + 64 + 4 + 100) return null;
+  // One challenge per connection attempt, whose Crypt is its own. Each answer
+  // costs up to a second of synchronous squarings, and a second would choose a
+  // new alpha behind the clientinitiv already sent. The same challenge again
+  // means our answer was lost — the transport does not resend it — so it gets
+  // the same answer, without solving anything; a different one gets none.
+  const answered = answeredChallenges.get(crypt);
+  if (answered !== undefined) {
+    return Buffer.from(answered.challenge).equals(Buffer.from(data)) ? answered.answer : null;
+  }
 
   const level = new DataView(data.buffer, data.byteOffset).getUint32(1 + 128, false);
   const y = crypt.solveRsaChallenge(data, 1, level);
@@ -115,5 +130,6 @@ function buildInit1Step4Packet(crypt: Crypt, data: Uint8Array): Uint8Array | nul
   sendData.set(y.slice(0, 64), 5 + 232);
   sendData.set(cmdBytes, 5 + 232 + 64);
 
+  answeredChallenges.set(crypt, { challenge: Uint8Array.from(data), answer: sendData });
   return sendData;
 }
