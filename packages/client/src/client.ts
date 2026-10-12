@@ -561,7 +561,16 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   // ---- Events --------------------------------------------------------------
 
-  /** Listen for an event. Returns a function that removes the listener. */
+  /**
+   * Listen for an event. Returns a function that removes the listener.
+   *
+   * A listener that throws does not stop the others: the rest of the event's
+   * listeners, and the events after it, are still delivered, and the exception
+   * is rethrown on its own, from a microtask, so it surfaces as an
+   * `uncaughtException` just as an EventEmitter listener's would. An async
+   * listener's rejection is not caught, and surfaces as an unhandled
+   * rejection.
+   */
   on<K extends keyof EventMap>(event: K, listener: Listener<K>): Unsubscribe {
     const subscription: Subscription = {
       listener: listener as (payload: unknown) => void,
@@ -1087,14 +1096,25 @@ export class Client implements CommandExecutor, AsyncDisposable {
     for (const subscription of this.#listeners.get(event) ?? []) {
       // Checked at delivery: a listener removed while its event was queued
       // does not get it.
-      if (!subscription.removed) subscription.listener(payload);
+      if (subscription.removed) continue;
+      try {
+        subscription.listener(payload);
+      } catch (error) {
+        // Rethrown on its own, as an uncaught exception, so it surfaces as one
+        // from an EventEmitter listener would, and the listeners after it
+        // still get the event.
+        queueMicrotask(() => {
+          throw error;
+        });
+      }
     }
   }
 
   /**
    * Run deliveries one at a time, in order, once the packet being handled is
    * done with. A listener that throws does so as an uncaught exception, as it
-   * would from an EventEmitter, and the deliveries behind it still run.
+   * would from an EventEmitter, and the listeners and deliveries behind it
+   * still run.
    */
   #enqueue(delivery: () => void): void {
     this.#queue.push(delivery);

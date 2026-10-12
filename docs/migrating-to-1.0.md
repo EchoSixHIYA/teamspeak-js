@@ -186,7 +186,10 @@ for await (const message of client.events("textMessage", { signal })) { … }
 ```
 
 `on()` returns a function that removes the listener, and `once()` is new.
-Listeners run one at a time, in arrival order. `disconnected` is `undefined`
+Listeners run one at a time, in arrival order. A listener that throws does not
+stop the others: its exception surfaces as an `uncaughtException`, as an
+EventEmitter listener's would, and the event still reaches the listeners after
+it. `disconnected` is `undefined`
 only after `disconnect()`; otherwise it is the cause, such as a `RemovedError`
 for a kick or a `TimedOutError`. Channel kicks now reach `kicked`. Ids in
 events are branded, and `clientEnter` delivers the same `ClientEntry` that

@@ -1,5 +1,5 @@
 import { clientInternals } from "./client.js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { getEventListeners } from "node:events";
 import { Client } from "./client.js";
 import { generateIdentitySync } from "./crypto/identity.js";
@@ -155,6 +155,41 @@ describe("connect() during disconnect()", () => {
     await expect(reconnecting).rejects.toBeInstanceOf(NotConnectedError);
     await Promise.all([leaving, again]);
     expect(client.status).toBe("disconnected");
+  });
+});
+
+describe("a listener that throws", () => {
+  it("does not stop the others, and is rethrown on its own", async () => {
+    const { client } = await connected();
+    const got: string[] = [];
+    client.on("textMessage", () => {
+      throw new Error("listener boom");
+    });
+    client.on("textMessage", (m) => got.push(`second:${m.message}`));
+    client.on("poked", (m) => got.push(`poke:${m.message}`));
+
+    const rethrown: Array<() => void> = [];
+    const spy = vi.spyOn(globalThis, "queueMicrotask").mockImplementation((task) => {
+      rethrown.push(task);
+    });
+    try {
+      const lines = [
+        "notifytextmessage targetmode=1 msg=a invokerid=2",
+        "notifyclientpoke msg=p invokerid=2",
+        "notifytextmessage targetmode=1 msg=b invokerid=2",
+      ].join("\n");
+      clientInternals(client).handlePacket(
+        packet(PacketType.Command, new TextEncoder().encode(lines)),
+      );
+      await settle();
+      await settle();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(got).toEqual(["second:a", "poke:p", "second:b"]);
+    expect(rethrown).toHaveLength(2);
+    for (const task of rethrown) expect(task).toThrow("listener boom");
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 });
 
