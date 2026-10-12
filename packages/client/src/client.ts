@@ -241,6 +241,14 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #reconnecting = false;
   /** Set by an explicit disconnect(), which must never be undone by a retry. */
   #stopped = false;
+  /**
+   * The goodbye of a disconnect() still in progress, which a connect() waits
+   * for: tearing the old session down after a new one has started would end
+   * the new one instead.
+   */
+  #leaving: Promise<void> | undefined;
+  /** How many times disconnect() was called, so a waiting connect() sees one. */
+  #disconnects = 0;
   /** Cuts short the reconnect loop's wait, on disconnect(). */
   #stopReconnecting: AbortController | undefined;
   #status: ClientStatus = ClientStatus.Disconnected;
@@ -341,10 +349,20 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * resolves, the connection lasts until `disconnect()` or a drop.
    * `connect()` does not retry; the `reconnect` option only retries a
    * connection that drops after it was established.
+   *
+   * Called while a `disconnect()` is still saying goodbye, this waits for that
+   * to finish first, so the old session is closed, and its `disconnected`
+   * announced, before the new one starts. A `disconnect()` called during that
+   * wait wins: this then rejects with a NotConnectedError.
    */
   async connect(options: { readonly signal?: AbortSignal | undefined } = {}): Promise<void> {
     const { signal } = options;
     signal?.throwIfAborted();
+    if (this.#leaving !== undefined) {
+      const disconnects = this.#disconnects;
+      await abortable(this.#leaving, signal);
+      if (this.#disconnects !== disconnects) throw new NotConnectedError();
+    }
     if (this.#status !== ClientStatus.Disconnected) throw new AlreadyConnectedError();
     this.#stopped = false;
 
@@ -382,26 +400,39 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * aborts, or for a second. The connection is closed either way. A
    * `connect()` still waiting for its handshake rejects with a
    * NotConnectedError, and so do the commands still waiting for an answer.
-   * Does nothing on a client that is not connected.
+   * Does nothing on a client that is not connected; called again while an
+   * earlier call is still saying goodbye, it waits for that one.
    */
   async disconnect(options: { readonly signal?: AbortSignal | undefined } = {}): Promise<void> {
     // Recorded before anything else: a dropped socket during the goodbye below
     // must not be mistaken for an outage worth retrying.
     this.#stopped = true;
+    this.#disconnects++;
     this.#stopReconnecting?.abort();
 
+    if (this.#leaving !== undefined) return this.#leaving;
     if (this.#status === ClientStatus.Disconnected) return;
 
     const wasConnected = this.#status === ClientStatus.Connected;
     this.#status = ClientStatus.Disconnected;
     this.#attempt.reject(new NotConnectedError());
 
+    const leaving = this.#leave(wasConnected, options.signal);
+    this.#leaving = leaving;
+    try {
+      await leaving;
+    } finally {
+      this.#leaving = undefined;
+    }
+  }
+
+  async #leave(wasConnected: boolean, signal: AbortSignal | undefined): Promise<void> {
     this.#logger.info("disconnecting from server");
 
     if (wasConnected) {
       try {
         await this.#exec("clientdisconnect reasonmsg=Shutdown", {
-          signal: options.signal,
+          signal,
           timeout: DISCONNECT_TIMEOUT_MS,
         });
       } catch {

@@ -114,6 +114,50 @@ describe("connect() interrupted", () => {
   });
 });
 
+describe("connect() during disconnect()", () => {
+  it("waits for the goodbye, then connects on a new socket", async () => {
+    const sockets: FakeSocket[] = [];
+    const client = clientOn(() => {
+      const socket = new FakeSocket();
+      sockets.push(socket);
+      return socket;
+    });
+    const first = client.connect();
+    await until(() => clientInternals(client).handler.isOpen);
+    clientInternals(client).markConnected();
+    await first;
+
+    const events: string[] = [];
+    client.on("disconnected", (cause) => events.push(`disconnected:${cause?.name ?? "-"}`));
+    // The fake server never acknowledges the goodbye, so it waits its second.
+    const leaving = client.disconnect();
+    await settle();
+    const reconnecting = client.connect();
+    await leaving;
+    await until(() => sockets.length === 2 && clientInternals(client).handler.isOpen);
+    expect(sockets[0]!.closed).toBe(true);
+    expect(sockets[1]!.closed).toBe(false);
+    expect(client.status).toBe("connecting");
+
+    clientInternals(client).markConnected();
+    await reconnecting;
+    await settle();
+    expect(events).toEqual(["disconnected:-"]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("rejects when disconnect() is called again during the wait", async () => {
+    const { client } = await connected();
+    const leaving = client.disconnect();
+    await settle();
+    const reconnecting = client.connect();
+    const again = client.disconnect();
+    await expect(reconnecting).rejects.toBeInstanceOf(NotConnectedError);
+    await Promise.all([leaving, again]);
+    expect(client.status).toBe("disconnected");
+  });
+});
+
 describe("sending without a connection", () => {
   it("throws a NotConnectedError for voice, whispers and execNoWait", async () => {
     const client = clientOn(() => new FakeSocket());
