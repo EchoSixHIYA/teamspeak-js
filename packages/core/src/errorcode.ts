@@ -1,18 +1,5 @@
-/**
- * The error codes a TeamSpeak server reports, by name.
- *
- * A {@link ServerError} carries the code as a number, so a caller matches a
- * specific refusal by comparing it:
- *
- * ```ts
- * if (err instanceof ServerError && err.code === ErrorCode.ChannelInvalidPassword) { ... }
- * ```
- *
- * The names and wording follow ReSpeak/tsdeclarations (Errors.csv), which
- * records the codes TeamSpeak 3 and 6 servers share. A server may report a code
- * missing here, so `ServerError.code` is a plain number.
- */
-export const ErrorCode = {
+/** The values of the table below, before freezing. */
+const errorCodeValues = {
   /** Success: the server answers `error id=0 msg=ok`. */
   OK: 0x0000,
   /** Undefined error. */
@@ -406,6 +393,21 @@ export const ErrorCode = {
   /** Unknown permissionID. */
   ProvisioningNoPermission: 0x111,
 } as const;
+/**
+ * The error codes a TeamSpeak server reports, by name.
+ *
+ * A {@link ServerError} carries the code as a number, so a caller matches a
+ * specific refusal by comparing it:
+ *
+ * ```ts
+ * if (err instanceof ServerError && err.code === ErrorCode.ChannelInvalidPassword) { ... }
+ * ```
+ *
+ * The names and wording follow ReSpeak/tsdeclarations (Errors.csv), which
+ * records the codes TeamSpeak 3 and 6 servers share. A server may report a code
+ * missing here, so `ServerError.code` is a plain number.
+ */
+export const ErrorCode: typeof errorCodeValues = /* @__PURE__ */ Object.freeze(errorCodeValues);
 
 /** A known TeamSpeak server error code. */
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

@@ -34,6 +34,7 @@ import type {
 import { asClientDBID, asClientID, asUID } from "../command/ids.js";
 import type { Permission } from "../permission.js";
 import { Reason } from "../reason.js";
+import { TeamspeakError } from "../errors.js";
 import { parseClient } from "./parse.js";
 
 /** A connected client, as `clientlist` reports one. */
@@ -134,7 +135,7 @@ export async function getClientInfo(
 ): Promise<Readonly<Record<string, string>>> {
   const rows = await query(client, "clientinfo", [["clid", clid]], options);
   const row = rows[0];
-  if (!row) throw new Error(`no data returned for client ${clid}`);
+  if (!row) throw new TeamspeakError(`the server returned no data for client ${clid}`);
   return row;
 }
 

@@ -157,6 +157,16 @@ if (err instanceof ServerError && err.code === ErrorCode.PermissionsClientInsuff
 `PermissionID`. A wrong server or channel
 password is no longer retried by the reconnect loop.
 
+Every error the SDK throws is a `TeamspeakError`, and `instanceof` works even
+when two copies of the package are installed. A handshake that fails on what
+the server sent rejects with a `CryptoInitError`; `parseIdentity` throws only
+an `InvalidIdentityError`. `EAXTagMismatchError` and
+`FakeSignatureMismatchError` are no longer exported: a packet that fails them
+is dropped, and they never reached a caller.
+
+The exported tables — `ErrorCode`, `Reason`, `ClientStatus`, every enumeration,
+`noopLogger`, `consoleLogger` and `defaultBackoffPolicy` — are frozen.
+
 ## Events
 
 ```ts

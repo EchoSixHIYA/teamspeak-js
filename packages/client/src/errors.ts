@@ -10,7 +10,7 @@ export class AlreadyConnectedError extends TeamspeakError {
 
 /**
  * A packet failed authentication: it was corrupted, or not from the server.
- * The packet is dropped; it never reaches a caller.
+ * Internal: the packet is dropped, and this never reaches a caller.
  */
 export class EAXTagMismatchError extends TeamspeakError {
   constructor() {
@@ -20,8 +20,8 @@ export class EAXTagMismatchError extends TeamspeakError {
 }
 
 /**
- * A packet sent before encryption was set up failed its integrity check. The
- * packet is dropped; it never reaches a caller.
+ * An unencrypted packet failed its integrity check. Internal: the packet is
+ * dropped, and this never reaches a caller.
  */
 export class FakeSignatureMismatchError extends TeamspeakError {
   constructor() {
@@ -38,7 +38,11 @@ export class FileTransferError extends TeamspeakError {
   }
 }
 
-/** The handshake could not set up encryption, usually because the server's answer was malformed. */
+/**
+ * The handshake failed on what the server sent: a malformed or out-of-range
+ * Init1 step, public key, license or proof. `connect()` rejects with it, the
+ * underlying failure as its `cause`.
+ */
 export class CryptoInitError extends TeamspeakError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);

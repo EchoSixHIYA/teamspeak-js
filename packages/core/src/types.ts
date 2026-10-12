@@ -34,20 +34,20 @@ export interface Logger {
 }
 
 /** A no-op logger that discards all messages. */
-export const noopLogger: Logger = {
+export const noopLogger: Logger = Object.freeze({
   debug() {},
   info() {},
   warn() {},
   error() {},
-};
+});
 
 /** A console-backed logger. */
-export const consoleLogger: Logger = {
+export const consoleLogger: Logger = Object.freeze({
   debug: console.debug.bind(console),
   info: console.info.bind(console),
   warn: console.warn.bind(console),
   error: console.error.bind(console),
-};
+});
 
 /** A negotiated upload, as `initFileUpload` returns it: what to dial and send. */
 export interface FileUploadInfo {

@@ -257,8 +257,8 @@ export class PacketHandler {
 
   /** Send an unencrypted TeamSpeak voice whisper packet to up to 32 clients. */
   sendWhisperPacket(data: Uint8Array, targetClientIds: number[], codec: number): void {
-    if (targetClientIds.length === 0) throw new Error("whisper requires at least one target");
-    if (targetClientIds.length > 32) throw new Error("too many whisper targets");
+    if (targetClientIds.length === 0) throw new RangeError("a whisper needs at least one target");
+    if (targetClientIds.length > 32) throw new RangeError("a whisper has at most 32 targets");
     if (targetClientIds.some((id) => !Number.isInteger(id) || id < 0 || id > 0xffff)) {
       throw new RangeError("invalid whisper target");
     }

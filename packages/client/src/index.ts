@@ -36,8 +36,6 @@ export type {
 
 export {
   AlreadyConnectedError,
-  EAXTagMismatchError,
-  FakeSignatureMismatchError,
   FileTransferError,
   CryptoInitError,
   InvalidIdentityError,

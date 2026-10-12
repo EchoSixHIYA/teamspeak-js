@@ -1,11 +1,5 @@
-/**
- * Why a client moved or left view, as the server reports it (`reasonid`).
- *
- * The names follow ReSpeak/tsdeclarations, as `Reason` does in teamspeak-go.
- * Events carry the reason as a plain number, since a server may send one this
- * table does not name.
- */
-export const Reason = {
+/** The values of the table below, before freezing. */
+const reasonValues = {
   /** A client joining, or moving of its own accord. */
   None: 0,
   /** A client moved by someone else. */
@@ -31,6 +25,14 @@ export const Reason = {
   /** The server instance shutting down. */
   ServerShutdown: 11,
 } as const;
+/**
+ * Why a client moved or left view, as the server reports it (`reasonid`).
+ *
+ * The names follow ReSpeak/tsdeclarations, as `Reason` does in teamspeak-go.
+ * Events carry the reason as a plain number, since a server may send one this
+ * table does not name.
+ */
+export const Reason: typeof reasonValues = /* @__PURE__ */ Object.freeze(reasonValues);
 
 /** A known reason. */
 export type Reason = (typeof Reason)[keyof typeof Reason];

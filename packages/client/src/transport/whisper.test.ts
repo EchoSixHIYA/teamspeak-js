@@ -83,7 +83,7 @@ describe("sendWhisperPacket", () => {
         Array.from({ length: 33 }, (_, i) => i + 1),
         5,
       ),
-    ).toThrow(/too many whisper targets/);
+    ).toThrow(/at most 32 targets/);
     expect(() => handler.sendWhisperPacket(audio, [0x10000], 5)).toThrow(RangeError);
     expect(() => handler.sendWhisperPacket(audio, [-1], 5)).toThrow(RangeError);
   });

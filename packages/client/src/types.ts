@@ -224,8 +224,8 @@ export type FileTransferSocketFactory = (host: string, port: number) => Duplex;
 
 // ---- Client status ----------------------------------------------------------
 
-/** Where a client is in its connection's life. */
-export const ClientStatus = {
+/** The values of the table below, before freezing. */
+const clientStatusValues = {
   /** Not connected: before `connect()`, after `disconnect()`, or after a drop. */
   Disconnected: "disconnected",
   /** Connecting: `connect()` is waiting for the handshake. */
@@ -233,6 +233,9 @@ export const ClientStatus = {
   /** Connected: the handshake completed and commands can be sent. */
   Connected: "connected",
 } as const;
+/** Where a client is in its connection's life. */
+export const ClientStatus: typeof clientStatusValues =
+  /* @__PURE__ */ Object.freeze(clientStatusValues);
 /** One of {@link ClientStatus}. */
 export type ClientStatus = (typeof ClientStatus)[keyof typeof ClientStatus];
 

@@ -10,8 +10,8 @@
  * names (`group.type === GroupType.Query`).
  */
 
-/** What kind of group a server or channel group is (`type`). */
-export const GroupType = {
+/** The values of the table below, before freezing. */
+const groupTypeValues = {
   /**
    * A template: the server copies it to create the groups of a new virtual
    * server, and no client can be a member.
@@ -22,12 +22,14 @@ export const GroupType = {
   /** A group for ServerQuery clients. */
   Query: 2,
 } as const;
+/** What kind of group a server or channel group is (`type`). */
+export const GroupType: typeof groupTypeValues = /* @__PURE__ */ Object.freeze(groupTypeValues);
 
 /** A group type. */
 export type GroupType = (typeof GroupType)[keyof typeof GroupType];
 
-/** Where a group's name is shown beside a member's nickname (`namemode`). */
-export const GroupNameMode = {
+/** The values of the table below, before freezing. */
+const groupNameModeValues = {
   /** No group name is shown. */
   Hidden: 0,
   /** The group name is shown before the nickname. */
@@ -35,34 +37,41 @@ export const GroupNameMode = {
   /** The group name is shown after the nickname. */
   After: 2,
 } as const;
+/** Where a group's name is shown beside a member's nickname (`namemode`). */
+export const GroupNameMode: typeof groupNameModeValues =
+  /* @__PURE__ */ Object.freeze(groupNameModeValues);
 
 /** A group name mode. */
 export type GroupNameMode = (typeof GroupNameMode)[keyof typeof GroupNameMode];
 
-/** Which kind of group a privilege key grants (`token_type`). */
-export const TokenType = {
+/** The values of the table below, before freezing. */
+const tokenTypeValues = {
   /** The key grants a server group. */
   ServerGroup: 0,
   /** The key grants a channel group in one channel. */
   ChannelGroup: 1,
 } as const;
+/** Which kind of group a privilege key grants (`token_type`). */
+export const TokenType: typeof tokenTypeValues = /* @__PURE__ */ Object.freeze(tokenTypeValues);
 
 /** A privilege key type. */
 export type TokenType = (typeof TokenType)[keyof typeof TokenType];
 
-/** What kind of connection a client is (`client_type`). */
-export const ClientType = {
+/** The values of the table below, before freezing. */
+const clientTypeValues = {
   /** A voice client, such as the TeamSpeak application or this SDK's client. */
   Voice: 0,
   /** A ServerQuery client. */
   Query: 1,
 } as const;
+/** What kind of connection a client is (`client_type`). */
+export const ClientType: typeof clientTypeValues = /* @__PURE__ */ Object.freeze(clientTypeValues);
 
 /** A client type. */
 export type ClientType = (typeof ClientType)[keyof typeof ClientType];
 
-/** A voice codec: the one a channel uses (`channel_codec`). */
-export const Codec = {
+/** The values of the table below, before freezing. */
+const codecValues = {
   /** Speex at 8 kHz. Current clients no longer play it. */
   SpeexNarrowband: 0,
   /** Speex at 16 kHz. Current clients no longer play it. */
@@ -76,12 +85,14 @@ export const Codec = {
   /** Opus tuned for music, stereo. */
   OpusMusic: 5,
 } as const;
+/** A voice codec: the one a channel uses (`channel_codec`). */
+export const Codec: typeof codecValues = /* @__PURE__ */ Object.freeze(codecValues);
 
 /** A voice codec. */
 export type Codec = (typeof Codec)[keyof typeof Codec];
 
-/** What a permission is set on, as `permfind` and `permoverview` report it (`t`). */
-export const PermissionTarget = {
+/** The values of the table below, before freezing. */
+const permissionTargetValues = {
   /** A server group. */
   ServerGroup: 0,
   /** A client, server-wide. */
@@ -93,12 +104,15 @@ export const PermissionTarget = {
   /** A client within one channel. */
   ChannelClient: 4,
 } as const;
+/** What a permission is set on, as `permfind` and `permoverview` report it (`t`). */
+export const PermissionTarget: typeof permissionTargetValues =
+  /* @__PURE__ */ Object.freeze(permissionTargetValues);
 
 /** A permission target. */
 export type PermissionTarget = (typeof PermissionTarget)[keyof typeof PermissionTarget];
 
-/** Where a text message goes (`targetmode`), as text message events report it. */
-export const TextMessageTarget = {
+/** The values of the table below, before freezing. */
+const textMessageTargetValues = {
   /** A private message to one client. */
   Client: 1,
   /** A message to the sender's current channel. */
@@ -106,12 +120,15 @@ export const TextMessageTarget = {
   /** A message to everyone on the virtual server. */
   Server: 3,
 } as const;
+/** Where a text message goes (`targetmode`), as text message events report it. */
+export const TextMessageTarget: typeof textMessageTargetValues =
+  /* @__PURE__ */ Object.freeze(textMessageTargetValues);
 
 /** A text message target. */
 export type TextMessageTarget = (typeof TextMessageTarget)[keyof typeof TextMessageTarget];
 
-/** A server log severity, matching the server's own levels (`loglevel`). */
-export const LogLevel = {
+/** The values of the table below, before freezing. */
+const logLevelValues = {
   /** An error. */
   Error: 1,
   /** A warning. */
@@ -121,6 +138,8 @@ export const LogLevel = {
   /** Routine information. */
   Info: 4,
 } as const;
+/** A server log severity, matching the server's own levels (`loglevel`). */
+export const LogLevel: typeof logLevelValues = /* @__PURE__ */ Object.freeze(logLevelValues);
 
 /** A log level. */
 export type LogLevel = (typeof LogLevel)[keyof typeof LogLevel];

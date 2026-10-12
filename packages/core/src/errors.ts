@@ -1,16 +1,45 @@
 import { ErrorCode } from "./errorcode.js";
 import { asPermissionID, type PermissionID } from "./command/ids.js";
 
+/** Marks the SDK's errors, whichever copy of the package made them. */
+const BRAND = Symbol.for("@honeybbq/teamspeak.error");
+
 /**
  * The base of every error the SDK throws, so `instanceof TeamspeakError` tells
  * the SDK's failures from anything else.
+ *
+ * `instanceof` works across copies of the package: an application can end up
+ * with two installed (two versions, or one bundled), and an error from one is
+ * still an instance of the other's classes, matched by class name.
  */
 export class TeamspeakError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = "TeamspeakError";
   }
+
+  /**
+   * Whether `value` is an error of this class from any copy of the package:
+   * one carrying the SDK's brand whose class, or a class it extends, has this
+   * one's name.
+   */
+  static [Symbol.hasInstance](value: unknown): boolean {
+    if (Function.prototype[Symbol.hasInstance].call(this, value)) return true;
+    if (typeof value !== "object" || value === null || !(BRAND in value)) return false;
+    for (let p = Object.getPrototypeOf(value); p !== null; p = Object.getPrototypeOf(p)) {
+      if (
+        Object.hasOwn(p, "constructor") &&
+        (p as { constructor: Function }).constructor.name === this.name
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
 }
+
+// On the prototype, so every instance and every subclass carries it.
+Object.defineProperty(TeamspeakError.prototype, BRAND, { value: true });
 
 /**
  * A refusal from the server: the `error` line that answered a command carried a
