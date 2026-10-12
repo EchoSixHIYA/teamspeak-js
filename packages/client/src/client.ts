@@ -28,6 +28,7 @@ import {
   noopLogger,
 } from "@honeybbq/teamspeak-core";
 import { AlreadyConnectedError, CryptoInitError, RemovedError } from "./errors.js";
+import { abortable, abortReason } from "./abort.js";
 import { Identity, Crypt, getUidFromPublicKey, type UidAlgorithm } from "./crypto/index.js";
 import { Resolver } from "./discovery/resolver.js";
 import { PacketHandler } from "./transport/handler.js";
@@ -98,6 +99,12 @@ const RECONNECT_ATTEMPT_TIMEOUT_MS = 30_000;
 /** One connection attempt, settled once by the handshake or its failure. */
 interface ConnectAttempt {
   readonly promise: Promise<void>;
+  /**
+   * Aborted when the attempt fails, is abandoned, or is interrupted by
+   * disconnect(), so the address lookup and the socket being opened for it
+   * stop too instead of finishing a connection nobody wants.
+   */
+  readonly signal: AbortSignal;
   settled: boolean;
   resolve(): void;
   reject(error: unknown): void;
@@ -113,8 +120,10 @@ function newConnectAttempt(): ConnectAttempt {
   // The failure is reported to whoever awaits connect(); an attempt nobody
   // awaits any more must not surface as an unhandled rejection.
   promise.catch(() => {});
+  const controller = new AbortController();
   const attempt: ConnectAttempt = {
     promise,
+    signal: controller.signal,
     settled: false,
     resolve() {
       if (attempt.settled) return;
@@ -124,20 +133,26 @@ function newConnectAttempt(): ConnectAttempt {
     reject(error) {
       if (attempt.settled) return;
       attempt.settled = true;
+      controller.abort(error);
       reject(error);
     },
   };
   return attempt;
 }
 
+/**
+ * Voice deliveries are dropped while more than this many deliveries of any
+ * kind are waiting: audio is fifty packets a second per speaker, and a
+ * listener that cannot keep up would otherwise queue it without bound.
+ */
+const MAX_PENDING_DELIVERIES = 256;
+
+/** How often dropped voice is reported, at most. */
+const VOICE_DROP_WARN_INTERVAL_MS = 10_000;
+
 interface Subscription {
   readonly listener: (payload: unknown) => void;
   removed: boolean;
-}
-
-/** The reason an aborted signal gives, as an error. */
-function abortReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException("This operation was aborted", "AbortError");
 }
 
 /**
@@ -176,6 +191,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #reconnecting = false;
   /** Set by an explicit disconnect(), which must never be undone by a retry. */
   #stopped = false;
+  /** Cuts short the reconnect loop's wait, on disconnect(). */
+  #stopReconnecting: AbortController | undefined;
   #status: ClientStatus = ClientStatus.Disconnected;
   #throttle = new CommandThrottle();
   #cmdTrack = new CommandTracker(() => this.clid);
@@ -186,6 +203,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
   /** Deliveries waiting for their turn; see #emit. */
   #queue: Array<() => void> = [];
   #draining = false;
+  #voiceDropped = 0;
+  #voiceDropWarnedAt = -Infinity;
 
   #eventMiddlewares: readonly EventMiddleware[];
   #finalCmdHandler: (cmd: string) => Promise<void>;
@@ -260,10 +279,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
       try {
-        const targetAddr = await this.#resolveAddr(signal);
+        const targetAddr = await this.#resolveAddr(attempt.signal);
         if (!attempt.settled) {
           this.logger.info("connecting to server", { address: targetAddr });
-          await this.handler.connect(targetAddr);
+          await this.handler.connect(targetAddr, attempt.signal);
         }
       } catch (error) {
         // Without this the client stays Connecting and every later connect()
@@ -289,6 +308,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // Recorded before anything else: a dropped socket during the goodbye below
     // must not be mistaken for an outage worth retrying.
     this.#stopped = true;
+    this.#stopReconnecting?.abort();
 
     if (this.#status === ClientStatus.Disconnected) return;
 
@@ -335,16 +355,21 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   /**
    * Send a raw command line without waiting for an answer, for the few
-   * commands the server answers with nothing at all. `signal` bounds only the
-   * wait for the flood throttle.
+   * commands the server answers with nothing at all.
+   *
+   * Commands are paced by a flood throttle; aborting `signal` while this waits
+   * for its turn rejects with the signal's reason and sends nothing. Rejects
+   * with a NotConnectedError when there is no connection to send on.
    */
   async execNoWait(
     command: string,
     options: { readonly signal?: AbortSignal | undefined } = {},
   ): Promise<void> {
-    options.signal?.throwIfAborted();
-    await this.#throttle.wait();
-    options.signal?.throwIfAborted();
+    const { signal } = options;
+    signal?.throwIfAborted();
+    if (!this.handler.isOpen) throw new NotConnectedError();
+    await this.#throttle.wait(signal);
+    if (!this.handler.isOpen) throw new NotConnectedError();
     await this.#finalCmdHandler(command);
   }
 
@@ -382,26 +407,27 @@ export class Client implements CommandExecutor, AsyncDisposable {
     const [rc, answered] = this.#cmdTrack.register(spec, correlation);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let onAbort: (() => void) | undefined;
+    // Started before the throttle: the timeout bounds the whole command, its
+    // wait for a turn included, and so does the signal.
+    const givenUp = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new CommandTimeoutError(parsed?.name ?? command)), timeout);
+      onAbort = () => reject(abortReason(signal!));
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
+    givenUp.catch(() => {});
+    const throttleAbort = new AbortController();
     try {
       const withRc = appendReturnCode(command, rc);
-      await this.#throttle.wait();
-      signal?.throwIfAborted();
+      await Promise.race([this.#throttle.wait(throttleAbort.signal), givenUp]);
+      if (!this.handler.isOpen) throw new NotConnectedError();
       await this.#finalCmdHandler(withRc);
 
-      const result = await Promise.race([
-        answered,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new CommandTimeoutError(parsed?.name ?? command)),
-            timeout,
-          );
-          onAbort = () => reject(abortReason(signal!));
-          signal?.addEventListener("abort", onAbort, { once: true });
-        }),
-      ]);
+      const result = await Promise.race([answered, givenUp]);
       if (result.err) throw result.err;
       return result.data;
     } finally {
+      // A command given up while it waited for its turn gives the turn back.
+      throttleAbort.abort();
       // Cleared, not left to fire: a pending timer keeps the process alive for
       // the full timeout after the last command has long been answered.
       clearTimeout(timer);
@@ -451,9 +477,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * ```
    *
    * Events that arrive while the loop body runs are buffered, so none is
-   * missed. Iteration ends when `signal` aborts, when the loop exits early
-   * (`break`, `return`, a throw), and — for every event but `disconnected` —
-   * when the client disconnects.
+   * missed — except voice, of which at most 256 frames are buffered; the rest
+   * are dropped, as for a listener that falls behind. Iteration ends when
+   * `signal` aborts, when the loop exits early (`break`, `return`, a throw),
+   * and — for every event but `disconnected` — when the client disconnects.
+   * An abort stops listening at once and discards whatever is buffered.
    */
   events<K extends keyof EventMap>(
     event: K,
@@ -462,25 +490,39 @@ export class Client implements CommandExecutor, AsyncDisposable {
     const { signal } = options;
     const buffered: Array<EventMap[K]> = [];
     let wake: (() => void) | undefined;
-    let ended = signal?.aborted ?? false;
-    const end = (): void => {
-      ended = true;
-      wake?.();
-    };
+    let ended = false;
 
     const stopListening = this.on(event, ((payload: EventMap[K]) => {
+      if (ended) return;
+      if (event === "voiceData" && buffered.length >= MAX_PENDING_DELIVERIES) {
+        this.#dropVoice();
+        return;
+      }
       buffered.push(payload);
       wake?.();
     }) as Listener<K>);
+    // Ends after what is already buffered, which arrived before the disconnect.
     const stopOnDisconnect =
-      event === "disconnected" ? undefined : this.on("disconnected", () => end());
-    signal?.addEventListener("abort", end, { once: true });
+      event === "disconnected"
+        ? undefined
+        : this.on("disconnected", () => {
+            ended = true;
+            stopListening();
+            wake?.();
+          });
     const cleanup = (): void => {
       ended = true;
       stopListening();
       stopOnDisconnect?.();
-      signal?.removeEventListener("abort", end);
+      signal?.removeEventListener("abort", abort);
+      wake?.();
     };
+    const abort = (): void => {
+      buffered.length = 0;
+      cleanup();
+    };
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
 
     const iterator: AsyncIterableIterator<EventMap[K]> = {
       async next(): Promise<IteratorResult<EventMap[K]>> {
@@ -493,8 +535,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
         return { value: undefined, done: true };
       },
       async return(): Promise<IteratorResult<EventMap[K]>> {
-        cleanup();
         buffered.length = 0;
+        cleanup();
         return { value: undefined, done: true };
       },
       [Symbol.asyncIterator]() {
@@ -536,13 +578,21 @@ export class Client implements CommandExecutor, AsyncDisposable {
     return this.#clients.get(this.clid)?.channelID ?? asChannelID(0n);
   }
 
-  /** Send Opus voice directly to specific clients, bypassing channel routing. */
+  /**
+   * Send Opus voice directly to specific clients, bypassing channel routing.
+   * Throws a NotConnectedError when there is no connection to send on.
+   */
   sendWhisper(data: Uint8Array, targetClientIDs: readonly ClientID[], codec: Codec): void {
+    if (!this.handler.isOpen) throw new NotConnectedError();
     this.handler.sendWhisperPacket(data, [...targetClientIDs], codec);
   }
 
-  /** Send one encoded audio frame to the channel this client is in. */
+  /**
+   * Send one encoded audio frame to the channel this client is in. Throws a
+   * NotConnectedError when there is no connection to send on.
+   */
   sendVoice(data: Uint8Array, codec: Codec): void {
+    if (!this.handler.isOpen) throw new NotConnectedError();
     this.handler.sendVoicePacket(data, codec);
   }
 
@@ -584,6 +634,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   /** @internal */
   _markConnected(): void {
+    // Only the attempt in progress can complete: never one that disconnect()
+    // or a failure has already ended.
+    if (this.#status !== ClientStatus.Connecting || this.#attempt.settled) return;
     this.#status = ClientStatus.Connected;
     this.#attempt.resolve();
     this.#emit("connected", undefined);
@@ -593,9 +646,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   #newHandler(): PacketHandler {
     const handler = new PacketHandler(this.crypt, this.logger, this.#socketFactory);
-    handler.onPacket = (p) => this.#handlePacket(p);
-    // Bound to this handler: a close reported late by one that a later
-    // connect() already replaced must not tear down the new connection.
+    // Each callback checks that its handler is still the current one: a
+    // packet or close reported late by one a later connect() already replaced
+    // must not reach, or tear down, the new connection.
+    handler.onPacket = (p) => {
+      if (handler === this.handler) this.#handlePacket(p);
+    };
     handler.onClosed = (err) => {
       if (handler === this.handler) this.#handleConnectionClosed(err);
     };
@@ -622,7 +678,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
     const { host, port } = splitHostPort(this.#addr);
     const fallback = joinHostPort(host, port);
     try {
-      const resolved = await this.#resolver.resolve(this.#addr, signal);
+      // Raced against the signal: a resolver that ignores it must still not
+      // hold up an attempt that has been given up.
+      const resolved = await abortable(this.#resolver.resolve(this.#addr, signal), signal);
       return resolved[0]?.addr ?? fallback;
     } catch (error) {
       signal?.throwIfAborted();
@@ -679,6 +737,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // Audio arrives fifty times a second per speaker; build no event nobody
     // will see.
     if (!this.#listeners.get("voiceData")?.length && this.#eventMiddlewares.length === 0) return;
+    if (this.#queue.length > MAX_PENDING_DELIVERIES) {
+      this.#dropVoice();
+      return;
+    }
 
     const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
     const clientId = view.getUint16(2, false);
@@ -872,6 +934,17 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.handler.close();
   }
 
+  /** Count a dropped voice delivery, and report the drops now and then. */
+  #dropVoice(): void {
+    this.#voiceDropped++;
+    const now = Date.now();
+    if (now - this.#voiceDropWarnedAt < VOICE_DROP_WARN_INTERVAL_MS) return;
+    this.#voiceDropWarnedAt = now;
+    this.logger.warn("voice dropped: listeners are not keeping up", {
+      dropped: this.#voiceDropped,
+    });
+  }
+
   /** Queue a server event, through the event middleware. */
   #emitServerEvent(event: ServerEvent): void {
     this.#enqueue(() => this.#eventChain(event));
@@ -932,7 +1005,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // hear about the drop even when a reconnect is already on its way, because
     // a silent recovery hides an outage.
     this.#emit("disconnected", cause);
-    void this.#scheduleReconnect(cause);
+    this.#scheduleReconnect(cause).catch((error: unknown) => {
+      this.logger.error("reconnecting failed", { error: String(error) });
+    });
   }
 
   /**
@@ -952,17 +1027,28 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
     this.#reconnecting = true;
 
+    const stop = new AbortController();
+    this.#stopReconnecting = stop;
     try {
       for (let attempt = 1; policy.maxAttempts === 0 || attempt <= policy.maxAttempts; attempt++) {
         if (this.#stopped) return;
-        if (!shouldRetry(err, attempt)) {
+        let retry: boolean;
+        try {
+          retry = shouldRetry(err, attempt);
+        } catch (error) {
+          this.logger.error("shouldRetry threw; not reconnecting", { error: String(error) });
+          return;
+        }
+        if (!retry) {
           this.logger.info("not retrying", { attempt, reason: err.message });
           return;
         }
 
         const delay = backoffDelay(policy, attempt);
         this.logger.info("reconnecting", { attempt, delayMs: delay });
-        await sleep(delay, () => this.#stopped);
+        // A timer that keeps the process alive: an application that does
+        // nothing but stay connected would otherwise exit during the wait.
+        await sleep(delay, stop.signal);
         if (this.#stopped) return;
 
         try {
@@ -976,6 +1062,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
       this.logger.warn("reconnect attempts exhausted", { attempts: policy.maxAttempts });
     } finally {
       this.#reconnecting = false;
+      if (this.#stopReconnecting === stop) this.#stopReconnecting = undefined;
     }
   }
 

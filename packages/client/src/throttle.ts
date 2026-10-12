@@ -9,9 +9,13 @@ export class CommandThrottle {
   #tokens = 5.0;
   #lastUpdate = Date.now();
 
+  /**
+   * Wait for a token. Aborting `signal` rejects with its reason, and the
+   * abort listener is removed however the wait ends.
+   */
   async wait(signal?: AbortSignal): Promise<void> {
     while (true) {
-      if (signal?.aborted) throw signal.reason as Error;
+      signal?.throwIfAborted();
 
       const now = Date.now();
       const elapsed = (now - this.#lastUpdate) / 1000;
@@ -29,17 +33,15 @@ export class CommandThrottle {
       const waitMs = Math.ceil(((1.0 - this.#tokens) / CommandThrottle.TOKEN_RATE) * 1000) + 10;
 
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(resolve, waitMs);
-        if (signal) {
-          signal.addEventListener(
-            "abort",
-            () => {
-              clearTimeout(timer);
-              reject(signal.reason as Error);
-            },
-            { once: true },
-          );
-        }
+        const onAbort = (): void => {
+          clearTimeout(timer);
+          reject(signal!.reason);
+        };
+        const timer = setTimeout(() => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve();
+        }, waitMs);
+        signal?.addEventListener("abort", onAbort, { once: true });
       });
     }
   }

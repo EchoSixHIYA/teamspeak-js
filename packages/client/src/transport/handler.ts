@@ -15,6 +15,8 @@ import {
   parseS2CHeader,
 } from "./packet.js";
 import { TimedOutError } from "../errors.js";
+import { abortable, abortReason } from "../abort.js";
+import { NotConnectedError } from "@honeybbq/teamspeak-core";
 import { GenerationWindow } from "./generation-window.js";
 import { Qlz } from "./quicklz.js";
 import { processInit1 } from "../handshake/crypt-handshake.js";
@@ -99,9 +101,18 @@ export class PacketHandler {
     this.#clientID = id;
   }
 
-  async connect(addr: string): Promise<void> {
+  /**
+   * Resolve `addr`, open a socket to it and start the handshake.
+   *
+   * Aborting `signal`, or closing the handler, while this runs abandons it: the
+   * lookup's answer is ignored, and a socket that finishes connecting
+   * afterwards is closed rather than started, so no handshake begins after
+   * the connection was given up.
+   */
+  async connect(addr: string, signal?: AbortSignal): Promise<void> {
     const { host, port } = splitHostPort(addr);
     const portNumber = parseInt(port, 10);
+    this.#throwIfAbandoned(signal);
 
     // Resolve before choosing a socket family. `isIP()` only recognises literal
     // addresses and returns 0 for every hostname, so picking the family from it
@@ -109,7 +120,8 @@ export class PacketHandler {
     // that resolves to IPv6 drops the datagrams with no error at all. On a
     // stock macOS/Linux box `localhost` resolves to ::1 first, so that path
     // silently never connected. Let DNS decide, then match the family.
-    const { address, family } = await lookup(host);
+    const { address, family } = await abortable(lookup(host), signal);
+    this.#throwIfAbandoned(signal);
 
     const family6 = family === 6;
     const socket: DatagramSocket = this.#socketFactory
@@ -117,24 +129,48 @@ export class PacketHandler {
       : createSocket(family6 ? "udp6" : "udp4");
 
     await new Promise<void>((resolve, reject) => {
-      const onError = (error: Error) => {
-        socket.close();
+      let done = false;
+      const fail = (error: unknown): void => {
+        if (done) return;
+        done = true;
+        socket.off("error", onError);
+        signal?.removeEventListener("abort", onAbort);
+        closeQuietly(socket);
         reject(error);
       };
+      const onError = (error: Error): void => fail(error);
+      const onAbort = (): void => fail(abortReason(signal!));
       socket.once("error", onError);
+      signal?.addEventListener("abort", onAbort, { once: true });
       // Connect to the resolved address, not the original host, so the socket
       // cannot end up talking to a different family than it was created for.
       socket.connect(portNumber, address, () => {
+        if (done) return;
+        if (this.#closed || signal?.aborted) {
+          fail(signal?.aborted ? abortReason(signal) : new NotConnectedError());
+          return;
+        }
+        done = true;
         socket.off("error", onError);
+        signal?.removeEventListener("abort", onAbort);
         this.start(socket);
         resolve();
       });
     });
   }
 
+  #throwIfAbandoned(signal: AbortSignal | undefined): void {
+    signal?.throwIfAborted();
+    if (this.#closed) throw new NotConnectedError();
+  }
+
+  /** Take over a connected socket and start the handshake on it. A closed handler closes it instead. */
   start(conn: DatagramSocket): void {
+    if (this.#closed) {
+      closeQuietly(conn);
+      return;
+    }
     this.#conn = conn;
-    this.#closed = false;
     this.#lastMessageReceived = Date.now();
 
     conn.on("message", (msg) => {
@@ -778,6 +814,15 @@ export class PacketHandler {
 }
 
 // ---- Helpers ----------------------------------------------------------------
+
+/** Close a socket that may already be closed; dgram throws on a second close. */
+function closeQuietly(socket: DatagramSocket): void {
+  try {
+    socket.close();
+  } catch {
+    // Already closed.
+  }
+}
 
 function applyProtocolFlags(pType: PacketType, flags: number): number {
   if (pType === PacketType.Command || pType === PacketType.CommandLow) {

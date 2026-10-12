@@ -76,25 +76,19 @@ function fieldName(token: string): string {
 }
 
 /**
- * Sleep, or wake early once `cancelled` reports true.
- *
- * Polling rather than an abort signal, because the caller that cancels is a
- * flag on the client rather than a signal it hands around.
+ * Sleep, or wake early once `signal` aborts. Resolves either way, never
+ * rejects. The timer keeps the process alive while it runs.
  */
-export function sleep(ms: number, cancelled?: () => boolean): Promise<void> {
-  if (ms <= 0) return Promise.resolve();
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal?.aborted) return Promise.resolve();
 
   return new Promise((resolve) => {
-    const started = Date.now();
-    const tick = setInterval(
-      () => {
-        if (cancelled?.() || Date.now() - started >= ms) {
-          clearInterval(tick);
-          resolve();
-        }
-      },
-      Math.min(50, ms),
-    );
-    tick.unref?.();
+    const done = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
   });
 }
