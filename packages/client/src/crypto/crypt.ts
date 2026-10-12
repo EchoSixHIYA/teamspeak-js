@@ -1,5 +1,5 @@
 import { createHash, createECDH } from "node:crypto";
-import { FakeSignatureMismatchError } from "../errors.js";
+import { CryptoInitError, FakeSignatureMismatchError } from "../errors.js";
 import type { Identity } from "./identity.js";
 import { importPublicKey } from "./identity.js";
 import { EAX } from "./eax.js";
@@ -10,6 +10,13 @@ const INIT1_PACKET_TYPE = 8;
 const PACKET_TYPE_MASK = 0x0f;
 
 const INIT1_MAC = Buffer.from("TS3INIT1");
+
+/**
+ * The most squarings the Init1 puzzle may ask for. TS3 3.13 and TS6 6.0 both
+ * ask for 10000; a level far beyond that is a server trying to pin the event
+ * loop, since the squarings run synchronously.
+ */
+export const MAX_RSA_CHALLENGE_LEVEL: number = 100_000;
 
 export interface KeyNonce {
   key: Uint8Array;
@@ -36,8 +43,8 @@ export class Crypt {
   }
 
   solveRsaChallenge(data: Uint8Array, offset: number, level: number): Uint8Array {
-    if (level < 0 || level > 1_000_000) {
-      throw new Error("RSA challenge level out of range");
+    if (!Number.isInteger(level) || level < 0 || level > MAX_RSA_CHALLENGE_LEVEL) {
+      throw new CryptoInitError(`RSA challenge level ${level} out of range`);
     }
 
     const xBytes = data.slice(offset, offset + 64);
@@ -45,6 +52,7 @@ export class Crypt {
 
     let y = bytesToBigInt(xBytes);
     const n = bytesToBigInt(nBytes);
+    if (n === 0n) throw new CryptoInitError("RSA challenge modulus is zero");
 
     for (let i = 0; i < level; i++) {
       y = (y * y) % n;
@@ -58,8 +66,12 @@ export class Crypt {
     const betaBytes = Buffer.from(beta, "base64");
     const omegaBytes = Buffer.from(omega, "base64");
 
-    const serverPubKey = importPublicKey(omegaBytes);
-    const sharedSecret = this.#getSharedSecret(serverPubKey);
+    let sharedSecret: Uint8Array;
+    try {
+      sharedSecret = this.#getSharedSecret(importPublicKey(omegaBytes));
+    } catch (error) {
+      throw new CryptoInitError("the server's public key is invalid", { cause: error });
+    }
 
     this.setSharedSecret(alphaBytes, betaBytes, sharedSecret);
   }

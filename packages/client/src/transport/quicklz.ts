@@ -1,5 +1,14 @@
 const TABLE_SIZE = 4096;
 
+/**
+ * The largest decompressed command accepted. A command is reassembled from at
+ * most a receive window of fragments, and the largest real answers (a full
+ * permission list, the welcome channel list of a big server) are a few
+ * hundred kilobytes; a header declaring more is refused before anything is
+ * allocated.
+ */
+export const MAX_DECOMPRESSED_SIZE: number = 1 << 20;
+
 interface QlzState {
   control: number;
   sourcePos: number;
@@ -7,19 +16,35 @@ interface QlzState {
   nextHashed: number;
 }
 
+/** A QuickLZ block that cannot be decompressed: truncated, oversized or inconsistent. */
+export class QuickLZError extends Error {
+  constructor(message: string) {
+    super(`QuickLZ: ${message}`);
+    this.name = "QuickLZError";
+  }
+}
+
+/**
+ * QuickLZ level 1 decompression, as the server compresses large commands.
+ *
+ * The input comes from the network, so every read and every back-reference is
+ * checked, and malformed input throws a QuickLZError rather than reading out
+ * of range or producing a partly filled buffer.
+ */
 export class Qlz {
   #hashtable = new Int32Array(TABLE_SIZE);
 
   decompress(data: Uint8Array): Uint8Array {
     const { headerLen, decompressedSize, flags } = parseQlzHeader(data);
 
-    const dest = new Uint8Array(decompressedSize);
-
     if ((flags & 0x01) === 0) {
-      dest.set(data.slice(headerLen, headerLen + decompressedSize));
-      return dest;
+      if (headerLen + decompressedSize > data.length) {
+        throw new QuickLZError("stored block is shorter than its declared size");
+      }
+      return data.slice(headerLen, headerLen + decompressedSize);
     }
 
+    const dest = new Uint8Array(decompressedSize);
     this.#hashtable.fill(0);
 
     const state: QlzState = {
@@ -29,20 +54,22 @@ export class Qlz {
       nextHashed: 0,
     };
 
-    while (this.#ensureControl(data, state)) {
+    while (state.destPos < decompressedSize) {
+      this.#ensureControl(data, state);
       if ((state.control & 1) !== 0) {
-        if (!this.#processReference(data, dest, state)) break;
-      } else {
-        if (this.#processLiteral(data, dest, decompressedSize, state)) break;
+        this.#processReference(data, dest, state);
+      } else if (this.#processLiteral(data, dest, decompressedSize, state)) {
+        break;
       }
     }
 
+    if (state.destPos !== decompressedSize) throw new QuickLZError("block ends early");
     return dest;
   }
 
-  #ensureControl(data: Uint8Array, st: QlzState): boolean {
-    if (st.control !== 1) return true;
-    if (st.sourcePos + 4 > data.length) return false;
+  #ensureControl(data: Uint8Array, st: QlzState): void {
+    if (st.control !== 1) return;
+    if (st.sourcePos + 4 > data.length) throw new QuickLZError("block ends early");
     st.control =
       (data[st.sourcePos]! |
         (data[st.sourcePos + 1]! << 8) |
@@ -50,12 +77,11 @@ export class Qlz {
         (data[st.sourcePos + 3]! << 24)) >>>
       0;
     st.sourcePos += 4;
-    return true;
   }
 
-  #processReference(data: Uint8Array, dest: Uint8Array, st: QlzState): boolean {
+  #processReference(data: Uint8Array, dest: Uint8Array, st: QlzState): void {
     st.control = (st.control >>> 1) >>> 0;
-    if (st.sourcePos + 2 > data.length) return false;
+    if (st.sourcePos + 2 > data.length) throw new QuickLZError("block ends early");
 
     const b1 = data[st.sourcePos]!;
     const b2 = data[st.sourcePos + 1]!;
@@ -66,26 +92,28 @@ export class Qlz {
     if (matchlen !== 0) {
       matchlen += 2;
     } else {
-      if (st.sourcePos >= data.length) return false;
+      if (st.sourcePos >= data.length) throw new QuickLZError("block ends early");
       matchlen = data[st.sourcePos]!;
       st.sourcePos++;
     }
 
     const offset = this.#hashtable[hash]!;
+    // The copy may overlap its own output, so only its start must precede it.
+    if (offset >= st.destPos) throw new QuickLZError("back-reference points ahead of the output");
+    if (st.destPos + matchlen > dest.length) {
+      throw new QuickLZError("back-reference overruns the declared size");
+    }
     for (let i = 0; i < matchlen; i++) {
-      if (st.destPos < dest.length && offset + i < st.destPos) {
-        dest[st.destPos] = dest[offset + i]!;
-        st.destPos++;
-      }
+      dest[st.destPos] = dest[offset + i]!;
+      st.destPos++;
     }
 
     const end = st.destPos + 1 - matchlen;
     this.#updateHashtable(dest, st, end);
     st.nextHashed = st.destPos;
-
-    return true;
   }
 
+  /** Copy literals; returns true once the tail of the block has been copied. */
   #processLiteral(
     data: Uint8Array,
     dest: Uint8Array,
@@ -96,23 +124,23 @@ export class Qlz {
     if (st.destPos >= threshold) {
       while (st.destPos < decompressedSize) {
         if (st.control === 1) {
-          st.sourcePos += 4;
-          if (st.sourcePos > data.length) break;
+          if (st.sourcePos + 4 > data.length) throw new QuickLZError("block ends early");
           st.control =
-            (data[st.sourcePos - 4]! |
-              (data[st.sourcePos - 3]! << 8) |
-              (data[st.sourcePos - 2]! << 16) |
-              (data[st.sourcePos - 1]! << 24)) >>>
+            (data[st.sourcePos]! |
+              (data[st.sourcePos + 1]! << 8) |
+              (data[st.sourcePos + 2]! << 16) |
+              (data[st.sourcePos + 3]! << 24)) >>>
             0;
+          st.sourcePos += 4;
         }
-        if (st.sourcePos >= data.length) break;
+        if (st.sourcePos >= data.length) throw new QuickLZError("block ends early");
         dest[st.destPos++] = data[st.sourcePos++]!;
         st.control = (st.control >>> 1) >>> 0;
       }
       return true;
     }
 
-    if (st.sourcePos >= data.length || st.destPos >= dest.length) return true;
+    if (st.sourcePos >= data.length) throw new QuickLZError("block ends early");
 
     dest[st.destPos++] = data[st.sourcePos++]!;
     st.control = (st.control >>> 1) >>> 0;
@@ -144,20 +172,24 @@ function parseQlzHeader(data: Uint8Array): {
   decompressedSize: number;
   flags: number;
 } {
-  if (data.length < 3) throw new Error("QuickLZ: data too short");
+  if (data.length < 3) throw new QuickLZError("data too short");
 
   const flags = data[0]!;
   const level = (flags >> 2) & 0x03;
-  if (level !== 1) throw new Error("QuickLZ: only level 1 is supported");
+  if (level !== 1) throw new QuickLZError("only level 1 is supported");
 
-  const headerLen = (flags & 0x02) !== 0 ? 9 : 3;
-  if (data.length < headerLen) throw new Error("QuickLZ: data too short for header");
+  const long = (flags & 0x02) !== 0;
+  const headerLen = long ? 9 : 3;
+  if (data.length < headerLen) throw new QuickLZError("data too short for header");
 
-  let decompressedSize: number;
-  if ((flags & 0x02) !== 0) {
-    decompressedSize = (data[5]! | (data[6]! << 8) | (data[7]! << 16) | (data[8]! << 24)) >>> 0;
-  } else {
-    decompressedSize = data[2]!;
+  // The header also carries the compressed size, which the reads below make
+  // redundant: each one is checked against the data itself.
+  const decompressedSize = long
+    ? (data[5]! | (data[6]! << 8) | (data[7]! << 16) | (data[8]! << 24)) >>> 0
+    : data[2]!;
+
+  if (decompressedSize > MAX_DECOMPRESSED_SIZE) {
+    throw new QuickLZError(`declared size ${decompressedSize} exceeds ${MAX_DECOMPRESSED_SIZE}`);
   }
 
   return { headerLen, decompressedSize, flags };

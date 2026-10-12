@@ -31,6 +31,14 @@ const WHISPER_HEADER_SIZE = 5;
 const RESEND_BASE_INTERVAL_MS = 500;
 const RESEND_LOOP_INTERVAL_MS = 100;
 
+/**
+ * The largest command reassembled from fragments. The receive window already
+ * bounds how many fragments one command can span; this bounds their total
+ * size, which a datagram's own size limit would otherwise let reach tens of
+ * megabytes.
+ */
+const MAX_REASSEMBLED_SIZE = 1 << 20;
+
 interface ResendPacket {
   packet: Packet;
   firstSend: number;
@@ -42,6 +50,12 @@ interface ResendPacket {
 export class PacketHandler {
   onPacket: ((p: Packet) => void) | null = null;
   onClosed: ((err: Error | null) => void) | null = null;
+  /**
+   * A received datagram could not be handled: it was malformed, or handling it
+   * threw. The datagram is dropped either way; the owner decides whether that
+   * ends the connection. Without an owner the error is logged.
+   */
+  onReceiveError: ((error: unknown) => void) | null = null;
 
   readonly #crypt: Crypt;
   readonly #logger: Logger;
@@ -66,6 +80,14 @@ export class PacketHandler {
   #commandLowQueue = new Map<number, Packet>();
   #ackManager = new Map<number, ResendPacket>();
   #initPacketCheck: ResendPacket | null = null;
+  /**
+   * Command packets sent under the dummy key, before crypto init completed:
+   * clientek, in practice. Both TS3 and TS6 acknowledge clientek under the
+   * dummy key even though it completes crypto init, so the dummy key stays
+   * acceptable for exactly those acknowledgements, and for nothing else.
+   */
+  #dummyCommandIDs = new Set<number>();
+  #resends = 0;
 
   constructor(crypt: Crypt, logger: Logger = noopLogger, socketFactory?: SocketFactory) {
     this.#crypt = crypt;
@@ -116,8 +138,17 @@ export class PacketHandler {
     this.#lastMessageReceived = Date.now();
 
     conn.on("message", (msg) => {
+      if (this.#closed) return;
       this.#lastMessageReceived = Date.now();
-      this.#handleRawPacket(new Uint8Array(msg.buffer, msg.byteOffset, msg.byteLength));
+      // Everything here parses what the network sent. Nothing it throws may
+      // escape: from a socket callback it would be an uncaught exception, and
+      // a malformed datagram from the server would take the process down.
+      try {
+        this.#handleRawPacket(new Uint8Array(msg.buffer, msg.byteOffset, msg.byteLength));
+      } catch (error: unknown) {
+        if (this.onReceiveError) this.onReceiveError(error);
+        else this.#logger.debug("dropped a malformed packet", { error: String(error) });
+      }
     });
     conn.on("error", (err) => {
       this.#logger.error("udp error", err);
@@ -231,6 +262,11 @@ export class PacketHandler {
     this.#write(final);
   }
 
+  /** How many packets have been sent again for want of an acknowledgement. */
+  get resends(): number {
+    return this.#resends;
+  }
+
   /** Whether there is a live socket to send on. */
   get isOpen(): boolean {
     return this.#conn !== null && !this.#closed;
@@ -311,6 +347,7 @@ export class PacketHandler {
     final.set(header, TAG_SIZE);
     final.set(ciphertext, TAG_SIZE + HEADER_SIZE);
     this.#write(final);
+    if (dummy && pType === PacketType.Command) this.#dummyCommandIDs.add(pID);
 
     const rp: ResendPacket = {
       packet: p,
@@ -346,6 +383,10 @@ export class PacketHandler {
     const ciphertext = raw.slice(TAG_SIZE + 3);
 
     const parsed = parseS2CHeader(header);
+    // Init1 belongs to the start of the handshake; once crypto init has
+    // completed, another one can only restart a session that is already set up.
+    if ((parsed.typeFlagged & 0x0f) === PacketType.Init1 && this.#crypt.cryptoInitComplete) return;
+
     const p: Packet = {
       ...parsed,
       clientID: 0,
@@ -432,12 +473,11 @@ export class PacketHandler {
         }
       }
 
-      // Try dummy fallback for command/ack types
-      if (
-        pType === PacketType.Command ||
-        pType === PacketType.CommandLow ||
-        pType === PacketType.Ack
-      ) {
+      // The acknowledgement of a command sent under the dummy key may itself
+      // use the dummy key, and is the one packet that may once crypto init has
+      // completed (see #dummyCommandIDs). A dummy-keyed command after that is
+      // dropped: the dummy key is public.
+      if (!dummy && pType === PacketType.Ack && !unencrypted) {
         try {
           const plaintext = this.#crypt.decrypt(
             pType,
@@ -447,9 +487,10 @@ export class PacketHandler {
             ciphertext,
             tag,
             true,
-            unencrypted,
+            false,
           );
-          return { plaintext, dummyUsed: true };
+          const acked = plaintext.length >= 2 ? (plaintext[0]! << 8) | plaintext[1]! : Number.NaN;
+          if (this.#dummyCommandIDs.delete(acked)) return { plaintext, dummyUsed: true };
         } catch {
           // fall through
         }
@@ -519,7 +560,11 @@ export class PacketHandler {
       if (isCommand) this.#_nextCommandID = newNext;
       else this.#_nextCommandLowID = newNext;
 
-      this.#tryDecompress(reassembled);
+      if (reassembled === null) {
+        this.#logger.debug("dropped a command over the reassembly limit", { id: current });
+        continue;
+      }
+      if (!this.#tryDecompress(reassembled)) continue;
       this.onPacket?.(reassembled);
     }
   }
@@ -546,7 +591,7 @@ export class PacketHandler {
     queue: Map<number, Packet>,
     nextID: number,
     win: GenerationWindow,
-  ): [reassembled: Packet, newNextID: number] | null {
+  ): [reassembled: Packet | null, newNextID: number] | null {
     if ((packetFlags(startPacket) & PacketFlags.Fragmented) === 0) {
       queue.delete(nextID);
       win.advance(1);
@@ -564,6 +609,16 @@ export class PacketHandler {
       if (!frag) return null;
       fragments.push(frag);
       totalSize += frag.data.length;
+      if (totalSize > MAX_REASSEMBLED_SIZE) {
+        // Dropped whole, so the window moves past it rather than waiting on
+        // the rest of a command that will never be accepted.
+        for (let i = 0; i < fragments.length; i++) {
+          queue.delete(nextID);
+          win.advance(1);
+          nextID = (nextID + 1) & 0xffff;
+        }
+        return [null, nextID];
+      }
 
       const fragmented = (packetFlags(frag) & PacketFlags.Fragmented) !== 0;
       if (!startSeen) {
@@ -596,14 +651,22 @@ export class PacketHandler {
     return [startPacket, nextID];
   }
 
-  #tryDecompress(packet: Packet): void {
-    if ((packetFlags(packet) & PacketFlags.Compressed) === 0) return;
+  /** Decompress a command in place; false when it cannot be, and is to be dropped. */
+  #tryDecompress(packet: Packet): boolean {
+    if ((packetFlags(packet) & PacketFlags.Compressed) === 0) return true;
     try {
       const qlz = new Qlz();
       packet.data = qlz.decompress(packet.data);
       packet.typeFlagged &= ~PacketFlags.Compressed;
+      return true;
     } catch (err) {
-      this.#logger.debug("decompression failed", { id: packet.id, err });
+      // Passing the compressed bytes on as if they were the command would
+      // hand the parser garbage.
+      this.#logger.debug("dropped a command that failed to decompress", {
+        id: packet.id,
+        error: String(err),
+      });
+      return false;
     }
   }
 
@@ -682,6 +745,7 @@ export class PacketHandler {
 
     rp.lastSend = now;
     rp.retryCount++;
+    this.#resends++;
     rp.nextInterval = Math.min(rp.nextInterval * 2, MAX_RETRY_INTERVAL_MS);
 
     const dummy = !this.#crypt.cryptoInitComplete;

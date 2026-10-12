@@ -27,7 +27,7 @@ import {
   TeamspeakError,
   noopLogger,
 } from "@honeybbq/teamspeak-core";
-import { AlreadyConnectedError, RemovedError } from "./errors.js";
+import { AlreadyConnectedError, CryptoInitError, RemovedError } from "./errors.js";
 import { Identity, Crypt, getUidFromPublicKey, type UidAlgorithm } from "./crypto/index.js";
 import { Resolver } from "./discovery/resolver.js";
 import { PacketHandler } from "./transport/handler.js";
@@ -599,6 +599,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
     handler.onClosed = (err) => {
       if (handler === this.handler) this.#handleConnectionClosed(err);
     };
+    handler.onReceiveError = (error) => {
+      if (handler === this.handler) this.#handleReceiveError(error);
+    };
     return handler;
   }
 
@@ -630,9 +633,27 @@ export class Client implements CommandExecutor, AsyncDisposable {
     }
   }
 
+  /**
+   * A datagram from the server could not be handled. During the handshake that
+   * is the connection failing, reported as a CryptoInitError with the cause;
+   * once connected, one bad packet is not worth the session, so it is dropped.
+   */
+  #handleReceiveError(error: unknown): void {
+    if (this.#status !== ClientStatus.Connected) {
+      this.#failConnection(
+        error instanceof CryptoInitError
+          ? error
+          : new CryptoInitError("the handshake failed on a malformed packet", { cause: error }),
+      );
+      return;
+    }
+    this.logger.debug("dropped a malformed packet", { error: String(error) });
+  }
+
   #handlePacket(p: Packet): void {
     const pType = p.typeFlagged & 0x0f;
     if (pType === 8 /* Init1 */) {
+      if (this.crypt.cryptoInitComplete) return;
       const response = processInit1(this.crypt, p.data);
       if (response) {
         this.handler.sendPacket(PacketType.Init1, response, 0);
@@ -727,14 +748,16 @@ export class Client implements CommandExecutor, AsyncDisposable {
     }
 
     switch (cmd.name) {
+      // The handshake's steps happen once: repeated after crypto init, they
+      // could only re-key or re-announce a session that is already set up.
       case "clientinitiv":
-        handleHandshakeInitIV(this, cmd.params);
+        if (!this.crypt.cryptoInitComplete) handleHandshakeInitIV(this, cmd.params);
         break;
       case "initivexpand2":
-        handleHandshakeExpand2(this, cmd.params);
+        if (!this.crypt.cryptoInitComplete) handleHandshakeExpand2(this, cmd.params);
         break;
       case "initserver":
-        handleInitServer(this, cmd.params);
+        if (this.#status === ClientStatus.Connecting) handleInitServer(this, cmd.params);
         break;
       case "error":
         this.#handleError(cmd.params);

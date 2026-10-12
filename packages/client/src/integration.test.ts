@@ -136,6 +136,15 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     await expect(disconnected).resolves.toBeInstanceOf(Error);
   }, 20_000);
 
+  // The server acknowledges clientek under the public dummy key although
+  // clientek completes crypto init, so that one acknowledgement must still be
+  // accepted after it. Dropped, clientek is resent under the session key until
+  // the server acknowledges it again.
+  it("accepts the dummy-keyed acknowledgement of clientek, so nothing is resent", async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(sharedClient.handler.resends).toBe(0);
+  });
+
   it("receives a non-zero server-assigned client ID", () => {
     const clid = sharedClient.clientID();
     console.log(`connected: clid=${clid}`);

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { buildCommandOrdered } from "@honeybbq/teamspeak-core";
 import type { Crypt } from "../crypto/crypt.js";
+import { CryptoInitError } from "../errors.js";
 
 export const INIT_VERSION = 1566914096; // 3.5.0 [Stable]
 
@@ -11,11 +12,13 @@ const INIT_STEP_LEN = 21;
 /**
  * Handle the TS3INIT1 handshake steps.
  * Returns the response bytes to send, or null if nothing should be sent.
+ * Throws a CryptoInitError for a step that cannot be answered.
  */
 export function processInit1(crypt: Crypt, data: Uint8Array | null): Uint8Array | null {
   if (data === null || (data.length >= 1 && data[0] === 0x7f)) {
     return buildInit1StartPacket();
   }
+  if (data.length === 0) throw new CryptoInitError("empty Init1 packet");
 
   switch (data[0]) {
     case 0:
