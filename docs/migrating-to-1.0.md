@@ -107,6 +107,14 @@ take them in the options object:
 | `listBindings(c, subsystem)`                                                                      | `listBindings(c, { subsystem })`                               |
 | `banClient`, `viewLog`, `listClientDatabase`, `listServerGroupClients`, `listChannelGroupClients` | their options and `{ signal, timeout }` merged into one object |
 
+A ban's fields are a `BanFields` (`ip`, `name`, `uid`, `reason`, `durationMs`),
+which `addBan` takes as `BanOptions` and which carries no `signal` or
+`timeout`: those are `addBan`'s separate last argument, as they are for every
+command that sends content (`createChannel`, `editChannel`, `updateClient`,
+`editClient`, `editClientDatabase`, `addServerGroupPermission`).
+`BanClientOptions` is `BanFields`' `durationMs` and `reason` with
+`{ signal, timeout }`.
+
 `initFileUpload` no longer replaces a file already at the path unless passed
 `overwrite: true`; it used to by default.
 

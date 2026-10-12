@@ -461,6 +461,19 @@ describe("bans", () => {
     expect(sent).toEqual(["banadd name=troll time=60"]);
   });
 
+  // The ban used to extend CommandOptions, so a signal set on it was accepted
+  // and never read: addBan reads its signal from its own last argument.
+  it("keeps the ban's fields and the command's options apart", async () => {
+    const { client, options } = recordingClient();
+    const { signal } = new AbortController();
+    // @ts-expect-error: a ban carries no signal.
+    await addBan(client, { uid: asUID("x"), signal });
+    await addBan(client, { uid: asUID("x") }, { signal, timeout: 5 });
+    await banClient(client, asClientID(5), { reason: "x", signal, timeout: 5 });
+
+    expect(options).toEqual([undefined, { signal, timeout: 5 }, { signal, timeout: 5 }]);
+  });
+
   // The voice protocol reports no ban id.
   it("returns undefined from addBan when the server reports no id", async () => {
     const { client } = recordingClient([], [{ banid: "11" }]);

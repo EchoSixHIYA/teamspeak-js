@@ -564,7 +564,13 @@ export interface ServerGroupPermission {
   readonly skip?: boolean | undefined;
 }
 
-/** Set a permission on a server group. */
+/**
+ * Set a permission on a server group.
+ *
+ * `grant` is what to send; the command's `signal` and `timeout` go in
+ * `options`, a separate last argument — set among the fields, they are not
+ * read.
+ */
 export async function addServerGroupPermission(
   client: CommandExecutor,
   sgid: ServerGroupID,

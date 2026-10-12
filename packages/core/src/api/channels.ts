@@ -143,6 +143,10 @@ const createNames: WireNames<ChannelCreateOptions> = {
  *
  * Over the voice protocol the server also moves the creator into the new
  * channel.
+ *
+ * `channel` is what to send; the command's `signal` and `timeout` go in
+ * `options`, a separate last argument — set among the fields, they are not
+ * read.
  */
 export async function createChannel(
   client: CommandExecutor,
@@ -163,7 +167,13 @@ export interface ChannelEditOptions extends ChannelSettings {
 
 const editNames: WireNames<ChannelEditOptions> = { name: "channel_name", ...settingNames };
 
-/** Change a channel's settings. Only the fields you set are sent. */
+/**
+ * Change a channel's settings. Only the fields you set are sent.
+ *
+ * `settings` is what to send; the command's `signal` and `timeout` go in
+ * `options`, a separate last argument — set among the fields, they are not
+ * read.
+ */
 export async function editChannel(
   client: CommandExecutor,
   cid: ChannelID,

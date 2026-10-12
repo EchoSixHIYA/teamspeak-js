@@ -200,6 +200,12 @@ for await (const entry of iterateClientDatabase(client)) {
 }
 ```
 
+A command that sends content — `createChannel`'s channel, `editChannel`'s
+settings, `updateClient`, `editClient`, `editClientDatabase`,
+`addServerGroupPermission`'s grant, `addBan`'s `BanFields` — takes it as its own
+argument, and `{ signal, timeout }` as a separate one after it: set among the
+content, they are not read.
+
 Options objects use camelCase names (`maxClients` for `channel_maxclients`),
 and only the fields you set are sent: an unset field leaves the setting alone,
 while `""` sends it empty — `editChannel(client, cid, { password: "" })` clears

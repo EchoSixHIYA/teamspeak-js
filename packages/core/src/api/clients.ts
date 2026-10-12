@@ -283,6 +283,10 @@ const updateNames: WireNames<ClientUpdateOptions> = {
  *
  * `clientupdate` addresses the calling client implicitly — there is no clid
  * parameter on the wire, which is why this takes no id.
+ *
+ * `update` is what to send; the command's `signal` and `timeout` go in
+ * `options`, a separate last argument — set among the fields, they are not
+ * read.
  */
 export async function updateClient(
   client: CommandExecutor,
@@ -308,7 +312,14 @@ const editNames: WireNames<ClientEditOptions> = {
   isTalker: "client_is_talker",
 };
 
-/** Change another client's editable attributes. Only the fields you set are sent. */
+/**
+ * Change another client's editable attributes. Only the fields you set are
+ * sent.
+ *
+ * `edit` is what to send; the command's `signal` and `timeout` go in
+ * `options`, a separate last argument — set among the fields, they are not
+ * read.
+ */
 export async function editClient(
   client: CommandExecutor,
   clid: ClientID,
@@ -548,7 +559,13 @@ const databaseEditNames: WireNames<ClientDatabaseEditOptions> = {
   nickname: "client_nickname",
 };
 
-/** Change a database record. Only the fields you set are sent. */
+/**
+ * Change a database record. Only the fields you set are sent.
+ *
+ * `edit` is what to send; the command's `signal` and `timeout` go in
+ * `options`, a separate last argument — set among the fields, they are not
+ * read.
+ */
 export async function editClientDatabase(
   client: CommandExecutor,
   cldbid: ClientDBID,

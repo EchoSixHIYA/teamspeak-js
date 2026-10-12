@@ -92,19 +92,51 @@ export async function listBans(
 const banTime = (ms: number): ParamValue => (ms === 0 ? undefined : toWireDuration(ms, SECOND));
 
 /**
- * How long a ban lasts and why. Unset fields are omitted; so is an empty
- * `reason`.
+ * What a ban matches, how long it lasts and why: the ban itself, never a
+ * command's options. `ip` and `name` are regular expressions matched against
+ * a client's address and nickname.
+ *
+ * Unset fields are omitted, and an empty string is treated as unset in every
+ * field here, never sent: an empty pattern would match every client.
  */
-export interface BanClientOptions extends CommandOptions {
+export interface BanFields {
+  /** The address pattern to ban (`ip`). */
+  readonly ip?: string | undefined;
+  /** The nickname pattern to ban (`name`). */
+  readonly name?: string | undefined;
+  /** The unique identifier to ban (`uid`). */
+  readonly uid?: UID | undefined;
+  /** The reason, shown to the banned client (`banreason`). */
+  readonly reason?: string | undefined;
   /**
    * How long the ban lasts, in milliseconds (`time`); unset or 0 is permanent.
    * Sent in whole seconds, and a positive duration under a second is sent as
    * one rather than rounded down to forever.
    */
   readonly durationMs?: number | undefined;
-  /** The reason, shown to the banned client (`banreason`). */
-  readonly reason?: string | undefined;
 }
+
+/**
+ * A ban to add: {@link BanFields}, at least one of `ip`, `name` or `uid` set; a
+ * ban matching nothing is refused before anything is sent. It carries no
+ * signal or timeout: those are addBan's separate last argument.
+ */
+export type BanOptions = BanFields;
+
+const banNames: WireNames<BanFields> = {
+  ip: ["ip", nonEmpty],
+  name: ["name", nonEmpty],
+  uid: ["uid", nonEmpty],
+  reason: ["banreason", nonEmpty],
+  durationMs: ["time", banTime],
+};
+
+/**
+ * How long {@link banClient}'s bans last and why — {@link BanFields}' duration
+ * and reason — with the command's signal and timeout, as the last argument.
+ */
+export interface BanClientOptions
+  extends Pick<BanFields, "durationMs" | "reason">, CommandOptions {}
 
 const banClientNames: WireNames<BanClientOptions> = {
   durationMs: ["time", banTime],
@@ -112,32 +144,11 @@ const banClientNames: WireNames<BanClientOptions> = {
 };
 
 /**
- * A ban to add. `ip` and `name` are regular expressions matched against a
- * client's address and nickname. At least one of `ip`, `name` or `uid` must be
- * set; a ban matching nothing is refused before anything is sent.
- *
- * An empty string is treated as unset in every field here, never sent: an
- * empty pattern would match every client.
- */
-export interface BanOptions extends BanClientOptions {
-  /** The address pattern to ban (`ip`). */
-  readonly ip?: string | undefined;
-  /** The nickname pattern to ban (`name`). */
-  readonly name?: string | undefined;
-  /** The unique identifier to ban (`uid`). */
-  readonly uid?: UID | undefined;
-}
-
-const banNames: WireNames<BanOptions> = {
-  ip: ["ip", nonEmpty],
-  name: ["name", nonEmpty],
-  uid: ["uid", nonEmpty],
-  ...banClientNames,
-};
-
-/**
  * Add a ban and return its id — over ServerQuery. The voice protocol reports
  * no id, so there this resolves to undefined.
+ *
+ * `ban` is what to ban; the command's `signal` and `timeout` go in `options`,
+ * a separate last argument — set among the fields, they are not read.
  */
 export async function addBan(
   client: CommandExecutor,
