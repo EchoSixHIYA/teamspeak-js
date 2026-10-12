@@ -12,6 +12,13 @@ const RESOLVE_BUDGET_MS = 8_000;
 /** How long one TSDNS server may take to answer. */
 const TSDNS_TIMEOUT_MS = 3_000;
 
+/**
+ * The most a TSDNS server or the nickname service is read for. Either answers
+ * with one short line; without a bound, one that kept sending would be held in
+ * memory until the resolution budget ran out.
+ */
+export const MAX_DISCOVERY_RESPONSE: number = 8 * 1024;
+
 /** How the default resolver resolves. */
 export interface ResolverOptions {
   /** Look dot-less names up at named.myteamspeak.com; off by default. */
@@ -163,14 +170,18 @@ export class Resolver {
 
 // ---- Helpers ----------------------------------------------------------------
 
-async function resolveNickname(nickname: string, signal?: AbortSignal): Promise<string | null> {
+/** @internal Ask the nickname service for `nickname`'s address. */
+export async function resolveNickname(
+  nickname: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   try {
     const url = new URL(NICKNAME_LOOKUP_URL);
     url.searchParams.set("name", nickname);
     const init: RequestInit = signal ? { signal } : {};
     const resp = await fetch(url.toString(), init);
     if (!resp.ok) return null;
-    const text = await resp.text();
+    const text = await readLimited(resp, MAX_DISCOVERY_RESPONSE);
     const line = text.split("\n")[0]?.trim();
     return line || null;
   } catch {
@@ -178,7 +189,28 @@ async function resolveNickname(nickname: string, signal?: AbortSignal): Promise<
   }
 }
 
-function queryTSDNS(
+/** A response body's first `limit` bytes, as text; the rest is not read. */
+async function readLimited(resp: Response, limit: number): Promise<string> {
+  if (resp.body === null) return "";
+  const reader = resp.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (size < limit) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const part = value.subarray(0, limit - size);
+      chunks.push(part);
+      size += part.length;
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/** @internal Ask the TSDNS server at `tsdnsAddr` for `queryHost`'s address. */
+export function queryTSDNS(
   tsdnsAddr: string,
   queryHost: string,
   signal?: AbortSignal,
@@ -203,11 +235,14 @@ function queryTSDNS(
 
     let buf = "";
     socket.on("data", (chunk: Buffer) => {
-      buf += chunk.toString();
+      buf += chunk.toString("latin1");
       const idx = buf.indexOf("\n");
-      if (idx >= 0) {
-        const line = buf.slice(0, idx).trim();
+      if (idx >= 0 && idx < MAX_DISCOVERY_RESPONSE) {
+        const line = Buffer.from(buf.slice(0, idx), "latin1").toString("utf8").trim();
         finish(!line || line === "404" || line === "errors" ? null : line);
+      } else if (buf.length >= MAX_DISCOVERY_RESPONSE) {
+        // No answer is that long.
+        finish(null);
       }
     });
 
