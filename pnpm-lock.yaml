@@ -50,6 +50,12 @@ importers:
 
   packages/core: {}
 
+  packages/serverquery:
+    dependencies:
+      '@honeybbq/teamspeak-core':
+        specifier: workspace:*
+        version: link:../core
+
 packages:
 
   '@andrewbranch/untar.js@1.0.4':
