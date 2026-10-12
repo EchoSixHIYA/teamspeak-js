@@ -116,6 +116,29 @@ describe("Identity", () => {
     expect(() => generateIdentitySync(161)).toThrow(RangeError);
   });
 
+  // Node's base64 decoder skips what it cannot read, so these used to load as
+  // some other key, and an offset past 64 bits was taken as given.
+  it("parseIdentity takes only canonical base64 and a uint64 offset", () => {
+    const [key, offset] = generateIdentitySync(0).export().split(":") as [string, string];
+    expect(parseIdentity(`${key}:${offset}`).export()).toBe(`${key}:${offset}`);
+    expect(parseIdentity(`${key}:${(1n << 64n) - 1n}`).offset).toBe((1n << 64n) - 1n);
+
+    const bad = [
+      `${key}:${1n << 64n}`,
+      `${key}:+1`,
+      `${key}:`,
+      `:${offset}`,
+      `!!!!${key}:${offset}`,
+      `${key.slice(0, -1)}:${offset}`, // without its padding
+      `${key} :${offset}`,
+      `${"x".repeat(10)}:0`,
+      `${Buffer.alloc(33, 1).toString("base64")}:0`,
+    ];
+    for (const value of bad) {
+      expect(() => parseIdentity(value), value).toThrow(InvalidIdentityError);
+    }
+  });
+
   it("parseIdentity throws only InvalidIdentityError", () => {
     for (const bad of ["notvalid", "abc:1x", ":-1", "AAAA:99999999999999999999999999x", "AAAA:1"]) {
       expect(() => parseIdentity(bad), bad).toThrow(InvalidIdentityError);

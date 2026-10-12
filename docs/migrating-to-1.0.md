@@ -34,7 +34,9 @@ returns a new identity instead of changing this one, and refuses a level above
 160; `offset` is read-only, and the private key is no longer a property —
 `export()` is the one way to the secret. `new Identity(...)` is gone: make one
 with `generateIdentity` or `parseIdentity`, which throws only an
-`InvalidIdentityError`.
+`InvalidIdentityError`. `parseIdentity` is strict: the key must be canonical
+base64 of at most 32 bytes and the offset a decimal unsigned 64-bit integer,
+where 0.x decoded whatever base64 it could and took any offset.
 
 ```ts
 // 0.x

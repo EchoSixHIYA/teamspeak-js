@@ -162,9 +162,14 @@ function levelAt(publicKey: string, offset: bigint): number {
   return countLeadingZeros(h.digest());
 }
 
+/** The largest offset, an unsigned 64-bit counter. */
+const MAX_UINT64 = (1n << 64n) - 1n;
+
 /**
- * Read an identity from the form `Identity.export()` writes. Anything else
- * throws an InvalidIdentityError, with the underlying failure as its cause.
+ * Read an identity from the form `Identity.export()` writes: the private key
+ * as canonical base64 of at most 32 bytes, a colon, and the offset as a
+ * decimal unsigned 64-bit integer. Anything else throws an
+ * InvalidIdentityError, with the underlying failure as its cause.
  */
 export function parseIdentity(s: string): Identity {
   const colonIdx = s.lastIndexOf(":");
@@ -172,10 +177,18 @@ export function parseIdentity(s: string): Identity {
 
   const dBase64 = s.slice(0, colonIdx);
   const offsetStr = s.slice(colonIdx + 1);
-  if (!/^\d+$/.test(offsetStr)) throw new InvalidIdentityError("invalid identity offset");
+  if (!/^\d+$/.test(offsetStr) || BigInt(offsetStr) > MAX_UINT64) {
+    throw new InvalidIdentityError("invalid identity offset");
+  }
   const offset = BigInt(offsetStr);
 
+  // Node's base64 decoder skips what it cannot read, so the key is checked by
+  // a round trip: anything but canonical base64 would otherwise decode to some
+  // other key, silently.
   const dBytes = Buffer.from(dBase64, "base64");
+  if (dBytes.length === 0 || dBytes.toString("base64") !== dBase64) {
+    throw new InvalidIdentityError("the private key is not canonical base64");
+  }
   if (dBytes.length > P256_SCALAR_SIZE) {
     throw new InvalidIdentityError("private key scalar too large");
   }

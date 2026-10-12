@@ -289,6 +289,9 @@ const uid = identity.uid("sha1");
 
 The private key never leaves the identity except through `export()`:
 `toString()`, `toJSON()` and `util.inspect()` describe it without the key.
+`parseIdentity` takes exactly what `export()` writes — the key as canonical
+base64 of at most 32 bytes, a colon, and a decimal offset that fits in 64 bits
+— and throws an `InvalidIdentityError` for anything else.
 
 ### Options
 
