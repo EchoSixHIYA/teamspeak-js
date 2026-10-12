@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { getEventListeners } from "node:events";
 import { Client } from "./client.js";
 import { generateIdentitySync } from "./crypto/identity.js";
+import { ConnectionTimeoutError } from "./errors.js";
 import {
   CommandTimeoutError,
   Codec,
@@ -12,7 +13,13 @@ import {
 } from "@honeybbq/teamspeak-core";
 import { CommandThrottle } from "./throttle.js";
 import { PacketType, type Packet } from "./transport/packet.js";
-import { FakeSocket, completeCryptoInit } from "./testing/fake-server.js";
+import {
+  FakeSocket,
+  completeCryptoInit,
+  datagram,
+  plainPacket,
+  s2cHeader,
+} from "./testing/fake-server.js";
 import type { ClientOptions } from "./types.js";
 
 const identity = generateIdentitySync(0);
@@ -345,6 +352,48 @@ describe("command middleware", () => {
     await expect(whoAmI(client)).resolves.toMatchObject({ clientID: 42 });
     await client.execNoWait("clientupdate");
     expect(seen).toEqual(["whoami"]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});
+
+describe("the idle timeout", () => {
+  /** Run a connected client's timers for `seconds`, with a datagram every ten. */
+  async function idleFor(
+    seconds: number,
+    datagramFor: (client: Client, id: number) => Uint8Array,
+  ): Promise<{ client: Client; dropped: Array<Error | undefined> }> {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const { client, socket } = await connected();
+      const dropped: Array<Error | undefined> = [];
+      client.on("disconnected", (error) => dropped.push(error));
+      for (let second = 1; second <= seconds; second++) {
+        if (second % 10 === 0) socket.deliver(datagramFor(client, second));
+        vi.advanceTimersByTime(1_000);
+      }
+      await settle();
+      return { client, dropped };
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  // Anyone can send datagrams that do not decrypt; they must not keep a
+  // session the server has left looking alive.
+  it("is not reset by datagrams that do not decrypt", async () => {
+    const { client, dropped } = await idleFor(70, (_, id) =>
+      datagram(new Uint8Array(8).fill(1), s2cHeader(id, 2), new Uint8Array(16).fill(2)),
+    );
+    expect(client.status).toBe("disconnected");
+    expect(dropped[0]).toBeInstanceOf(ConnectionTimeoutError);
+  });
+
+  it("is reset by every packet that does", async () => {
+    const { client, dropped } = await idleFor(70, (c, id) =>
+      plainPacket(clientInternals(c).crypt.fakeSignature, 4, 0, id, new Uint8Array(0)),
+    );
+    expect(client.status).toBe("connected");
+    expect(dropped).toEqual([]);
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 });

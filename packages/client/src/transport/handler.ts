@@ -218,7 +218,6 @@ export class PacketHandler {
 
     conn.on("message", (msg) => {
       if (this.#closed) return;
-      this.#lastMessageReceived = Date.now();
       // Everything here parses what the network sent. Nothing it throws may
       // escape: from a socket callback it would be an uncaught exception, and
       // a malformed datagram from the server would take the process down.
@@ -481,6 +480,9 @@ export class PacketHandler {
     const decrypted = this.#decryptPacketData(p, header, ciphertext, tag);
     if (decrypted === null) return;
     p.data = decrypted.plaintext;
+    // Only a packet that decrypted shows the server is there: anyone can send
+    // datagrams that do not, and they must not keep a dead session alive.
+    this.#lastMessageReceived = Date.now();
 
     const pType = packetType(p);
 
