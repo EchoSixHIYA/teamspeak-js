@@ -123,6 +123,28 @@ export class NotConnectedError extends TeamspeakError {
 }
 
 /**
+ * A command that answers with data succeeded without it: the server sent no
+ * row, or a row without the value the command exists to return — a created
+ * channel's id, a transfer's key.
+ *
+ * Without it the caller would get an id of 0 or an object of empty fields,
+ * which reads like a real answer.
+ */
+export class NoDataError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "NoDataError";
+
+  /** The name of the command that answered with nothing. */
+  readonly command: string;
+
+  constructor(command: string, message = `the server answered ${command} with no data`) {
+    super(message);
+    this.name = "NoDataError";
+    this.command = command;
+  }
+}
+
+/**
  * Read an error id. One that is missing or unreadable is reported as
  * {@link ErrorCode.Undefined}: an error line that does not say what went wrong
  * has still not said that nothing did.

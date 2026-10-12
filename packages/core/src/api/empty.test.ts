@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  createChannel,
+  getChannelInfo,
   findChannels,
   listChannelClientPermissions,
   listChannelPermissions,
@@ -8,13 +10,28 @@ import {
 import {
   findClientDatabase,
   findClients,
+  getClientDatabaseInfo,
+  getClientDBIDByUID,
   getClientIDs,
+  getClientInfo,
+  getClientNameByDBID,
+  getClientNameByUID,
+  getClientUIDByID,
   listClientDatabase,
   listClientPermissions,
   listClients,
 } from "./clients.js";
-import { listActiveTransfers, listFiles } from "./files.js";
 import {
+  getFileInfo,
+  initFileDownload,
+  initFileUpload,
+  listActiveTransfers,
+  listFiles,
+} from "./files.js";
+import {
+  addPrivilegeKey,
+  copyChannelGroup,
+  createChannelGroup,
   findPermission,
   getPermissionOverview,
   listChannelGroupClients,
@@ -23,8 +40,17 @@ import {
   listPermissions,
   listPrivilegeKeys,
 } from "./groups.js";
-import { listBans, listComplaints, listMessages } from "./moderation.js";
+import { getMessage, listBans, listComplaints, listMessages, viewLog } from "./moderation.js";
 import {
+  copyServerGroup,
+  createServerGroup,
+  getConnectionInfo,
+  getHostInfo,
+  getInstanceInfo,
+  getServerIDByPort,
+  getServerInfo,
+  getVersion,
+  whoAmI,
   getServerGroupsByClient,
   listBindings,
   listServerGroupClients,
@@ -36,12 +62,15 @@ import {
   asChannelGroupID,
   asChannelID,
   asClientDBID,
+  asClientID,
+  asMessageID,
   asServerGroupID,
   asUID,
 } from "../command/ids.js";
 import type { CommandExecutor } from "../command/request.js";
 import { ErrorCode } from "../errorcode.js";
-import { ServerError } from "../errors.js";
+import { GroupType } from "../enums.js";
+import { NoDataError, ServerError, TeamspeakError } from "../errors.js";
 import { permissionByName } from "../permission.js";
 
 /** An executor whose every command the server refuses with `code`. */
@@ -107,6 +136,75 @@ describe("empty results", () => {
     await expect(findChannels(refusing(ErrorCode.ChannelInvalidID), "x")).resolves.toEqual([]);
     await expect(listClients(refusing(ErrorCode.ClientInvalidID))).rejects.toBeInstanceOf(
       ServerError,
+    );
+  });
+});
+
+/** An executor that answers every command with `rows`. */
+const answering = (rows: Record<string, string>[]): CommandExecutor => ({
+  send: async () => rows,
+});
+
+/** Every command that exists to return data, called with whatever it needs. */
+const required: Record<string, (client: CommandExecutor) => Promise<unknown>> = {
+  createChannel: (c) => createChannel(c, { name: "x" }),
+  getChannelInfo: (c) => getChannelInfo(c, cid),
+  getClientInfo: (c) => getClientInfo(c, asClientID(1)),
+  getClientUIDByID: (c) => getClientUIDByID(c, asClientID(1)),
+  getClientDBIDByUID: (c) => getClientDBIDByUID(c, asUID("x")),
+  getClientNameByDBID: (c) => getClientNameByDBID(c, cldbid),
+  getClientNameByUID: (c) => getClientNameByUID(c, asUID("x")),
+  getClientDatabaseInfo: (c) => getClientDatabaseInfo(c, cldbid),
+  getFileInfo: (c) => getFileInfo(c, cid, "/a"),
+  initFileUpload: (c) => initFileUpload(c, cid, "/a", 3n),
+  initFileDownload: (c) => initFileDownload(c, cid, "/a"),
+  createChannelGroup: (c) => createChannelGroup(c, "x", GroupType.Regular),
+  copyChannelGroup: (c) =>
+    copyChannelGroup(c, asChannelGroupID(1n), asChannelGroupID(0n), "x", GroupType.Regular),
+  createServerGroup: (c) => createServerGroup(c, "x", GroupType.Regular),
+  copyServerGroup: (c) =>
+    copyServerGroup(c, asServerGroupID(1n), asServerGroupID(0n), "x", GroupType.Regular),
+  addPrivilegeKey: (c) => addPrivilegeKey(c, { serverGroupID: asServerGroupID(6n) }),
+  getMessage: (c) => getMessage(c, asMessageID(1n)),
+  viewLog: (c) => viewLog(c),
+  getServerInfo: (c) => getServerInfo(c),
+  getHostInfo: (c) => getHostInfo(c),
+  getInstanceInfo: (c) => getInstanceInfo(c),
+  getVersion: (c) => getVersion(c),
+  whoAmI: (c) => whoAmI(c),
+  getConnectionInfo: (c) => getConnectionInfo(c),
+  getServerIDByPort: (c) => getServerIDByPort(c, 9987),
+};
+
+/** Those whose row must also carry the value they exist for. */
+const keyed = [
+  "createChannel",
+  "getClientUIDByID",
+  "getClientDBIDByUID",
+  "getClientNameByUID",
+  "initFileUpload",
+  "initFileDownload",
+  "createChannelGroup",
+  "createServerGroup",
+  "addPrivilegeKey",
+  "getServerIDByPort",
+];
+
+describe("required data", () => {
+  // These used to answer an id of 0 or an object of empty fields, which reads
+  // like a real answer.
+  it.each(Object.keys(required))(
+    "%s throws a NoDataError when the server sends no row",
+    async (name) => {
+      const error = await required[name]!(answering([])).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(NoDataError);
+      expect(error).toBeInstanceOf(TeamspeakError);
+    },
+  );
+
+  it.each(keyed)("%s throws a NoDataError for a row without its value", async (name) => {
+    await expect(required[name]!(answering([{ unrelated: "1" }]))).rejects.toBeInstanceOf(
+      NoDataError,
     );
   });
 });

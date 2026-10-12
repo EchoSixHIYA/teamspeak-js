@@ -49,7 +49,13 @@ export type {
   UID,
 } from "./command/ids.js";
 
-export { TeamspeakError, ServerError, CommandTimeoutError, NotConnectedError } from "./errors.js";
+export {
+  TeamspeakError,
+  ServerError,
+  CommandTimeoutError,
+  NotConnectedError,
+  NoDataError,
+} from "./errors.js";
 export { ErrorCode } from "./errorcode.js";
 export { Reason } from "./reason.js";
 

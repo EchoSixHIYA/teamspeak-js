@@ -17,7 +17,7 @@ async function minifiedCopy(dir: string, name: string): Promise<Record<string, F
     entry,
     [
       `export * from ${JSON.stringify(fileURLToPath(new URL("./errors.ts", import.meta.url)))};`,
-      `export { TeamspeakError, ServerError, CommandTimeoutError, NotConnectedError } from ${JSON.stringify(fileURLToPath(new URL("../../core/src/errors.ts", import.meta.url)))};`,
+      `export { TeamspeakError, ServerError, CommandTimeoutError, NotConnectedError, NoDataError } from ${JSON.stringify(fileURLToPath(new URL("../../core/src/errors.ts", import.meta.url)))};`,
     ].join("\n"),
   );
   const result = (await build({
@@ -35,6 +35,7 @@ const kinds = [
   "ServerError",
   "CommandTimeoutError",
   "NotConnectedError",
+  "NoDataError",
   "AlreadyConnectedError",
   "CryptoInitError",
   "RemovedError",

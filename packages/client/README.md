@@ -229,7 +229,10 @@ notification rather than data rows — `servergrouplist` with
 command has already succeeded. The client pairs each answer with its command,
 so this is invisible to callers; [docs/voice-protocol-responses.md](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/voice-protocol-responses.md)
 has the measured table. A refusal is always thrown, never returned as an empty
-result.
+result. A list or find with nothing to report answers `[]`. A command that
+exists to return something — `createChannel`'s id, `initFileUpload`'s key,
+`getClientInfo`'s fields — throws a `NoDataError` when the server answers
+without it, rather than returning an id of 0 or an empty object.
 
 For anything outside the typed set, `client.exec(line, { signal?, timeout? })`
 sends a raw command line and resolves to the rows that answer it.

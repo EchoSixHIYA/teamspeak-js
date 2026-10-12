@@ -171,7 +171,7 @@ describe("createdGroupID", () => {
       { sgid: "6", name: "Server Admin" },
       { sgid: "12", name: "bots" },
     ];
-    expect(createdGroupID(rows, "sgid", "bots")).toBe(12n);
+    expect(createdGroupID(rows, "sgid", "bots", "servergroupadd")).toBe(12n);
   });
 
   it("takes the newest when a name repeats", () => {
@@ -179,15 +179,17 @@ describe("createdGroupID", () => {
       { sgid: "4", name: "bots" },
       { sgid: "12", name: "bots" },
     ];
-    expect(createdGroupID(rows, "sgid", "bots")).toBe(12n);
+    expect(createdGroupID(rows, "sgid", "bots", "servergroupadd")).toBe(12n);
   });
 
   it("reads a bare id, which is how ServerQuery answers", () => {
-    expect(createdGroupID([{ sgid: "12" }], "sgid", "bots")).toBe(12n);
+    expect(createdGroupID([{ sgid: "12" }], "sgid", "bots", "servergroupadd")).toBe(12n);
   });
 
   it("throws rather than returning another group's id", () => {
-    expect(() => createdGroupID([{ sgid: "1", name: "Guest" }], "sgid", "bots")).toThrow();
+    expect(() =>
+      createdGroupID([{ sgid: "1", name: "Guest" }], "sgid", "bots", "servergroupadd"),
+    ).toThrow();
   });
 });
 
@@ -196,6 +198,7 @@ describe("file transfer negotiation", () => {
   // echoed clientftfid, so two negotiations must not share one.
   it("gives each negotiation its own clientftfid", async () => {
     const { client, execCommandWithResponse } = fakeClient();
+    execCommandWithResponse.mockResolvedValue([{ ftkey: "k", port: "30033" }]);
     await initFileUpload(client, asChannelID(1n), "/a", 3n);
     await initFileUpload(client, asChannelID(1n), "/b", 3n);
 
@@ -660,7 +663,7 @@ describe("CommandOptions", () => {
   it("reaches send as its signal and timeout", async () => {
     const { signal } = new AbortController();
     const commandOptions = { signal, timeout: 500 };
-    const { client, options } = recordingClient();
+    const { client, options } = recordingClient([], [], [{ cid: "9" }]);
 
     await listChannels(client, commandOptions);
     await moveClient(client, asClientID(1), asChannelID(2), { password: "pw", ...commandOptions });

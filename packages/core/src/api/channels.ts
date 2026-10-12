@@ -9,6 +9,7 @@
  */
 
 import {
+  firstRow,
   exec,
   query,
   list,
@@ -151,7 +152,7 @@ export async function createChannel(
   const rows = await query(client, "channelcreate", encodeFields(channel, createNames), options, [
     "channel_password",
   ]);
-  return asChannelID(big(rows[0] ?? {}, "cid"));
+  return asChannelID(big(firstRow(rows, "channelcreate", "cid"), "cid"));
 }
 
 /** A channel's changed settings; see {@link ChannelSettings}. */
@@ -222,7 +223,7 @@ export async function getChannelInfo(
   options?: CommandOptions,
 ): Promise<Channel> {
   const rows = await query(client, "channelinfo", [["cid", cid]], options);
-  return { ...parseChannel(rows[0] ?? {}), id: cid };
+  return { ...parseChannel(firstRow(rows, "channelinfo")), id: cid };
 }
 
 /** A channel whose name matched a search. */

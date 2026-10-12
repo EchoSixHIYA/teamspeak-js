@@ -8,6 +8,7 @@
  */
 
 import {
+  firstRow,
   exec,
   query,
   list,
@@ -104,7 +105,7 @@ export async function getServerInfo(
   client: CommandExecutor,
   options?: CommandOptions,
 ): Promise<Readonly<Record<string, string>>> {
-  return (await query(client, "serverinfo", [], options))[0] ?? {};
+  return firstRow(await query(client, "serverinfo", [], options), "serverinfo");
 }
 
 /** Raw wire properties, sent as given. */
@@ -141,7 +142,7 @@ export async function getHostInfo(
   client: CommandExecutor,
   options?: CommandOptions,
 ): Promise<Readonly<Record<string, string>>> {
-  return (await query(client, "hostinfo", [], options))[0] ?? {};
+  return firstRow(await query(client, "hostinfo", [], options), "hostinfo");
 }
 
 /**
@@ -155,7 +156,7 @@ export async function getInstanceInfo(
   client: CommandExecutor,
   options?: CommandOptions,
 ): Promise<Readonly<Record<string, string>>> {
-  return (await query(client, "instanceinfo", [], options))[0] ?? {};
+  return firstRow(await query(client, "instanceinfo", [], options), "instanceinfo");
 }
 
 /**
@@ -220,7 +221,7 @@ export async function getVersion(
   client: CommandExecutor,
   options?: CommandOptions,
 ): Promise<ServerVersion> {
-  const row = (await query(client, "version", [], options))[0] ?? {};
+  const row = firstRow(await query(client, "version", [], options), "version");
   return { version: str(row, "version"), build: num(row, "build"), platform: str(row, "platform") };
 }
 
@@ -254,7 +255,7 @@ export interface WhoAmI {
 
 /** Which server and client this connection is, as the server sees it. */
 export async function whoAmI(client: CommandExecutor, options?: CommandOptions): Promise<WhoAmI> {
-  const row = (await query(client, "whoami", [], options))[0] ?? {};
+  const row = firstRow(await query(client, "whoami", [], options), "whoami");
   return {
     serverStatus: str(row, "virtualserver_status"),
     serverID: asServerID(big(row, "virtualserver_id")),
@@ -318,7 +319,10 @@ export async function getConnectionInfo(
   client: CommandExecutor,
   options?: CommandOptions,
 ): Promise<ServerConnectionInfo> {
-  const row = (await query(client, "serverrequestconnectioninfo", [], options))[0] ?? {};
+  const row = firstRow(
+    await query(client, "serverrequestconnectioninfo", [], options),
+    "serverrequestconnectioninfo",
+  );
   return {
     fileTransferBandwidthSent: num(row, "connection_filetransfer_bandwidth_sent"),
     fileTransferBandwidthReceived: num(row, "connection_filetransfer_bandwidth_received"),
@@ -351,7 +355,7 @@ export async function getServerIDByPort(
   options?: CommandOptions,
 ): Promise<ServerID> {
   const rows = await query(client, "serveridgetbyport", [["virtualserver_port", port]], options);
-  return asServerID(big(rows[0] ?? {}, "server_id"));
+  return asServerID(big(firstRow(rows, "serveridgetbyport", "server_id"), "server_id"));
 }
 
 // ---- Server groups ----------------------------------------------------------
@@ -378,7 +382,7 @@ export async function createServerGroup(
     ],
     options,
   );
-  return asServerGroupID(createdGroupID(rows, "sgid", name));
+  return asServerGroupID(createdGroupID(rows, "sgid", name, "servergroupadd"));
 }
 
 /** Delete a server group. */
@@ -441,7 +445,7 @@ export async function copyServerGroup(
   );
   // Copying onto an existing group keeps that group's id.
   if (targetGroupID !== 0n) return targetGroupID;
-  return asServerGroupID(createdGroupID(rows, "sgid", name));
+  return asServerGroupID(createdGroupID(rows, "sgid", name, "servergroupcopy"));
 }
 
 /** Add a client to a server group. */

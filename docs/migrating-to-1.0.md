@@ -188,7 +188,12 @@ an `InvalidAddressError` instead of a Node `RangeError` or `TypeError`, and a
 host name that does not resolve with a `TeamspeakError` whose `cause` is the
 lookup's error. `TimedOutError` is now
 `ConnectionTimeoutError`, which says which timeout it is: a command's is a
-`CommandTimeoutError`.
+`CommandTimeoutError`. A command that exists to return data — `createChannel`,
+`addPrivilegeKey`, `initFileUpload`, `initFileDownload`, `getChannelInfo`,
+`getClientInfo`, `getClientDBIDByUID`, `getServerIDByPort`, `getMessage`,
+`whoAmI` and the other single-answer queries — throws the new `NoDataError`
+when the server answers without it, where it used to return an id of 0 or an
+object of empty fields; `getClientInfo` threw a plain `TeamspeakError`.
 
 The exported tables — `ErrorCode`, `Reason`, `ClientStatus`, every enumeration,
 `noopLogger`, `consoleLogger` and `defaultBackoffPolicy` — are frozen.

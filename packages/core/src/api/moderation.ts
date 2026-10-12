@@ -6,6 +6,7 @@
  */
 
 import {
+  firstRow,
   exec,
   query,
   list,
@@ -314,7 +315,7 @@ export async function getMessage(
   options?: CommandOptions,
 ): Promise<OfflineMessage> {
   const rows = await query(client, "messageget", [["msgid", messageID]], options);
-  return { ...parseMessage(rows[0] ?? {}), id: messageID };
+  return { ...parseMessage(firstRow(rows, "messageget")), id: messageID };
 }
 
 /** Delete an offline message. */
@@ -460,7 +461,7 @@ export async function viewLog(
   options: LogViewOptions = {},
 ): Promise<LogPage> {
   const rows = await query(client, "logview", encodeFields(options, logViewNames), options);
-  const first = rows[0] ?? {};
+  const first = firstRow(rows, "logview");
   // One line per row, under the key `l`. This used to read only a `log` field
   // from the first row, which the server does not send; it is still read,
   // should a server send the lines that way.

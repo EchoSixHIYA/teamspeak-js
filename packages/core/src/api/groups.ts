@@ -3,6 +3,7 @@
  */
 
 import {
+  firstRow,
   exec,
   query,
   list,
@@ -106,7 +107,7 @@ export async function createChannelGroup(
     ],
     options,
   );
-  return asChannelGroupID(createdGroupID(rows, "cgid", name));
+  return asChannelGroupID(createdGroupID(rows, "cgid", name, "channelgroupadd"));
 }
 
 /** How a group is deleted. */
@@ -175,7 +176,7 @@ export async function copyChannelGroup(
   );
   // Copying onto an existing group keeps that group's id.
   if (targetGroupID !== 0n) return targetGroupID;
-  return asChannelGroupID(createdGroupID(rows, "cgid", name));
+  return asChannelGroupID(createdGroupID(rows, "cgid", name, "channelgroupcopy"));
 }
 
 /**
@@ -314,7 +315,7 @@ export async function getPermissionIDByName(
 ): Promise<PermissionID | undefined> {
   const rows = await query(client, "permidgetbyname", [["permsid", name]], options);
   if (rows.length === 0) return undefined;
-  return asPermissionID(num(rows[0] ?? {}, "permid"));
+  return asPermissionID(num(firstRow(rows, "permidgetbyname", "permid"), "permid"));
 }
 
 /**
@@ -587,7 +588,7 @@ export async function addPrivilegeKey(
   options?: CommandOptions,
 ): Promise<string> {
   const rows = await query(client, "privilegekeyadd", keyParams(key), options);
-  return str(rows[0] ?? {}, "token");
+  return str(firstRow(rows, "privilegekeyadd", "token"), "token");
 }
 
 /** Delete a privilege key. */

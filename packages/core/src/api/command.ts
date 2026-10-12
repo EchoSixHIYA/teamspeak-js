@@ -13,7 +13,7 @@
  */
 
 import { ErrorCode } from "../errorcode.js";
-import { ServerError, TeamspeakError } from "../errors.js";
+import { NoDataError, ServerError } from "../errors.js";
 import type { CommandExecutor, CommandOptions, ParamValue } from "../command/request.js";
 import { asChannelID, asPermissionID, parseIconID } from "../command/ids.js";
 import type { ChannelID, IconID } from "../command/ids.js";
@@ -170,7 +170,24 @@ async function* pages<T>(
   }
 }
 
-export { exec, query, list, pages, commandOptions };
+/**
+ * The row a command is defined to answer with, which must hold `key` when one
+ * is named. A server that acknowledged the command without it has not
+ * answered, which is a NoDataError rather than a row of empty fields.
+ */
+function firstRow(
+  rows: readonly Record<string, string>[],
+  command: string,
+  key?: string,
+): Record<string, string> {
+  const row = rows[0];
+  if (row === undefined || (key !== undefined && (row[key] ?? "") === "")) {
+    throw new NoDataError(command);
+  }
+  return row;
+}
+
+export { exec, query, list, pages, commandOptions, firstRow };
 export type { ParamValue };
 
 // ---- Field tables -----------------------------------------------------------
@@ -334,16 +351,17 @@ export function createdGroupID(
   rows: readonly Record<string, string>[],
   idKey: "sgid" | "cgid",
   name: string,
+  command: string,
 ): bigint {
   const listed = rows.filter((row) => row["name"] !== undefined);
-  if (listed.length === 0) return big(rows[0] ?? {}, idKey);
+  if (listed.length === 0) return big(firstRow(rows, command, idKey), idKey);
 
   let id = 0n;
   for (const row of listed) {
     if (row["name"] === name && big(row, idKey) > id) id = big(row, idKey);
   }
   if (id === 0n) {
-    throw new TeamspeakError(`the server did not report the new group "${name}"`);
+    throw new NoDataError(command, `the server did not report the new group "${name}"`);
   }
   return id;
 }

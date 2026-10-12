@@ -8,6 +8,7 @@
  */
 
 import {
+  firstRow,
   exec,
   query,
   list,
@@ -35,7 +36,6 @@ import { asClientDBID, asClientID, asUID } from "../command/ids.js";
 import type { Permission } from "../permission.js";
 import { Reason } from "../reason.js";
 import { ErrorCode } from "../errorcode.js";
-import { TeamspeakError } from "../errors.js";
 import { parseClient } from "./parse.js";
 
 /** A connected client, as `clientlist` reports one. */
@@ -135,9 +135,7 @@ export async function getClientInfo(
   options?: CommandOptions,
 ): Promise<Readonly<Record<string, string>>> {
   const rows = await query(client, "clientinfo", [["clid", clid]], options);
-  const row = rows[0];
-  if (!row) throw new TeamspeakError(`the server returned no data for client ${clid}`);
-  return row;
+  return firstRow(rows, "clientinfo");
 }
 
 /** How {@link moveClient} enters the channel. */
@@ -364,7 +362,7 @@ export async function getClientUIDByID(
   options?: CommandOptions,
 ): Promise<UID> {
   const rows = await query(client, "clientgetuidfromclid", [["clid", clid]], options);
-  return asUID(str(rows[0] ?? {}, "cluid"));
+  return asUID(str(firstRow(rows, "clientgetuidfromclid", "cluid"), "cluid"));
 }
 
 /** The persistent database id behind a uid. */
@@ -374,7 +372,7 @@ export async function getClientDBIDByUID(
   options?: CommandOptions,
 ): Promise<ClientDBID> {
   const rows = await query(client, "clientgetdbidfromuid", [["cluid", uid]], options);
-  return asClientDBID(big(rows[0] ?? {}, "cldbid"));
+  return asClientDBID(big(firstRow(rows, "clientgetdbidfromuid", "cldbid"), "cldbid"));
 }
 
 /** The nickname recorded for a database id. */
@@ -384,7 +382,7 @@ export async function getClientNameByDBID(
   options?: CommandOptions,
 ): Promise<string> {
   const rows = await query(client, "clientgetnamefromdbid", [["cldbid", cldbid]], options);
-  return str(rows[0] ?? {}, "name");
+  return str(firstRow(rows, "clientgetnamefromdbid"), "name");
 }
 
 /** The database record a uid names, as `clientgetnamefromuid` reports it. */
@@ -402,7 +400,7 @@ export async function getClientNameByUID(
   options?: CommandOptions,
 ): Promise<ClientDatabaseName> {
   const rows = await query(client, "clientgetnamefromuid", [["cluid", uid]], options);
-  const row = rows[0] ?? {};
+  const row = firstRow(rows, "clientgetnamefromuid", "cldbid");
   return { databaseID: asClientDBID(big(row, "cldbid")), name: str(row, "name") };
 }
 
@@ -531,7 +529,7 @@ export async function getClientDatabaseInfo(
   options?: CommandOptions,
 ): Promise<ClientDatabaseEntry> {
   const rows = await query(client, "clientdbinfo", [["cldbid", cldbid]], options);
-  return { ...parseDatabaseEntry(rows[0] ?? {}), databaseID: cldbid };
+  return { ...parseDatabaseEntry(firstRow(rows, "clientdbinfo")), databaseID: cldbid };
 }
 
 /**

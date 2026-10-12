@@ -13,6 +13,7 @@
  */
 
 import {
+  firstRow,
   commandOptions,
   exec,
   query,
@@ -109,7 +110,7 @@ export async function getFileInfo(
     options,
     ["cpw"],
   );
-  return parseFileEntry(rows[0] ?? {});
+  return parseFileEntry(firstRow(rows, "ftgetfileinfo"));
 }
 
 /**
@@ -335,7 +336,7 @@ export async function initFileUpload(
     options,
     ["cpw"],
   );
-  const row = rows[0] ?? {};
+  const row = firstRow(rows, "ftinitupload", "ftkey");
   return {
     fileTransferKey: str(row, "ftkey"),
     port: num(row, "port"),
@@ -379,7 +380,7 @@ export async function initFileDownload(
     options,
     ["cpw"],
   );
-  const row = rows[0] ?? {};
+  const row = firstRow(rows, "ftinitdownload", "ftkey");
   return {
     fileTransferKey: str(row, "ftkey"),
     port: num(row, "port"),
