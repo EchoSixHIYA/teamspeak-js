@@ -1,5 +1,5 @@
 /**
- * Channel groups, the permission catalogue, and the tokens used to join groups.
+ * Channel groups, the permission catalogue, and the privilege keys that grant groups.
  */
 
 import {
@@ -471,13 +471,12 @@ export async function resetPermissions(
   await exec(client, "permreset", [], options);
 }
 
-// ---- Tokens and privilege keys ----------------------------------------------
+// ---- Privilege keys ----------------------------------------------
 
 /**
- * A privilege key, which grants a group when redeemed.
- *
- * `token` and `privilegekey` name the same thing; the server accepts both
- * command families.
+ * A privilege key, which grants a group when redeemed. The server also
+ * accepts the older `token…` commands for the same keys; these functions use
+ * the `privilegekey…` ones.
  */
 export interface PrivilegeKey {
   /** The key itself. */
@@ -521,14 +520,6 @@ export async function listPrivilegeKeys(
   options?: CommandOptions,
 ): Promise<PrivilegeKey[]> {
   return (await list(client, "privilegekeylist", [], options)).map(parseKey);
-}
-
-/** Every token on the server; the same keys as {@link listPrivilegeKeys}. */
-export async function listTokens(
-  client: CommandExecutor,
-  options?: CommandOptions,
-): Promise<PrivilegeKey[]> {
-  return (await list(client, "tokenlist", [], options)).map(parseKey);
 }
 
 /**
@@ -619,32 +610,4 @@ export async function usePrivilegeKey(
   options?: CommandOptions,
 ): Promise<void> {
   await exec(client, "privilegekeyuse", [["token", token]], options);
-}
-
-/** Create a token; the same as {@link addPrivilegeKey}, by the other name. */
-export async function addToken(
-  client: CommandExecutor,
-  key: PrivilegeKeyOptions,
-  options?: CommandOptions,
-): Promise<string> {
-  const rows = await query(client, "tokenadd", keyParams(key), options);
-  return str(rows[0] ?? {}, "token");
-}
-
-/** Delete a token. */
-export async function deleteToken(
-  client: CommandExecutor,
-  token: string,
-  options?: CommandOptions,
-): Promise<void> {
-  await exec(client, "tokendelete", [["token", token]], options);
-}
-
-/** Redeem a token; the same as {@link usePrivilegeKey}, by the other name. */
-export async function useToken(
-  client: CommandExecutor,
-  token: string,
-  options?: CommandOptions,
-): Promise<void> {
-  await exec(client, "tokenuse", [["token", token]], options);
 }

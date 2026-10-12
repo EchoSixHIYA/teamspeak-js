@@ -125,6 +125,10 @@ for (const where of await findPermission(client, permissionByName("i_client_talk
 }
 ```
 
+Privilege keys have one set of functions: `listPrivilegeKeys`,
+`addPrivilegeKey`, `deletePrivilegeKey` and `usePrivilegeKey`. The `listTokens`,
+`addToken`, `deleteToken` and `useToken` aliases of a 1.0 prerelease are gone.
+
 About a hundred more commands are new: channels, groups, permissions, bans,
 files, tokens and the server. An id comes from a result, an event, or a
 constructor: `asChannelID(5)`, `asClientID(3)`.

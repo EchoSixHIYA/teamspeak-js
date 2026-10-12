@@ -194,7 +194,7 @@ a type of the same name.
 | `channels`   | Create, edit, move, delete, subscribe, channel permissions     |
 | `clients`    | List, move, kick, poke, edit, the client database, permissions |
 | `server`     | Server and instance settings, groups, temp passwords, bindings |
-| `groups`     | Channel groups, the permission catalogue, tokens               |
+| `groups`     | Channel groups, the permission catalogue, privilege keys       |
 | `moderation` | Bans, complaints, offline messages, text messages, the log     |
 | `files`      | List, delete, rename, create directories, transfer negotiation |
 
