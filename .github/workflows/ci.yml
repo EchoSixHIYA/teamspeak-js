@@ -130,4 +130,4 @@ jobs:
           set -a
           . ./ts3-fixture.env
           set +a
-          pnpm test src/integration.test.ts
+          pnpm test:integration

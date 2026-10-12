@@ -17,8 +17,8 @@
  * This only tells whether a command is accepted. How its data comes back is
  * scripts/probe-response-shapes.mts.
  */
-import { generateIdentity } from "../src/crypto/identity.js";
-import { Client } from "../src/client.js";
+import { generateIdentity } from "../packages/client/src/crypto/identity.js";
+import { Client } from "../packages/client/src/client.js";
 
 const quiet = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 const c = new Client(generateIdentity(8), process.env["ADDR"] ?? "127.0.0.1:9987", "js-cmdprobe", {

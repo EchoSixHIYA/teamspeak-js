@@ -1,0 +1,48 @@
+{
+  "name": "@honeybbq/teamspeak-core",
+  "version": "0.3.1",
+  "description": "What the TeamSpeak clients share: the command language, ids, errors, and the typed commands",
+  "keywords": [
+    "sdk",
+    "teamspeak",
+    "ts3",
+    "ts6"
+  ],
+  "license": "MIT",
+  "author": "honeybbq",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HoneyBBQ/teamspeak-js",
+    "directory": "packages/core"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./internal": "./src/internal.ts"
+  },
+  "publishConfig": {
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./internal": {
+        "types": "./dist/internal.d.ts",
+        "default": "./dist/internal.js"
+      }
+    },
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "name": "@honeybbq/teamspeak-client",
+  "version": "0.3.1",
+  "description": "A clean-room TeamSpeak client for Node.js, speaking the voice protocol the way the TeamSpeak application does",
+  "keywords": [
+    "client",
+    "sdk",
+    "teamspeak",
+    "ts3",
+    "ts6",
+    "voip"
+  ],
+  "license": "MIT",
+  "author": "honeybbq",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HoneyBBQ/teamspeak-js",
+    "directory": "packages/client"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "example": "tsx examples/connect.ts"
+  },
+  "dependencies": {
+    "@honeybbq/teamspeak-core": "workspace:*",
+    "@noble/curves": "^2.0.1"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

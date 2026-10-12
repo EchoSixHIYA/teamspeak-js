@@ -6,7 +6,7 @@
 #     -p 9987:9987/udp -p 10011:10011 -p 30033:30033 teamspeak:latest
 #   ./scripts/ts3-fixture.sh
 #   source ts3-fixture.env
-#   pnpm test src/integration.test.ts
+#   pnpm test:integration
 #
 # Creates the channels the tests need (one password-protected), grants the
 # default server group the permissions they exercise, relaxes anti-flood so a

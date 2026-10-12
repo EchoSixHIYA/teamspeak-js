@@ -22,13 +22,13 @@
  * `privilegekeyadd tokentype=0 tokenid1=<server admin sgid> tokenid2=0`.
  */
 import { Readable } from "node:stream";
-import { initFileUpload } from "../src/api/files.js";
-import { Client } from "../src/client.js";
-import { asChannelID } from "../src/command/ids.js";
-import { escape } from "../src/command/command.js";
-import { parseCommand } from "../src/command/parser.js";
-import { generateIdentity } from "../src/crypto/identity.js";
-import { packetType, PacketType } from "../src/transport/packet.js";
+import { initFileUpload } from "../packages/core/src/api/files.js";
+import { Client } from "../packages/client/src/client.js";
+import { asChannelID } from "../packages/core/src/command/ids.js";
+import { escape } from "../packages/core/src/command/command.js";
+import { parseCommand } from "../packages/core/src/command/parser.js";
+import { generateIdentity } from "../packages/client/src/crypto/identity.js";
+import { packetType, PacketType } from "../packages/client/src/transport/packet.js";
 
 const addr = process.env["ADDR"] ?? "127.0.0.1:9987";
 const privilegeKey = process.env["PRIVILEGE_KEY"] ?? "";
