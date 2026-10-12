@@ -1,3 +1,5 @@
+import { clientInternals } from "./client.js";
+import type { PacketHandler } from "./transport/handler.js";
 import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
 import { Client } from "./client.js";
@@ -18,13 +20,13 @@ function captureClientInit(options: ClientOptions = {}) {
   let packetData: Uint8Array | undefined;
   let packetFlags: number | undefined;
 
-  client.handler.sendPacket = ((type, data, flags) => {
+  clientInternals(client).handler.sendPacket = ((type, data, flags) => {
     packetType = type;
     packetData = data;
     packetFlags = flags;
-  }) as typeof client.handler.sendPacket;
+  }) as PacketHandler["sendPacket"];
 
-  sendClientInit(client);
+  sendClientInit(clientInternals(client));
 
   expect(packetType).toBe(PacketType.Command);
   expect(packetFlags).toBe(0);

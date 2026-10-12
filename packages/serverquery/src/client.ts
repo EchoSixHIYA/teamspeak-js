@@ -90,7 +90,7 @@ export class QueryClient implements CommandExecutor {
     const answered = new Promise<Record<string, string>[]>((resolve, reject) => {
       this.#pending = { rows: [], resolve, reject };
       timer = setTimeout(
-        () => reject(new CommandTimeoutError(parseCommand(line)?.name ?? line)),
+        () => reject(new CommandTimeoutError(parseCommand(line)?.name ?? "")),
         timeout,
       );
       onAbort = () => reject(signal!.reason);

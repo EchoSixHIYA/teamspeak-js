@@ -1,3 +1,4 @@
+import { clientInternals } from "./client.js";
 /**
  * Integration tests against a live TeamSpeak 3 server.
  *
@@ -142,7 +143,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   // the server acknowledges it again.
   it("accepts the dummy-keyed acknowledgement of clientek, so nothing is resent", async () => {
     await new Promise((resolve) => setTimeout(resolve, 1_500));
-    expect(sharedClient.handler.resends).toBe(0);
+    expect(clientInternals(sharedClient).handler.resends).toBe(0);
   });
 
   it("receives a non-zero server-assigned client ID", () => {

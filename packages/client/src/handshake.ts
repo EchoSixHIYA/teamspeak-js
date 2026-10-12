@@ -4,10 +4,13 @@ import { sign, generateTemporaryKey } from "./crypto/primitives.js";
 import { parseServerCapabilities } from "./capabilities.js";
 import { cryptoInit2 } from "./handshake/crypt-init2.js";
 import { PacketType } from "./transport/packet.js";
-import type { Client } from "./client.js";
+import type { ClientInternals } from "./client.js";
 
 /** Handle the `clientinitiv` message (P-256 based crypto path). */
-export function handleHandshakeInitIV(client: Client, params: Record<string, string>): void {
+export function handleHandshakeInitIV(
+  client: ClientInternals,
+  params: Record<string, string>,
+): void {
   const alpha = params["alpha"] ?? "";
   const beta = params["beta"] ?? "";
   const omega = params["omega"] ?? "";
@@ -18,7 +21,10 @@ export function handleHandshakeInitIV(client: Client, params: Record<string, str
 }
 
 /** Handle the `initivexpand2` message (Ed25519 / TS3 crypto path). */
-export function handleHandshakeExpand2(client: Client, params: Record<string, string>): void {
+export function handleHandshakeExpand2(
+  client: ClientInternals,
+  params: Record<string, string>,
+): void {
   client.logger.info("received initivexpand2");
   client.handler.receivedFinalInitAck();
 
@@ -33,7 +39,7 @@ export function handleHandshakeExpand2(client: Client, params: Record<string, st
 }
 
 /** Handle `initserver` — marks the client as connected. */
-export function handleInitServer(client: Client, params: Record<string, string>): void {
+export function handleInitServer(client: ClientInternals, params: Record<string, string>): void {
   const idStr = params["aclid"] ?? params["clid"] ?? "";
   const clid = idStr ? parseInt(idStr, 10) : 0;
 
@@ -47,10 +53,9 @@ export function handleInitServer(client: Client, params: Record<string, string>)
   // TS3, SHA-256 on TS6. Recording the whole capability set here keeps callers
   // from re-deriving it, or assuming one server generation.
   client.capabilities = parseServerCapabilities(params);
-  client.uidAlgorithm = client.capabilities.uidAlgorithm;
 
   client.logger.info("connected to server", { selfId: client.clid });
-  client._markConnected();
+  client.markConnected();
 
   // Inform the server about mute state
   setImmediate(() => {
@@ -62,7 +67,7 @@ export function handleInitServer(client: Client, params: Record<string, string>)
   });
 }
 
-function sendClientEkPacket(client: Client, beta: string): Uint8Array {
+function sendClientEkPacket(client: ClientInternals, beta: string): Uint8Array {
   const [publicKey, privateKey] = generateTemporaryKey();
   const ekBase64 = Buffer.from(publicKey).toString("base64");
   const clientProof = buildClientEkProof(client, publicKey, beta);
@@ -75,7 +80,7 @@ function sendClientEkPacket(client: Client, beta: string): Uint8Array {
   return privateKey;
 }
 
-function buildClientEkProof(client: Client, publicKey: Uint8Array, beta: string): string {
+function buildClientEkProof(client: ClientInternals, publicKey: Uint8Array, beta: string): string {
   const betaBytes = Buffer.from(beta, "base64");
   const toSign = new Uint8Array(86);
   toSign.set(publicKey.slice(0, 32));
@@ -97,16 +102,14 @@ export function prepareClientPassword(password: string): string {
   return createHash("sha1").update(password).digest().toString("base64");
 }
 
-export function sendClientInit(client: Client): void {
+export function sendClientInit(client: ClientInternals): void {
   const cmd = buildClientInitCommand(client);
   client.handler.sendPacket(PacketType.Command, Buffer.from(cmd), 0);
 }
 
-function buildClientInitCommand(client: Client): string {
+function buildClientInitCommand(client: ClientInternals): string {
   const pubKeyBase64 = client.crypt.identity.publicKeyBase64();
-  const initOptions = client.getClientInitOptions();
-  const defaultChannelPassword = prepareClientPassword(initOptions.defaultChannelPassword);
-  const serverPassword = prepareClientPassword(initOptions.serverPassword);
+  const initOptions = client.initOptions;
   // HWID should match TS3 client UID format: base64(SHA1(publicKeyBase64))
   const hwid = createHash("sha1").update(pubKeyBase64).digest().toString("base64");
 
@@ -117,8 +120,8 @@ function buildClientInitCommand(client: Client): string {
     ["client_input_hardware", "1"],
     ["client_output_hardware", "1"],
     ["client_default_channel", initOptions.defaultChannel],
-    ["client_default_channel_password", defaultChannelPassword],
-    ["client_server_password", serverPassword],
+    ["client_default_channel_password", initOptions.defaultChannelPasswordHash],
+    ["client_server_password", initOptions.serverPasswordHash],
     ["client_meta_data", ""],
     [
       "client_version_sign",

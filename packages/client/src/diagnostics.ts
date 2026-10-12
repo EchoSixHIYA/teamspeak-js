@@ -12,6 +12,7 @@
  *
  * ```ts
  * import { tracingChannel } from "node:diagnostics_channel";
+import type { Client } from "./client.js";
  * tracingChannel("honeybbq:teamspeak:command").subscribe({
  *   start: ({ command }) => console.time(command),
  *   asyncEnd: ({ command }) => console.timeEnd(command),
@@ -26,13 +27,14 @@ import {
   type Channel,
   type TracingChannel,
 } from "node:diagnostics_channel";
+import type { Client } from "./client.js";
 
 /** What `honeybbq:teamspeak:command` reports about a command. */
 export interface CommandTrace {
   /** The command's name, such as `clientlist`. */
   readonly command: string;
-  /** The client sending it. */
-  readonly client: object;
+  /** The client sending it. Its fields are private, so it carries no secret. */
+  readonly client: Client;
 }
 
 /** What `honeybbq:teamspeak:packet` reports about a command arriving from the server. */
@@ -40,7 +42,7 @@ export interface PacketTrace {
   /** The command's name, such as `notifytextmessage`, or `""` for a data row. */
   readonly command: string;
   /** The client receiving it. */
-  readonly client: object;
+  readonly client: Client;
 }
 
 /**

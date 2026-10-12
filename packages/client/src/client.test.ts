@@ -1,3 +1,4 @@
+import { clientInternals } from "./client.js";
 import { afterEach, describe, it, expect } from "vitest";
 import { createSocket, type Socket } from "node:dgram";
 import {
@@ -29,8 +30,8 @@ function commandPacket(text: string): Packet {
 /** A client already past the handshake, as initserver would have left it. */
 function connectedClient(nickname: string, clid: number): Client {
   const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", nickname);
-  client.clid = clid;
-  client.handler.setClientID(clid);
+  clientInternals(client).clid = clid;
+  clientInternals(client).handler.setClientID(clid);
   return client;
 }
 
@@ -41,33 +42,33 @@ describe("Client self identification on notifycliententerview", () => {
     // its clid would poison every outgoing packet header with a foreign id.
     const client = connectedClient("Bot", 5);
 
-    client.handler.onPacket?.(
+    clientInternals(client).handler.onPacket?.(
       commandPacket("notifycliententerview clid=9 ctid=1 client_nickname=Bot2"),
     );
 
-    expect(client.clid).toBe(5);
+    expect(clientInternals(client).clid).toBe(5);
   });
 
   it("tracks the server-applied rename on its own clientEnter", () => {
     const client = connectedClient("Bot", 5);
 
-    client.handler.onPacket?.(
+    clientInternals(client).handler.onPacket?.(
       commandPacket("notifycliententerview clid=5 ctid=1 client_nickname=Bot2"),
     );
 
-    expect(client.clid).toBe(5);
-    expect(client.nickname).toBe("Bot2");
+    expect(clientInternals(client).clid).toBe(5);
+    expect(clientInternals(client).nickname).toBe("Bot2");
   });
 
   it("still learns its clid from the welcome enter when initserver carried no aclid", () => {
     const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "Bot");
 
-    client.handler.onPacket?.(
+    clientInternals(client).handler.onPacket?.(
       commandPacket("notifycliententerview clid=7 ctid=1 client_nickname=Bot"),
     );
 
-    expect(client.clid).toBe(7);
-    expect(client.nickname).toBe("Bot");
+    expect(clientInternals(client).clid).toBe(7);
+    expect(clientInternals(client).nickname).toBe("Bot");
   });
 
   it("adopts the first suffix match while the clid is still unknown, then locks it in", () => {
@@ -76,15 +77,15 @@ describe("Client self identification on notifycliententerview", () => {
     // is what stops any later lookalike from taking over.
     const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "Bot");
 
-    client.handler.onPacket?.(
+    clientInternals(client).handler.onPacket?.(
       commandPacket("notifycliententerview clid=9 ctid=1 client_nickname=Bot3"),
     );
-    expect(client.clid).toBe(9);
+    expect(clientInternals(client).clid).toBe(9);
 
-    client.handler.onPacket?.(
+    clientInternals(client).handler.onPacket?.(
       commandPacket("notifycliententerview clid=7 ctid=1 client_nickname=Bot"),
     );
-    expect(client.clid).toBe(9);
+    expect(clientInternals(client).clid).toBe(9);
   });
 });
 
@@ -120,10 +121,12 @@ describe("connect()", () => {
   it("rejects with the server error instead of timing out", async () => {
     const client = await silentServerClient();
     const connecting = client.connect();
-    await until(() => client.handler.isOpen);
+    await until(() => clientInternals(client).handler.isOpen);
 
     // A handshake the server rejects before the welcome sequence completes.
-    client.handler.onPacket?.(commandPacket("error id=1028 msg=invalid\\sserver\\spassword"));
+    clientInternals(client).handler.onPacket?.(
+      commandPacket("error id=1028 msg=invalid\\sserver\\spassword"),
+    );
 
     await expect(connecting).rejects.toThrow(/invalid server password/);
     expect(client.status).toBe(ClientStatus.Disconnected);
@@ -133,7 +136,7 @@ describe("connect()", () => {
     const client = await silentServerClient();
     const controller = new AbortController();
     const connecting = client.connect({ signal: controller.signal });
-    await until(() => client.handler.isOpen);
+    await until(() => clientInternals(client).handler.isOpen);
 
     const reason = new Error("caller went away");
     controller.abort(reason);
@@ -158,7 +161,7 @@ describe("connect()", () => {
   it("rejects when disconnect() is called during the handshake", async () => {
     const client = await silentServerClient();
     const connecting = client.connect();
-    await until(() => client.handler.isOpen);
+    await until(() => clientInternals(client).handler.isOpen);
 
     await client.disconnect();
 
@@ -168,9 +171,9 @@ describe("connect()", () => {
   it("resolves once the handshake completes", async () => {
     const client = await silentServerClient();
     const connecting = client.connect();
-    await until(() => client.handler.isOpen);
+    await until(() => clientInternals(client).handler.isOpen);
 
-    client._markConnected();
+    clientInternals(client).markConnected();
 
     await expect(connecting).resolves.toBeUndefined();
     expect(client.status).toBe(ClientStatus.Connected);
@@ -185,7 +188,7 @@ describe("events", () => {
     client.on("clientEnter", (info) => seen.push(info.id));
 
     for (let id = 10; id < 60; id++) {
-      client.handler.onPacket?.(
+      clientInternals(client).handler.onPacket?.(
         commandPacket(`notifycliententerview clid=${id} ctid=1 client_nickname=C${id}`),
       );
     }
@@ -199,7 +202,9 @@ describe("events", () => {
     const seen: string[] = [];
     const unsubscribe = client.on("poked", (e) => seen.push(e.message));
 
-    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=queued"));
+    clientInternals(client).handler.onPacket?.(
+      commandPacket("notifyclientpoke invokerid=1 msg=queued"),
+    );
     unsubscribe();
     unsubscribe(); // a second call is harmless
     await settle();
@@ -213,7 +218,9 @@ describe("events", () => {
     {
       using _listener = client.on("poked", (e) => seen.push(e.message));
     }
-    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=after"));
+    clientInternals(client).handler.onPacket?.(
+      commandPacket("notifyclientpoke invokerid=1 msg=after"),
+    );
     await settle();
 
     expect(seen).toEqual([]);
@@ -224,8 +231,12 @@ describe("events", () => {
     const seen: string[] = [];
     client.once("poked", (e) => seen.push(e.message));
 
-    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=first"));
-    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=second"));
+    clientInternals(client).handler.onPacket?.(
+      commandPacket("notifyclientpoke invokerid=1 msg=first"),
+    );
+    clientInternals(client).handler.onPacket?.(
+      commandPacket("notifyclientpoke invokerid=1 msg=second"),
+    );
     await settle();
 
     expect(seen).toEqual(["first"]);
@@ -242,12 +253,14 @@ describe("events", () => {
         },
       ],
     });
-    client.clid = 5;
+    clientInternals(client).clid = 5;
     const poked: string[] = [];
     client.on("poked", (e) => poked.push(e.message));
 
-    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=dropped"));
-    client.handler.onPacket?.(
+    clientInternals(client).handler.onPacket?.(
+      commandPacket("notifyclientpoke invokerid=1 msg=dropped"),
+    );
+    clientInternals(client).handler.onPacket?.(
       commandPacket("notifycliententerview clid=9 ctid=1 client_nickname=X"),
     );
     await settle();
@@ -261,9 +274,9 @@ describe("being removed by the server", () => {
   async function connected(): Promise<Client> {
     const client = await silentServerClient();
     const connecting = client.connect();
-    await until(() => client.handler.isOpen);
-    client.clid = 5;
-    client._markConnected();
+    await until(() => clientInternals(client).handler.isOpen);
+    clientInternals(client).clid = 5;
+    clientInternals(client).markConnected();
     await connecting;
     return client;
   }
@@ -275,7 +288,7 @@ describe("being removed by the server", () => {
     client.on("kicked", (e) => kicked.push(e));
     client.on("disconnected", (err) => disconnected.push(err));
 
-    client.handler.onPacket?.(
+    clientInternals(client).handler.onPacket?.(
       commandPacket(
         "notifyclientleftview clid=5 reasonid=5 reasonmsg=behave invokerid=1 invokername=Admin",
       ),
@@ -301,7 +314,7 @@ describe("being removed by the server", () => {
     client.on("kicked", (e) => kicked.push(e));
     client.on("disconnected", (err) => disconnected.push(err));
 
-    client.handler.onPacket?.(
+    clientInternals(client).handler.onPacket?.(
       commandPacket("notifyclientleftview clid=5 reasonid=11 reasonmsg=restart"),
     );
     await settle();
@@ -316,7 +329,7 @@ describe("being removed by the server", () => {
     const kicked: KickedEvent[] = [];
     client.on("kicked", (e) => kicked.push(e));
 
-    client.handler.onPacket?.(
+    clientInternals(client).handler.onPacket?.(
       commandPacket("notifyclientmoved clid=5 ctid=1 reasonid=4 reasonmsg=out invokername=Admin"),
     );
     await settle();
@@ -344,9 +357,9 @@ describe("diagnostics channels", () => {
   it("traces a command by name, never with its parameters", async () => {
     const client = await silentServerClient();
     const connecting = client.connect();
-    await until(() => client.handler.isOpen);
-    client.clid = 5;
-    client._markConnected();
+    await until(() => clientInternals(client).handler.isOpen);
+    clientInternals(client).clid = 5;
+    clientInternals(client).markConnected();
     await connecting;
 
     const traced: Array<{ event: string; command: string }> = [];
@@ -359,7 +372,7 @@ describe("diagnostics channels", () => {
     try {
       const answered = client.exec("clientmove clid=5 cid=1 cpw=secret", { timeout: 1_000 });
       await new Promise((r) => setImmediate(r));
-      client.handler.onPacket?.(commandPacket("error id=0 msg=ok return_code=1"));
+      clientInternals(client).handler.onPacket?.(commandPacket("error id=0 msg=ok return_code=1"));
       await answered;
     } finally {
       commandChannel.unsubscribe(handlers);
@@ -382,8 +395,12 @@ describe("notification", () => {
     client.on("poked", () => order.push("poked"));
     client.on("notification", (n) => order.push(`${n.name} ${n.params["msg"] ?? ""}`.trim()));
 
-    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=hi"));
-    client.handler.onPacket?.(commandPacket("notifyserveredited virtualserver_name=X"));
+    clientInternals(client).handler.onPacket?.(
+      commandPacket("notifyclientpoke invokerid=1 msg=hi"),
+    );
+    clientInternals(client).handler.onPacket?.(
+      commandPacket("notifyserveredited virtualserver_name=X"),
+    );
     await settle();
 
     expect(order).toEqual(["poked", "notifyclientpoke hi", "notifyserveredited"]);
@@ -404,7 +421,9 @@ describe("events()", () => {
       }
     })();
     for (const msg of ["a", "b", "c", "d"]) {
-      client.handler.onPacket?.(commandPacket(`notifyclientpoke invokerid=1 msg=${msg}`));
+      clientInternals(client).handler.onPacket?.(
+        commandPacket(`notifyclientpoke invokerid=1 msg=${msg}`),
+      );
     }
     await loop;
 
@@ -416,20 +435,20 @@ describe("events()", () => {
     const loop = (async () => {
       for await (const _poke of client.events("poked")) break;
     })();
-    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=x"));
+    clientInternals(client).handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=x"));
     await loop;
 
     // Nothing is left listening: a later event has nowhere to go.
-    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=y"));
+    clientInternals(client).handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=y"));
     await settle();
   });
 
   it("ends when the client disconnects", async () => {
     const client = await silentServerClient();
     const connecting = client.connect();
-    await until(() => client.handler.isOpen);
-    client.clid = 5;
-    client._markConnected();
+    await until(() => clientInternals(client).handler.isOpen);
+    clientInternals(client).clid = 5;
+    clientInternals(client).markConnected();
     await connecting;
 
     const loop = (async () => {
@@ -441,5 +460,34 @@ describe("events()", () => {
     await client.disconnect({ signal: AbortSignal.timeout(50) });
 
     await expect(loop).resolves.toEqual([]);
+  });
+});
+
+describe("secrets", () => {
+  it("are not in a client's inspect() or JSON form, even once connected", async () => {
+    const { inspect } = await import("node:util");
+    const { createHash } = await import("node:crypto");
+    const client = await silentServerClient({
+      serverPassword: "server-secret",
+      defaultChannelPassword: "channel-secret",
+    });
+    const connecting = client.connect();
+    await until(() => clientInternals(client).handler.isOpen);
+    clientInternals(client).crypt.setSharedSecret(
+      new Uint8Array(10).fill(7),
+      new Uint8Array(54).fill(9),
+      new Uint8Array(20).fill(3),
+    );
+    clientInternals(client).markConnected();
+    await connecting;
+
+    const hash = createHash("sha1").update("server-secret").digest("base64");
+    const forms = [inspect(client, { depth: 10, showHidden: true }), JSON.stringify(client)];
+    for (const form of forms) {
+      for (const secret of ["server-secret", "channel-secret", hash, "ivStruct", "privateKey"]) {
+        expect(form).not.toContain(secret);
+      }
+    }
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 });

@@ -1,3 +1,4 @@
+import { clientInternals } from "./client.js";
 import { describe, expect, it } from "vitest";
 import { getEventListeners } from "node:events";
 import { Client } from "./client.js";
@@ -47,9 +48,9 @@ async function connected(
   let socket: FakeSocket | undefined;
   const client = clientOn(() => (socket = new FakeSocket()), options);
   const connecting = client.connect();
-  await until(() => client.handler.isOpen);
-  client.clid = 5;
-  client._markConnected();
+  await until(() => clientInternals(client).handler.isOpen);
+  clientInternals(client).clid = 5;
+  clientInternals(client).markConnected();
   await connecting;
   return { client, socket: socket! };
 }
@@ -72,7 +73,7 @@ describe("connect() interrupted", () => {
     expect(socket!.closed).toBe(true);
     // No Init1 went out: the handshake never began.
     expect(socket!.sent).toEqual([]);
-    expect(client.handler.isOpen).toBe(false);
+    expect(clientInternals(client).handler.isOpen).toBe(false);
     expect(connected).toEqual([]);
   });
 
@@ -106,7 +107,7 @@ describe("connect() interrupted", () => {
     await client.disconnect({ signal: AbortSignal.timeout(1) });
     const events: string[] = [];
     client.on("connected", () => events.push("connected"));
-    client._markConnected();
+    clientInternals(client).markConnected();
     await settle();
     expect(events).toEqual([]);
     expect(client.status).toBe("disconnected");
@@ -164,8 +165,8 @@ describe("events()", () => {
     const controller = new AbortController();
     const iterator = client.events("poked", { signal: controller.signal });
     const poke = new TextEncoder().encode("notifyclientpoke invokerid=1 msg=x");
-    client.handler.onPacket?.(packet(PacketType.Command, poke));
-    client.handler.onPacket?.(packet(PacketType.Command, poke));
+    clientInternals(client).handler.onPacket?.(packet(PacketType.Command, poke));
+    clientInternals(client).handler.onPacket?.(packet(PacketType.Command, poke));
     await settle();
 
     controller.abort();
@@ -188,7 +189,8 @@ describe("voice delivery", () => {
     client.on("voiceData", () => heard++);
 
     const frame = Uint8Array.of(0, 1, 0, 9, Codec.OpusVoice, 1, 2, 3);
-    for (let i = 0; i < 1000; i++) client.handler.onPacket?.(packet(PacketType.Voice, frame));
+    for (let i = 0; i < 1000; i++)
+      clientInternals(client).handler.onPacket?.(packet(PacketType.Voice, frame));
     await settle();
 
     expect(heard).toBeGreaterThan(0);
@@ -217,7 +219,7 @@ describe("reconnecting", () => {
       },
     });
     const leave = new TextEncoder().encode("notifyclientleftview clid=5 reasonid=11");
-    client.handler.onPacket?.(packet(PacketType.Command, leave));
+    clientInternals(client).handler.onPacket?.(packet(PacketType.Command, leave));
     await until(() => errors.length > 0);
     expect(errors[0]).toMatch(/shouldRetry/);
   });

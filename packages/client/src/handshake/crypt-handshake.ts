@@ -96,9 +96,7 @@ function buildInit1Step4Packet(crypt: Crypt, data: Uint8Array): Uint8Array | nul
   const level = new DataView(data.buffer, data.byteOffset).getUint32(1 + 128, false);
   const y = crypt.solveRsaChallenge(data, 1, level);
 
-  crypt.alphaTmp = new Uint8Array(randomBytes(10));
-
-  const alphaB64 = Buffer.from(crypt.alphaTmp).toString("base64");
+  const alphaB64 = Buffer.from(crypt.newAlpha()).toString("base64");
   const omegaB64 = crypt.identity.publicKeyBase64();
 
   const cmd = buildCommandOrdered("clientinitiv", [

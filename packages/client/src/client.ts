@@ -29,7 +29,7 @@ import {
 } from "@honeybbq/teamspeak-core";
 import { AlreadyConnectedError, CryptoInitError, RemovedError } from "./errors.js";
 import { abortable, abortReason } from "./abort.js";
-import { Identity, Crypt, getUidFromPublicKey, type UidAlgorithm } from "./crypto/index.js";
+import { Identity, Crypt, getUidFromPublicKey } from "./crypto/index.js";
 import { Resolver } from "./discovery/resolver.js";
 import { PacketHandler } from "./transport/handler.js";
 import { PacketType } from "./transport/packet.js";
@@ -69,18 +69,54 @@ import {
 
 export { ClientStatus };
 
-interface ClientInitOptions {
-  readonly serverPassword: string;
+/**
+ * What clientinit sends about the connection, with the passwords already in
+ * their wire form, `base64(sha1(password))`: hashed once, when the client is
+ * made, so the plain text is never held.
+ */
+export interface ClientInitOptions {
+  readonly serverPasswordHash: string;
   readonly defaultChannel: string;
-  readonly defaultChannelPassword: string;
+  readonly defaultChannelPasswordHash: string;
 }
 
 function normalizeClientInitOptions(options: ClientOptions): ClientInitOptions {
   return {
-    serverPassword: options.serverPassword ?? "",
+    serverPasswordHash: prepareClientPassword(options.serverPassword ?? ""),
     defaultChannel: options.defaultChannel ?? "",
-    defaultChannelPassword: options.defaultChannelPassword ?? "",
+    defaultChannelPasswordHash: prepareClientPassword(options.defaultChannelPassword ?? ""),
   };
+}
+
+/**
+ * What the handshake, and the package's own tests, reach inside a Client.
+ * Not exported from the package: a Client keeps all of it in private fields,
+ * so none of it shows in `util.inspect()`, `JSON.stringify()` or a debugger's
+ * property list.
+ *
+ * @internal
+ */
+export interface ClientInternals {
+  readonly crypt: Crypt;
+  readonly handler: PacketHandler;
+  readonly logger: Logger;
+  readonly initOptions: ClientInitOptions;
+  nickname: string;
+  clid: number;
+  capabilities: ServerCapabilities;
+  /** Mark the attempt in progress connected. */
+  markConnected(): void;
+  /** Send a command line without waiting for an answer. */
+  execNoWait(command: string): Promise<void>;
+  /** Handle a packet as if the current handler had received it. */
+  handlePacket(packet: Packet): void;
+}
+
+let internalsOf: (client: Client) => ClientInternals;
+
+/** @internal The internals of `client`. */
+export function clientInternals(client: Client): ClientInternals {
+  return internalsOf(client);
 }
 
 /** How long a command waits for its answer unless told otherwise. */
@@ -163,19 +199,21 @@ interface Subscription {
  * and await an answer.
  */
 export class Client implements CommandExecutor, AsyncDisposable {
-  // Internal — accessible from handshake.ts helpers
-  /** @internal */ crypt: Crypt;
-  /** @internal */ handler: PacketHandler;
-  /** @internal */ logger: Logger;
-  /** @internal */ nickname: string;
-  /** @internal */ clid = 0;
+  static {
+    internalsOf = (client) => client.#internals;
+  }
+
+  #crypt: Crypt;
+  #handler: PacketHandler;
+  #logger: Logger;
+  #nickname: string;
+  #clid = 0;
   /**
    * What the server reported about itself in initserver, including the UID
    * hash it uses: TS3 hashes the public key with SHA-1 and TS6 with SHA-256.
    */
-  /** @internal */ capabilities: ServerCapabilities = unknownServerCapabilities();
-
-  /** @internal */ uidAlgorithm: UidAlgorithm = "sha1";
+  #capabilities: ServerCapabilities = unknownServerCapabilities();
+  #internals: ClientInternals;
 
   #identity: Identity;
   #addr: string;
@@ -195,7 +233,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #stopReconnecting: AbortController | undefined;
   #status: ClientStatus = ClientStatus.Disconnected;
   #throttle = new CommandThrottle();
-  #cmdTrack = new CommandTracker(() => this.clid);
+  #cmdTrack = new CommandTracker(() => this.#clid);
   #clients = new Map<number, ClientInfo>();
   #attempt: ConnectAttempt = newConnectAttempt();
 
@@ -213,23 +251,61 @@ export class Client implements CommandExecutor, AsyncDisposable {
   constructor(identity: Identity, addr: string, nickname: string, options: ClientOptions = {}) {
     this.#identity = identity;
     this.#addr = addr;
-    this.nickname = nickname;
-    this.logger = options.logger ?? noopLogger;
-    this.#resolver = options.resolver ?? new Resolver(this.logger);
+    this.#nickname = nickname;
+    this.#logger = options.logger ?? noopLogger;
+    this.#resolver = options.resolver ?? new Resolver(this.#logger);
     this.#clientInitOptions = normalizeClientInitOptions(options);
     this.#socketFactory = options.socketFactory;
     this.#fileTransferSocketFactory = options.fileTransferSocketFactory;
     this.#reconnectOptions = options.reconnect ?? {};
 
-    this.crypt = new Crypt(identity);
-    this.handler = this.#newHandler();
+    this.#crypt = new Crypt(identity);
+    this.#handler = this.#newHandler();
+
+    // oxlint-disable-next-line no-this-alias -- accessors cannot be arrow functions
+    const self = this;
+    this.#internals = {
+      get crypt() {
+        return self.#crypt;
+      },
+      get handler() {
+        return self.#handler;
+      },
+      get logger() {
+        return self.#logger;
+      },
+      get initOptions() {
+        return self.#clientInitOptions;
+      },
+      get nickname() {
+        return self.#nickname;
+      },
+      set nickname(value) {
+        self.#nickname = value;
+      },
+      get clid() {
+        return self.#clid;
+      },
+      set clid(value) {
+        self.#clid = value;
+      },
+      get capabilities() {
+        return self.#capabilities;
+      },
+      set capabilities(value) {
+        self.#capabilities = value;
+      },
+      markConnected: () => this.#markConnected(),
+      execNoWait: (command) => this.execNoWait(command),
+      handlePacket: (packet) => this.#handlePacket(packet),
+    };
 
     // Built once: the chains are read on every command and event, and
     // changing them while those run would make the behaviour depend on timing.
     const cmdMiddlewares: readonly CommandMiddleware[] = options.commandMiddleware ?? [];
     this.#eventMiddlewares = options.eventMiddleware ?? [];
     this.#finalCmdHandler = buildCommandChain([...cmdMiddlewares], async (cmd) => {
-      this.handler.sendPacket(PacketType.Command, Buffer.from(cmd), 0);
+      this.#handler.sendPacket(PacketType.Command, Buffer.from(cmd), 0);
     });
     this.#eventChain = buildEventChain([...this.#eventMiddlewares], (event) =>
       this.#deliver(event.name, event.payload),
@@ -239,15 +315,6 @@ export class Client implements CommandExecutor, AsyncDisposable {
   /** Where the client is in its connection's life. */
   get status(): ClientStatus {
     return this.#status;
-  }
-
-  /** @internal */
-  getClientInitOptions(): Readonly<{
-    serverPassword: string;
-    defaultChannel: string;
-    defaultChannelPassword: string;
-  }> {
-    return this.#clientInitOptions;
   }
 
   // ---- Connection -----------------------------------------------------------
@@ -281,8 +348,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
       try {
         const targetAddr = await this.#resolveAddr(attempt.signal);
         if (!attempt.settled) {
-          this.logger.info("connecting to server", { address: targetAddr });
-          await this.handler.connect(targetAddr, attempt.signal);
+          this.#logger.info("connecting to server", { address: targetAddr });
+          await this.#handler.connect(targetAddr, attempt.signal);
         }
       } catch (error) {
         // Without this the client stays Connecting and every later connect()
@@ -316,7 +383,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#status = ClientStatus.Disconnected;
     this.#attempt.reject(new NotConnectedError());
 
-    this.logger.info("disconnecting from server");
+    this.#logger.info("disconnecting from server");
 
     if (wasConnected) {
       try {
@@ -329,7 +396,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
       }
     }
 
-    this.handler.close();
+    this.#handler.close();
     this.#cmdTrack.reset(new NotConnectedError());
     // Announced here; #handleConnectionClosed stays quiet once the status is
     // already Disconnected, so listeners hear about it once.
@@ -367,9 +434,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
   ): Promise<void> {
     const { signal } = options;
     signal?.throwIfAborted();
-    if (!this.handler.isOpen) throw new NotConnectedError();
+    if (!this.#handler.isOpen) throw new NotConnectedError();
     await this.#throttle.wait(signal);
-    if (!this.handler.isOpen) throw new NotConnectedError();
+    if (!this.#handler.isOpen) throw new NotConnectedError();
     await this.#finalCmdHandler(command);
   }
 
@@ -395,7 +462,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     signal?.throwIfAborted();
     // A command sent on no socket used to vanish and surface 10 seconds later
     // as a timeout, which reads like a slow server rather than a usage error.
-    if (!this.handler.isOpen) throw new NotConnectedError();
+    if (!this.#handler.isOpen) throw new NotConnectedError();
 
     // Which notifications answer this command, and — for answers that arrive
     // after the `error` — the request field they echo back.
@@ -410,7 +477,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // Started before the throttle: the timeout bounds the whole command, its
     // wait for a turn included, and so does the signal.
     const givenUp = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new CommandTimeoutError(parsed?.name ?? command)), timeout);
+      timer = setTimeout(() => reject(new CommandTimeoutError(parsed?.name ?? "")), timeout);
       onAbort = () => reject(abortReason(signal!));
       signal?.addEventListener("abort", onAbort, { once: true });
     });
@@ -419,7 +486,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     try {
       const withRc = appendReturnCode(command, rc);
       await Promise.race([this.#throttle.wait(throttleAbort.signal), givenUp]);
-      if (!this.handler.isOpen) throw new NotConnectedError();
+      if (!this.#handler.isOpen) throw new NotConnectedError();
       await this.#finalCmdHandler(withRc);
 
       const result = await Promise.race([answered, givenUp]);
@@ -550,7 +617,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   /** This client's id on the server, assigned in the handshake; 0 before it. */
   clientID(): ClientID {
-    return asClientID(this.clid);
+    return asClientID(this.#clid);
   }
 
   /**
@@ -558,7 +625,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * uses. Populated from `initserver`; before connecting it reads as TS3.
    */
   serverCapabilities(): ServerCapabilities {
-    return this.capabilities;
+    return this.#capabilities;
   }
 
   /**
@@ -570,12 +637,14 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * TS6 server silently never matches.
    */
   uniqueIdentifier(): UID {
-    return asUID(getUidFromPublicKey(this.#identity.publicKeyBase64(), this.uidAlgorithm));
+    return asUID(
+      getUidFromPublicKey(this.#identity.publicKeyBase64(), this.#capabilities.uidAlgorithm),
+    );
   }
 
   /** The channel this client is in, as it last learned; 0 before connecting. */
   channelID(): ChannelID {
-    return this.#clients.get(this.clid)?.channelID ?? asChannelID(0n);
+    return this.#clients.get(this.#clid)?.channelID ?? asChannelID(0n);
   }
 
   /**
@@ -583,8 +652,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * Throws a NotConnectedError when there is no connection to send on.
    */
   sendWhisper(data: Uint8Array, targetClientIDs: readonly ClientID[], codec: Codec): void {
-    if (!this.handler.isOpen) throw new NotConnectedError();
-    this.handler.sendWhisperPacket(data, [...targetClientIDs], codec);
+    if (!this.#handler.isOpen) throw new NotConnectedError();
+    this.#handler.sendWhisperPacket(data, [...targetClientIDs], codec);
   }
 
   /**
@@ -592,8 +661,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * NotConnectedError when there is no connection to send on.
    */
   sendVoice(data: Uint8Array, codec: Codec): void {
-    if (!this.handler.isOpen) throw new NotConnectedError();
-    this.handler.sendVoicePacket(data, codec);
+    if (!this.#handler.isOpen) throw new NotConnectedError();
+    this.#handler.sendVoicePacket(data, codec);
   }
 
   // ---- File Transfer -------------------------------------------------------
@@ -632,8 +701,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   // ---- Internal (package-visible) ------------------------------------------
 
-  /** @internal */
-  _markConnected(): void {
+  #markConnected(): void {
     // Only the attempt in progress can complete: never one that disconnect()
     // or a failure has already ended.
     if (this.#status !== ClientStatus.Connecting || this.#attempt.settled) return;
@@ -645,32 +713,31 @@ export class Client implements CommandExecutor, AsyncDisposable {
   // ---- Private -------------------------------------------------------------
 
   #newHandler(): PacketHandler {
-    const handler = new PacketHandler(this.crypt, this.logger, this.#socketFactory);
+    const handler = new PacketHandler(this.#crypt, this.#logger, this.#socketFactory);
     // Each callback checks that its handler is still the current one: a
     // packet or close reported late by one a later connect() already replaced
     // must not reach, or tear down, the new connection.
     handler.onPacket = (p) => {
-      if (handler === this.handler) this.#handlePacket(p);
+      if (handler === this.#handler) this.#handlePacket(p);
     };
     handler.onClosed = (err) => {
-      if (handler === this.handler) this.#handleConnectionClosed(err);
+      if (handler === this.#handler) this.#handleConnectionClosed(err);
     };
     handler.onReceiveError = (error) => {
-      if (handler === this.handler) this.#handleReceiveError(error);
+      if (handler === this.#handler) this.#handleReceiveError(error);
     };
     return handler;
   }
 
   #resetForConnect(): void {
-    this.handler.close();
-    this.crypt = new Crypt(this.#identity);
-    this.handler = this.#newHandler();
+    this.#handler.close();
+    this.#crypt = new Crypt(this.#identity);
+    this.#handler = this.#newHandler();
     this.#attempt = newConnectAttempt();
     this.#cmdTrack.reset(new NotConnectedError());
     this.#clients.clear();
-    this.clid = 0;
-    this.uidAlgorithm = "sha1";
-    this.capabilities = unknownServerCapabilities();
+    this.#clid = 0;
+    this.#capabilities = unknownServerCapabilities();
   }
 
   async #resolveAddr(signal: AbortSignal | undefined): Promise<string> {
@@ -684,7 +751,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
       return resolved[0]?.addr ?? fallback;
     } catch (error) {
       signal?.throwIfAborted();
-      this.logger.warn("address resolution failed, falling back to direct", {
+      this.#logger.warn("address resolution failed, falling back to direct", {
         error: String(error),
       });
       return fallback;
@@ -705,16 +772,16 @@ export class Client implements CommandExecutor, AsyncDisposable {
       );
       return;
     }
-    this.logger.debug("dropped a malformed packet", { error: String(error) });
+    this.#logger.debug("dropped a malformed packet", { error: String(error) });
   }
 
   #handlePacket(p: Packet): void {
     const pType = p.typeFlagged & 0x0f;
     if (pType === 8 /* Init1 */) {
-      if (this.crypt.cryptoInitComplete) return;
-      const response = processInit1(this.crypt, p.data);
+      if (this.#crypt.cryptoInitComplete) return;
+      const response = processInit1(this.#crypt, p.data);
       if (response) {
-        this.handler.sendPacket(PacketType.Init1, response, 0);
+        this.#handler.sendPacket(PacketType.Init1, response, 0);
       }
       return;
     }
@@ -744,7 +811,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
     const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
     const clientId = view.getUint16(2, false);
-    if (clientId === this.clid) return;
+    if (clientId === this.#clid) return;
 
     // Copied: the packet's buffer is reused once this returns, and a listener
     // runs later.
@@ -798,7 +865,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         this.#cmdTrack.buffer(cmd.params, cmd.name);
         this.#cmdTrack.offerCorrelated(cmd.name, cmd.params);
       }
-      const result = handleNotification(cmd, this.clid, this.#clients, this.nickname);
+      const result = handleNotification(cmd, this.#clid, this.#clients, this.#nickname);
       this.#processNotificationResult(result);
       if (this.#listeners.get("notification")?.length || this.#eventMiddlewares.length > 0) {
         this.#emitServerEvent({
@@ -813,13 +880,13 @@ export class Client implements CommandExecutor, AsyncDisposable {
       // The handshake's steps happen once: repeated after crypto init, they
       // could only re-key or re-announce a session that is already set up.
       case "clientinitiv":
-        if (!this.crypt.cryptoInitComplete) handleHandshakeInitIV(this, cmd.params);
+        if (!this.#crypt.cryptoInitComplete) handleHandshakeInitIV(this.#internals, cmd.params);
         break;
       case "initivexpand2":
-        if (!this.crypt.cryptoInitComplete) handleHandshakeExpand2(this, cmd.params);
+        if (!this.#crypt.cryptoInitComplete) handleHandshakeExpand2(this.#internals, cmd.params);
         break;
       case "initserver":
-        if (this.#status === ClientStatus.Connecting) handleInitServer(this, cmd.params);
+        if (this.#status === ClientStatus.Connecting) handleInitServer(this.#internals, cmd.params);
         break;
       case "error":
         this.#handleError(cmd.params);
@@ -853,7 +920,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     }
 
     if (err?.code === ErrorCode.ConnectFailedBanned) {
-      this.logger.warn("banned by the server, closing the connection");
+      this.#logger.warn("banned by the server, closing the connection");
       setImmediate(() => this.disconnect().catch(() => {}));
     }
   }
@@ -872,20 +939,20 @@ export class Client implements CommandExecutor, AsyncDisposable {
         // This no longer marks the end of the welcome sequence: the server
         // sends more welcome data after it, and `channellistfinished` is the
         // real terminator.
-        if (info.id !== 0 && info.id === this.clid) {
+        if (info.id !== 0 && info.id === this.#clid) {
           // Carries the rename the server applied if our nickname was taken.
-          this.nickname = info.nickname;
+          this.#nickname = info.nickname;
         } else if (
           info.id !== 0 &&
-          this.clid === 0 &&
-          isAutoNicknameMatch(this.nickname, info.nickname)
+          this.#clid === 0 &&
+          isAutoNicknameMatch(this.#nickname, info.nickname)
         ) {
           // initserver carried no aclid, so the welcome enter is the only way
           // to learn our clid. Gated on clid still being unknown so a later
           // lookalike can never hijack an established session.
-          this.clid = info.id;
-          this.handler.setClientID(info.id);
-          this.nickname = info.nickname;
+          this.#clid = info.id;
+          this.#handler.setClientID(info.id);
+          this.#nickname = info.nickname;
         }
         this.#emitServerEvent({ name: "clientEnter", payload: info });
         break;
@@ -907,7 +974,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         // A channel kick moves the client to the default channel; it arrives
         // as a move, not as leaving view, which is where it used to be looked
         // for.
-        if (result.event.id === this.clid && result.event.reason === Reason.KickChannel) {
+        if (result.event.id === this.#clid && result.event.reason === Reason.KickChannel) {
           this.#emit(
             "kicked",
             kickedEvent({ ...result.event, reasonMessage: result.reasonMessage }),
@@ -931,7 +998,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
    */
   #removedByServer(cause: Error): void {
     this.#handleConnectionClosed(cause);
-    this.handler.close();
+    this.#handler.close();
   }
 
   /** Count a dropped voice delivery, and report the drops now and then. */
@@ -940,7 +1007,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     const now = Date.now();
     if (now - this.#voiceDropWarnedAt < VOICE_DROP_WARN_INTERVAL_MS) return;
     this.#voiceDropWarnedAt = now;
-    this.logger.warn("voice dropped: listeners are not keeping up", {
+    this.#logger.warn("voice dropped: listeners are not keeping up", {
       dropped: this.#voiceDropped,
     });
   }
@@ -1006,7 +1073,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // a silent recovery hides an outage.
     this.#emit("disconnected", cause);
     this.#scheduleReconnect(cause).catch((error: unknown) => {
-      this.logger.error("reconnecting failed", { error: String(error) });
+      this.#logger.error("reconnecting failed", { error: String(error) });
     });
   }
 
@@ -1036,16 +1103,16 @@ export class Client implements CommandExecutor, AsyncDisposable {
         try {
           retry = shouldRetry(err, attempt);
         } catch (error) {
-          this.logger.error("shouldRetry threw; not reconnecting", { error: String(error) });
+          this.#logger.error("shouldRetry threw; not reconnecting", { error: String(error) });
           return;
         }
         if (!retry) {
-          this.logger.info("not retrying", { attempt, reason: err.message });
+          this.#logger.info("not retrying", { attempt, reason: err.message });
           return;
         }
 
         const delay = backoffDelay(policy, attempt);
-        this.logger.info("reconnecting", { attempt, delayMs: delay });
+        this.#logger.info("reconnecting", { attempt, delayMs: delay });
         // A timer that keeps the process alive: an application that does
         // nothing but stay connected would otherwise exit during the wait.
         await sleep(delay, stop.signal);
@@ -1053,13 +1120,13 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
         try {
           await this.connect({ signal: AbortSignal.timeout(RECONNECT_ATTEMPT_TIMEOUT_MS) });
-          this.logger.info("reconnected", { attempt });
+          this.#logger.info("reconnected", { attempt });
           return;
         } catch (retryErr) {
           err = retryErr instanceof Error ? retryErr : new TeamspeakError(String(retryErr));
         }
       }
-      this.logger.warn("reconnect attempts exhausted", { attempts: policy.maxAttempts });
+      this.#logger.warn("reconnect attempts exhausted", { attempts: policy.maxAttempts });
     } finally {
       this.#reconnecting = false;
       if (this.#stopReconnecting === stop) this.#stopReconnecting = undefined;
@@ -1082,7 +1149,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
     if (this.#status === ClientStatus.Disconnected) return;
     this.#status = ClientStatus.Disconnected;
-    this.handler.close();
+    this.#handler.close();
     this.#emit("disconnected", error instanceof Error ? error : new TeamspeakError(String(error)));
   }
 }

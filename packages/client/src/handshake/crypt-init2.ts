@@ -17,7 +17,7 @@ export function cryptoInit2(
   beta: string,
   privateKey: Uint8Array,
 ): void {
-  if (crypt.alphaTmp.length === 0) {
+  if (crypt.alpha.length === 0) {
     throw new CryptoInitError("initivexpand2 arrived before clientinitiv was sent");
   }
 
@@ -44,5 +44,5 @@ export function cryptoInit2(
     throw new CryptoInitError("the server's license is invalid", { cause: error });
   }
 
-  crypt.setSharedSecret(crypt.alphaTmp, betaBytes, sharedSecret);
+  crypt.setSharedSecret(crypt.alpha, betaBytes, sharedSecret);
 }

@@ -1,4 +1,4 @@
-import { createHash, createECDH } from "node:crypto";
+import { createHash, createECDH, randomBytes } from "node:crypto";
 import { CryptoInitError, FakeSignatureMismatchError } from "../errors.js";
 import type { Identity } from "./identity.js";
 import { importPublicKey } from "./identity.js";
@@ -28,18 +28,44 @@ export interface KeyNonce {
 const DUMMY_KEY = Buffer.from("c:\\windows\\syste");
 const DUMMY_NONCE = Buffer.from("m\\firewall32.cpl");
 
+/**
+ * A connection's encryption state. The session material — the IV the keys
+ * derive from — lives in private fields, so it shows in no `util.inspect()`
+ * or `JSON.stringify()` of anything holding a Crypt.
+ */
 export class Crypt {
   readonly identity: Identity;
 
-  ivStruct: Uint8Array = new Uint8Array(0);
-  fakeSignature: Uint8Array = new Uint8Array(FAKE_SIGNATURE_SIZE);
-  alphaTmp: Uint8Array = new Uint8Array(0);
-  cryptoInitComplete = false;
+  #ivStruct: Uint8Array = new Uint8Array(0);
+  #fakeSignature: Uint8Array = new Uint8Array(FAKE_SIGNATURE_SIZE);
+  #alpha: Uint8Array = new Uint8Array(0);
+  #cryptoInitComplete = false;
 
   readonly #cachedKeys = new Map<bigint, KeyNonce>();
 
   constructor(identity: Identity) {
     this.identity = identity;
+  }
+
+  /** Whether the session keys are set up; until then packets use the dummy key. */
+  get cryptoInitComplete(): boolean {
+    return this.#cryptoInitComplete;
+  }
+
+  /** The signature unencrypted packets carry: zeros until crypto init completes. */
+  get fakeSignature(): Uint8Array {
+    return this.#fakeSignature;
+  }
+
+  /** The client's random contribution to the IV, sent in clientinitiv; empty before. */
+  get alpha(): Uint8Array {
+    return this.#alpha;
+  }
+
+  /** Choose the client's random contribution to the IV, and return it. */
+  newAlpha(): Uint8Array {
+    this.#alpha = new Uint8Array(randomBytes(IV_ALPHA_SIZE));
+    return this.#alpha;
   }
 
   solveRsaChallenge(data: Uint8Array, offset: number, level: number): Uint8Array {
@@ -77,22 +103,22 @@ export class Crypt {
   }
 
   setSharedSecret(alpha: Uint8Array, beta: Uint8Array, sharedKey: Uint8Array): void {
-    this.ivStruct = new Uint8Array(IV_ALPHA_SIZE + beta.length);
+    this.#ivStruct = new Uint8Array(IV_ALPHA_SIZE + beta.length);
     for (let i = 0; i < IV_ALPHA_SIZE; i++) {
       const a = sharedKey[i];
       const b = alpha[i];
-      this.ivStruct[i] = ((a !== undefined ? a : 0) ^ (b !== undefined ? b : 0)) & 0xff;
+      this.#ivStruct[i] = ((a !== undefined ? a : 0) ^ (b !== undefined ? b : 0)) & 0xff;
     }
     for (let i = 0; i < beta.length; i++) {
       const a = sharedKey[IV_ALPHA_SIZE + i];
       const b = beta[i];
-      this.ivStruct[IV_ALPHA_SIZE + i] =
+      this.#ivStruct[IV_ALPHA_SIZE + i] =
         ((a !== undefined ? a : 0) ^ (b !== undefined ? b : 0)) & 0xff;
     }
 
-    const digest = createHash("sha1").update(this.ivStruct).digest();
-    this.fakeSignature = new Uint8Array(digest.buffer, digest.byteOffset, FAKE_SIGNATURE_SIZE);
-    this.cryptoInitComplete = true;
+    const digest = createHash("sha1").update(this.#ivStruct).digest();
+    this.#fakeSignature = new Uint8Array(digest.buffer, digest.byteOffset, FAKE_SIGNATURE_SIZE);
+    this.#cryptoInitComplete = true;
   }
 
   getKeyNonce(
@@ -110,11 +136,11 @@ export class Crypt {
     let kn = this.#cachedKeys.get(cacheKey);
 
     if (kn === undefined) {
-      const tmpToHash = new Uint8Array(6 + this.ivStruct.length);
+      const tmpToHash = new Uint8Array(6 + this.#ivStruct.length);
       tmpToHash[0] = fromServer ? 0x30 : 0x31;
       tmpToHash[1] = packetType & PACKET_TYPE_MASK;
       new DataView(tmpToHash.buffer).setUint32(2, generationID, false);
-      tmpToHash.set(this.ivStruct, 6);
+      tmpToHash.set(this.#ivStruct, 6);
 
       const hash = createHash("sha256").update(tmpToHash).digest();
       kn = {
@@ -145,7 +171,7 @@ export class Crypt {
       return [plaintext, INIT1_MAC];
     }
     if (unencrypted) {
-      return [plaintext, this.fakeSignature];
+      return [plaintext, this.#fakeSignature];
     }
 
     const [key, nonce] = this.getKeyNonce(false, packetID, generationID, packetType, dummy);
@@ -168,7 +194,7 @@ export class Crypt {
     }
     if (unencrypted) {
       const fsSub = tag.slice(0, FAKE_SIGNATURE_SIZE);
-      if (!Buffer.from(fsSub).equals(Buffer.from(this.fakeSignature))) {
+      if (!Buffer.from(fsSub).equals(Buffer.from(this.#fakeSignature))) {
         throw new FakeSignatureMismatchError();
       }
       return ciphertext;

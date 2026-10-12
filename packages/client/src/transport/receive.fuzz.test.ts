@@ -1,3 +1,4 @@
+import { clientInternals } from "../client.js";
 /**
  * A deterministic randomized test of everything a datagram from the server
  * reaches: header parsing, decryption, reassembly, decompression, the Init1
@@ -203,7 +204,7 @@ describe("the receive path", () => {
     for (let seed = 1; seed <= CASES; seed++) {
       const g = new Gen(seed);
       const { client, socket } = await startedClient();
-      const crypt = client.crypt;
+      const crypt = clientInternals(client).crypt;
       for (let i = 0, n = 1 + g.int(8); i < n; i++) {
         let packet: Uint8Array;
         switch (g.int(5)) {
@@ -233,7 +234,7 @@ describe("the receive path", () => {
     for (let seed = 1; seed <= CASES; seed++) {
       const g = new Gen(seed);
       const { client, socket } = await connectedClient();
-      const crypt = client.crypt;
+      const crypt = clientInternals(client).crypt;
       for (const name of ["textMessage", "clientEnter", "voiceData", "notification"] as const) {
         client.on(name, () => {});
       }
@@ -296,8 +297,8 @@ describe("the receive path", () => {
     socket.deliver(init1Packet(Uint8Array.of(0x7f)));
     const text = (msg: string): Uint8Array =>
       new TextEncoder().encode(`notifytextmessage targetmode=1 msg=${msg} invokerid=2`);
-    socket.deliver(dummyPacket(client.crypt, 2, 0x20, 1, text("forged")));
-    socket.deliver(sessionPacket(client.crypt, 2, 0x20, 1, text("real")));
+    socket.deliver(dummyPacket(clientInternals(client).crypt, 2, 0x20, 1, text("forged")));
+    socket.deliver(sessionPacket(clientInternals(client).crypt, 2, 0x20, 1, text("real")));
     await settle();
 
     expect(messages).toEqual(["real"]);
@@ -311,10 +312,10 @@ describe("the receive path", () => {
 /** A client past the handshake, on a session key the test knows. */
 async function connectedClient(): Promise<{ client: Client; socket: FakeSocket }> {
   const { client, socket } = await startedClient();
-  client.crypt.setSharedSecret(randomBytes(10), randomBytes(54), randomBytes(20));
+  clientInternals(client).crypt.setSharedSecret(randomBytes(10), randomBytes(54), randomBytes(20));
   socket.deliver(
     sessionPacket(
-      client.crypt,
+      clientInternals(client).crypt,
       2,
       0x20,
       0,
