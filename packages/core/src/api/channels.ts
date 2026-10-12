@@ -24,6 +24,7 @@ import type { Channel, PermissionEntry, WireNames } from "./command.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type { ChannelID, ClientDBID } from "../command/ids.js";
 import { asChannelID } from "../command/ids.js";
+import { ErrorCode } from "../errorcode.js";
 import type { Codec } from "../enums.js";
 import type { Permission } from "../permission.js";
 
@@ -205,7 +206,7 @@ export async function listChannels(
   client: CommandExecutor,
   options?: CommandOptions,
 ): Promise<Channel[]> {
-  return (await query(client, "channellist", [], options)).map(parseChannel);
+  return (await list(client, "channellist", [], options)).map(parseChannel);
 }
 
 /**
@@ -232,13 +233,19 @@ export interface ChannelMatch {
   readonly name: string;
 }
 
-/** Channels whose name contains `pattern`. */
+/**
+ * Channels whose name contains `pattern`; none is an empty list. The server
+ * reports finding none as error 768 (invalid channelID), which this answers
+ * as `[]`.
+ */
 export async function findChannels(
   client: CommandExecutor,
   pattern: string,
   options?: CommandOptions,
 ): Promise<ChannelMatch[]> {
-  const rows = await query(client, "channelfind", [["pattern", pattern]], options);
+  const rows = await list(client, "channelfind", [["pattern", pattern]], options, {
+    noMatch: ErrorCode.ChannelInvalidID,
+  });
   return rows.map((row) => ({ id: asChannelID(big(row, "cid")), name: str(row, "channel_name") }));
 }
 

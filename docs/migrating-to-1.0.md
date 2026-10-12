@@ -140,6 +140,11 @@ constructor: `asChannelID(5)`, `asClientID(3)`.
 Many queries were answered with nothing in 0.x, because the server sends their
 data in a notification. They now return the data.
 
+Every list and find answers `[]` when there is nothing to list, never an
+error: the server's "database empty result set" (1281) is caught, and so are
+the 512 and 768 with which `findClients` and `findChannels` report finding
+nothing.
+
 ## Raw commands
 
 `escape` and `unescape` stay public, for a raw line sent with `client.exec`.

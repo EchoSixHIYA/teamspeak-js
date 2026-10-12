@@ -81,7 +81,7 @@ export async function listChannelGroups(
   client: CommandExecutor,
   options?: CommandOptions,
 ): Promise<ChannelGroup[]> {
-  return (await query(client, "channelgrouplist", [], options)).map(parseChannelGroup);
+  return (await list(client, "channelgrouplist", [], options)).map(parseChannelGroup);
 }
 
 /**
@@ -289,7 +289,7 @@ export async function listPermissions(
   client: CommandExecutor,
   options?: CommandOptions,
 ): Promise<PermissionInfo[]> {
-  const rows = await query(client, "permissionlist", [], options);
+  const rows = await list(client, "permissionlist", [], options);
   return rows
     .filter((row) => row["permname"] !== undefined)
     .map((row) => ({

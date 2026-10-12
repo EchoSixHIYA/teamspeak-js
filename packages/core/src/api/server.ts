@@ -90,7 +90,7 @@ export async function listServerGroups(
   client: CommandExecutor,
   options?: CommandOptions,
 ): Promise<ServerGroup[]> {
-  return (await query(client, "servergrouplist", [], options)).map(parseServerGroup);
+  return (await list(client, "servergrouplist", [], options)).map(parseServerGroup);
 }
 
 /**
@@ -197,7 +197,7 @@ export async function listBindings(
   client: CommandExecutor,
   options: BindingListOptions = {},
 ): Promise<Binding[]> {
-  const rows = await query(client, "bindinglist", [["subsystem", options.subsystem]], options);
+  const rows = await list(client, "bindinglist", [["subsystem", options.subsystem]], options);
   return rows.map((row) => ({
     subsystem: str(row, "subsystem"),
     ip: str(row, "ip"),
@@ -533,7 +533,7 @@ export async function getServerGroupsByClient(
   cldbid: ClientDBID,
   options?: CommandOptions,
 ): Promise<ServerGroupRef[]> {
-  const rows = await query(client, "servergroupsbyclientid", [["cldbid", cldbid]], options);
+  const rows = await list(client, "servergroupsbyclientid", [["cldbid", cldbid]], options);
   return rows.map((row) => ({ id: asServerGroupID(big(row, "sgid")), name: str(row, "name") }));
 }
 

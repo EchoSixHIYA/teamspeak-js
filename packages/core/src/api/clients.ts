@@ -34,6 +34,7 @@ import type {
 import { asClientDBID, asClientID, asUID } from "../command/ids.js";
 import type { Permission } from "../permission.js";
 import { Reason } from "../reason.js";
+import { ErrorCode } from "../errorcode.js";
 import { TeamspeakError } from "../errors.js";
 import { parseClient } from "./parse.js";
 
@@ -117,7 +118,7 @@ export async function listClients(
   options: ClientListOptions = {},
 ): Promise<ClientEntry[]> {
   const flags = encodeFields({ ...options, uid: options.uid !== false }, listFlags);
-  return (await query(client, "clientlist", flags, options)).map(parseClient);
+  return (await list(client, "clientlist", flags, options)).map(parseClient);
 }
 
 /**
@@ -328,15 +329,18 @@ export interface ClientMatch {
 }
 
 /**
- * Clients whose nickname contains `pattern`. A pattern matching no one is
- * refused by the server with error 512 (invalid clientID), not answered empty.
+ * Clients whose nickname contains `pattern`; none is an empty list. The server
+ * reports finding no one as error 512 (invalid clientID), which this answers
+ * as `[]`.
  */
 export async function findClients(
   client: CommandExecutor,
   pattern: string,
   options?: CommandOptions,
 ): Promise<ClientMatch[]> {
-  const rows = await query(client, "clientfind", [["pattern", pattern]], options);
+  const rows = await list(client, "clientfind", [["pattern", pattern]], options, {
+    noMatch: ErrorCode.ClientInvalidID,
+  });
   return rows.map((row) => ({
     id: asClientID(num(row, "clid")),
     nickname: str(row, "client_nickname"),
@@ -349,7 +353,7 @@ export async function getClientIDs(
   uid: UID,
   options?: CommandOptions,
 ): Promise<ClientID[]> {
-  const rows = await query(client, "clientgetids", [["cluid", uid]], options);
+  const rows = await list(client, "clientgetids", [["cluid", uid]], options);
   return rows.map((row) => asClientID(num(row, "clid")));
 }
 

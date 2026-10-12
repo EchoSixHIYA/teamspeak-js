@@ -77,7 +77,7 @@ export async function listFiles(
   path: string,
   options: FileOptions = {},
 ): Promise<FileEntry[]> {
-  const rows = await query(
+  const rows = await list(
     client,
     "ftgetfilelist",
     [
@@ -86,7 +86,7 @@ export async function listFiles(
       ["cpw", options.password ?? ""],
     ],
     options,
-    ["cpw"],
+    { passwords: ["cpw"] },
   );
   return rows.map(parseFileEntry);
 }

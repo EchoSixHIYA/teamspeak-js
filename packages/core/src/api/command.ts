@@ -70,23 +70,29 @@ const isEmptyResult = (err: unknown): boolean =>
   err instanceof ServerError && err.code === ErrorCode.DatabaseEmptyResult;
 
 /**
- * Send a command that lists something and return its rows.
+ * Send a command that lists or finds something and return its rows.
  *
  * The server reports an empty list as error 1281, "database empty result set",
  * rather than as no rows — `banlist` on a server with no bans, `messagelist`
  * with no messages — which made every list function throw where it should
- * have answered `[]`.
+ * have answered `[]`. A search may report finding nothing with an error of its
+ * own, `how.noMatch`: `clientfind` answers 512 and `channelfind` 768, which for a
+ * command naming no client or channel can mean nothing else. `how.passwords`
+ * is as for {@link exec}.
  */
 async function list(
   client: CommandExecutor,
   command: string,
   params: Params = [],
   options?: CommandOptions,
+  how: { readonly noMatch?: number; readonly passwords?: readonly string[] } = {},
 ): Promise<Record<string, string>[]> {
+  const { noMatch, passwords } = how;
   try {
-    return await query(client, command, params, options);
+    return await query(client, command, params, options, passwords);
   } catch (err) {
     if (isEmptyResult(err)) return [];
+    if (noMatch !== undefined && err instanceof ServerError && err.code === noMatch) return [];
     throw err;
   }
 }
