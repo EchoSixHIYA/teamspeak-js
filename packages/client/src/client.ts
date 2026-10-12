@@ -4,15 +4,23 @@ import {
   type EventMiddleware,
   type AddrResolver,
   type ClientInfo,
+  type KickedEvent,
+  type Listener,
+  type ServerEvent,
+  type ServerEventName,
+  type Unsubscribe,
   ClientStatus,
 } from "./types.js";
 import {
   type CommandMiddleware,
+  type CommandOptions,
   type Logger,
   ErrorCode,
-  consoleLogger,
+  Reason,
+  TeamspeakError,
+  noopLogger,
 } from "@honeybbq/teamspeak-core";
-import { AlreadyConnectedError } from "./errors.js";
+import { AlreadyConnectedError, RemovedError } from "./errors.js";
 import { Identity, Crypt, getUidFromPublicKey, type UidAlgorithm } from "./crypto/index.js";
 import { Resolver } from "./discovery/resolver.js";
 import { PacketHandler } from "./transport/handler.js";
@@ -42,19 +50,15 @@ import { responseSpec } from "@honeybbq/teamspeak-core/internal";
 import type { Readable, Writable } from "node:stream";
 import type { SocketFactory, FileTransferSocketFactory } from "./types.js";
 import { unknownServerCapabilities, type ServerCapabilities } from "./capabilities.js";
+import { joinHostPort, splitHostPort } from "./address.js";
 import {
   backoffDelay,
-  isPermanentFailure,
+  defaultShouldRetry,
   resolveBackoffPolicy,
   type ReconnectOptions,
 } from "./reconnect.js";
 
 export { ClientStatus };
-
-export interface ClientState {
-  status: ClientStatus;
-  clid: number;
-}
 
 interface ClientInitOptions {
   readonly serverPassword: string;
@@ -70,10 +74,72 @@ function normalizeClientInitOptions(options: ClientOptions): ClientInitOptions {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyHandler = (arg: any) => void;
+/** How long a command waits for its answer unless told otherwise. */
+const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
 
-export class Client implements CommandExecutor {
+/**
+ * How long `disconnect()` waits for the server to acknowledge its goodbye
+ * unless told otherwise: the acknowledgement is a courtesy, and a connection
+ * that has already died would otherwise hold it for a full command timeout.
+ */
+const DISCONNECT_TIMEOUT_MS = 1_000;
+
+/** How long each reconnection attempt may take. */
+const RECONNECT_ATTEMPT_TIMEOUT_MS = 30_000;
+
+/** One connection attempt, settled once by the handshake or its failure. */
+interface ConnectAttempt {
+  readonly promise: Promise<void>;
+  settled: boolean;
+  resolve(): void;
+  reject(error: unknown): void;
+}
+
+function newConnectAttempt(): ConnectAttempt {
+  let resolve!: () => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  // The failure is reported to whoever awaits connect(); an attempt nobody
+  // awaits any more must not surface as an unhandled rejection.
+  promise.catch(() => {});
+  const attempt: ConnectAttempt = {
+    promise,
+    settled: false,
+    resolve() {
+      if (attempt.settled) return;
+      attempt.settled = true;
+      resolve();
+    },
+    reject(error) {
+      if (attempt.settled) return;
+      attempt.settled = true;
+      reject(error);
+    },
+  };
+  return attempt;
+}
+
+interface Subscription {
+  readonly listener: (payload: unknown) => void;
+  removed: boolean;
+}
+
+/** The reason an aborted signal gives, as an error. */
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("This operation was aborted", "AbortError");
+}
+
+/**
+ * A TeamSpeak client over the voice protocol.
+ *
+ * Listeners run one at a time, in the order their events arrived, after the
+ * packet that carried them has been handled, so a listener may call the client
+ * and await an answer.
+ */
+export class Client implements CommandExecutor, AsyncDisposable {
   // Internal — accessible from handshake.ts helpers
   /** @internal */ crypt: Crypt;
   /** @internal */ handler: PacketHandler;
@@ -81,9 +147,8 @@ export class Client implements CommandExecutor {
   /** @internal */ nickname: string;
   /** @internal */ clid = 0;
   /**
-   * The UID hash the connected server uses, learned from `virtualserver_version`
-   * during initserver. TS3 hashes the public key with SHA-1 and TS6 with
-   * SHA-256, so anything comparing our UID to the server's needs this.
+   * What the server reported about itself in initserver, including the UID
+   * hash it uses: TS3 hashes the public key with SHA-1 and TS6 with SHA-256.
    */
   /** @internal */ capabilities: ServerCapabilities = unknownServerCapabilities();
 
@@ -107,31 +172,22 @@ export class Client implements CommandExecutor {
   #throttle = new CommandThrottle();
   #cmdTrack = new CommandTracker(() => this.clid);
   #clients = new Map<number, ClientInfo>();
-  #connectedResolvers: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
-  #connectionError: Error | null = null;
+  #attempt: ConnectAttempt = newConnectAttempt();
 
-  // Event handler lists
-  #textMsgHandlers: Array<(msg: import("./types.js").TextMessage) => void> = [];
-  #clientEnterHandlers: Array<(info: ClientInfo) => void> = [];
-  #clientLeaveHandlers: Array<(evt: import("./types.js").ClientLeftViewEvent) => void> = [];
-  #clientMoveHandlers: Array<(evt: import("./types.js").ClientMovedEvent) => void> = [];
-  #pokedHandlers: Array<(evt: import("./types.js").PokeEvent) => void> = [];
-  #voiceDataHandlers: Array<(data: import("./types.js").VoiceData) => void> = [];
-  #connectedHandlers: Array<() => void> = [];
-  #disconnectedHandlers: Array<(err: Error | undefined) => void> = [];
-  #kickedHandlers: Array<(msg: string) => void> = [];
+  #listeners = new Map<keyof EventMap, Subscription[]>();
+  /** Deliveries waiting for their turn; see #emit. */
+  #queue: Array<() => void> = [];
+  #draining = false;
 
-  // Middleware
-  #cmdMiddlewares: CommandMiddleware[] = [];
-  #eventMiddlewares: EventMiddleware[] = [];
+  #eventMiddlewares: readonly EventMiddleware[];
   #finalCmdHandler: (cmd: string) => Promise<void>;
-  #finalEvtHandler: (evt: EventMap[keyof EventMap]) => void;
+  #eventChain: (event: ServerEvent) => void;
 
   constructor(identity: Identity, addr: string, nickname: string, options: ClientOptions = {}) {
     this.#identity = identity;
     this.#addr = addr;
     this.nickname = nickname;
-    this.logger = options.logger ?? consoleLogger;
+    this.logger = options.logger ?? noopLogger;
     this.#resolver = options.resolver ?? new Resolver(this.logger);
     this.#clientInitOptions = normalizeClientInitOptions(options);
     this.#socketFactory = options.socketFactory;
@@ -139,19 +195,18 @@ export class Client implements CommandExecutor {
     this.#reconnectOptions = options.reconnect ?? {};
 
     this.crypt = new Crypt(identity);
-    this.handler = new PacketHandler(this.crypt, this.logger, this.#socketFactory);
-    this.handler.onPacket = (p) => this.#handlePacket(p);
-    this.handler.onClosed = (err) => this.#handleConnectionClosed(err);
+    this.handler = this.#newHandler();
 
-    if (options.commandMiddleware) {
-      this.#cmdMiddlewares.push(...options.commandMiddleware);
-    }
-    if (options.eventMiddleware) {
-      this.#eventMiddlewares.push(...options.eventMiddleware);
-    }
-
-    this.#finalCmdHandler = this.#buildCmdHandler();
-    this.#finalEvtHandler = this.#buildEvtHandler();
+    // Built once: the chains are read on every command and event, and
+    // changing them while those run would make the behaviour depend on timing.
+    const cmdMiddlewares: readonly CommandMiddleware[] = options.commandMiddleware ?? [];
+    this.#eventMiddlewares = options.eventMiddleware ?? [];
+    this.#finalCmdHandler = buildCommandChain([...cmdMiddlewares], async (cmd) => {
+      this.handler.sendPacket(PacketType.Command, Buffer.from(cmd), 0);
+    });
+    this.#eventChain = buildEventChain([...this.#eventMiddlewares], (event) =>
+      this.#deliver(event.name, event.payload),
+    );
   }
 
   get status(): ClientStatus {
@@ -169,80 +224,119 @@ export class Client implements CommandExecutor {
 
   // ---- Connection -----------------------------------------------------------
 
-  async connect(): Promise<void> {
+  /**
+   * Connect to the server. Resolves once the handshake completes.
+   *
+   * A failed attempt rejects with its cause, such as the server's error for a
+   * rejected password. Aborting `signal` abandons the attempt and rejects with
+   * the signal's reason. The signal bounds only the connecting: once this
+   * resolves, the connection lasts until `disconnect()` or a drop.
+   * `connect()` does not retry; the `reconnect` option only retries a
+   * connection that drops after it was established.
+   */
+  async connect(options: { readonly signal?: AbortSignal | undefined } = {}): Promise<void> {
+    const { signal } = options;
+    signal?.throwIfAborted();
+    if (this.#status !== ClientStatus.Disconnected) throw new AlreadyConnectedError();
     this.#stopped = false;
-
-    if (this.#status !== ClientStatus.Disconnected) {
-      throw new AlreadyConnectedError();
-    }
 
     this.#resetForConnect();
     this.#status = ClientStatus.Connecting;
+    const attempt = this.#attempt;
 
-    const targetAddr = await this.#resolveAddr();
-    this.logger.info("connecting to server", { address: targetAddr });
-    await this.handler.connect(targetAddr);
+    // The handshake may complete just as the signal fires, in which case
+    // #failConnection leaves the session alone and the caller gets the
+    // connection it made rather than one it would believe had failed.
+    const onAbort = (): void => this.#failConnection(abortReason(signal!));
+    signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      try {
+        const targetAddr = await this.#resolveAddr(signal);
+        if (!attempt.settled) {
+          this.logger.info("connecting to server", { address: targetAddr });
+          await this.handler.connect(targetAddr);
+        }
+      } catch (error) {
+        // Without this the client stays Connecting and every later connect()
+        // fails with AlreadyConnectedError.
+        this.#failConnection(error);
+      }
+      await attempt.promise;
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
+    }
   }
 
-  async disconnect(): Promise<void> {
-    // Recorded before anything else: a dropped socket during the shutdown
-    // command below must not be mistaken for an outage worth retrying.
+  /**
+   * Leave the server and close the connection.
+   *
+   * Says goodbye first, waiting for the server's acknowledgement until `signal`
+   * aborts, or for a second. The connection is closed either way. A
+   * `connect()` still waiting for its handshake rejects with a
+   * NotConnectedError, and so do the commands still waiting for an answer.
+   * Does nothing on a client that is not connected.
+   */
+  async disconnect(options: { readonly signal?: AbortSignal | undefined } = {}): Promise<void> {
+    // Recorded before anything else: a dropped socket during the goodbye below
+    // must not be mistaken for an outage worth retrying.
     this.#stopped = true;
 
     if (this.#status === ClientStatus.Disconnected) return;
 
     const wasConnected = this.#status === ClientStatus.Connected;
     this.#status = ClientStatus.Disconnected;
+    this.#attempt.reject(new NotConnectedError());
 
     this.logger.info("disconnecting from server");
 
     if (wasConnected) {
       try {
-        await this.execCommand("clientdisconnect reasonmsg=Shutdown", 1000);
+        await this.#exec("clientdisconnect reasonmsg=Shutdown", {
+          signal: options.signal,
+          timeout: DISCONNECT_TIMEOUT_MS,
+        });
       } catch {
-        // best-effort
+        // A courtesy; the connection closes regardless.
       }
     }
 
     this.handler.close();
     this.#cmdTrack.reset(new NotConnectedError());
-    const handlers = this.#disconnectedHandlers.slice();
-    for (const h of handlers) setImmediate(() => h(undefined));
+    // Announced here; #handleConnectionClosed stays quiet once the status is
+    // already Disconnected, so listeners hear about it once.
+    this.#emit("disconnected", undefined);
   }
 
-  waitConnected(signal?: AbortSignal): Promise<void> {
-    if (this.#status === ClientStatus.Connected) return Promise.resolve();
-    if (this.#connectionError) return Promise.reject(this.#connectionError);
-    return new Promise<void>((resolve, reject) => {
-      const waiter = {
-        resolve: () => {
-          signal?.removeEventListener("abort", onAbort);
-          resolve();
-        },
-        reject: (error: Error) => {
-          signal?.removeEventListener("abort", onAbort);
-          reject(error);
-        },
-      };
-      const onAbort = (): void => {
-        const index = this.#connectedResolvers.indexOf(waiter);
-        if (index >= 0) this.#connectedResolvers.splice(index, 1);
-        const reason: unknown = signal?.reason;
-        waiter.reject(
-          reason instanceof Error ? reason : new Error(String(reason ?? "Connection wait aborted")),
-        );
-      };
-      this.#connectedResolvers.push(waiter);
-      if (signal?.aborted) onAbort();
-      else signal?.addEventListener("abort", onAbort, { once: true });
-    });
+  /** `await using client = …` disconnects when the scope ends. */
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.disconnect();
   }
 
   // ---- Commands ------------------------------------------------------------
 
-  async sendCommandNoWait(cmd: string): Promise<void> {
+  /**
+   * Send a raw command line and return the rows that answer it: the escape
+   * hatch for a command the typed functions do not cover. The line is sent as
+   * given, so its values must already be escaped and any channel password
+   * already hashed.
+   */
+  exec(command: string, options: CommandOptions = {}): Promise<Record<string, string>[]> {
+    return this.#exec(command, options);
+  }
+
+  /**
+   * Send a raw command line without waiting for an answer, for the few
+   * commands the server answers with nothing at all. `signal` bounds only the
+   * wait for the flood throttle.
+   */
+  async execNoWait(
+    command: string,
+    options: { readonly signal?: AbortSignal | undefined } = {},
+  ): Promise<void> {
+    options.signal?.throwIfAborted();
     await this.#throttle.wait();
-    await this.#finalCmdHandler(cmd);
+    options.signal?.throwIfAborted();
+    await this.#finalCmdHandler(command);
   }
 
   /**
@@ -252,40 +346,42 @@ export class Client implements CommandExecutor {
    * the voice protocol expects `base64(sha1(password))`, where ServerQuery
    * takes the password itself.
    */
-  send(request: CommandRequest): Promise<Record<string, string>[]> {
-    return this.execCommandWithResponse(encodeRequest(request, prepareClientPassword));
+  send(request: CommandRequest, options: CommandOptions = {}): Promise<Record<string, string>[]> {
+    return this.#exec(encodeRequest(request, prepareClientPassword), options);
   }
 
-  async execCommand(cmd: string, timeoutMs = 10_000): Promise<void> {
-    await this.execCommandWithResponse(cmd, timeoutMs);
-  }
-
-  async execCommandWithResponse(
-    cmd: string,
-    timeoutMs = 10_000,
-  ): Promise<Record<string, string>[]> {
+  async #exec(command: string, options: CommandOptions): Promise<Record<string, string>[]> {
+    const { signal, timeout = DEFAULT_COMMAND_TIMEOUT_MS } = options;
+    signal?.throwIfAborted();
     // A command sent on no socket used to vanish and surface 10 seconds later
     // as a timeout, which reads like a slow server rather than a usage error.
     if (!this.handler.isOpen) throw new NotConnectedError();
 
     // Which notifications answer this command, and — for answers that arrive
     // after the `error` — the request field they echo back.
-    const parsed = parseCommand(cmd);
+    const parsed = parseCommand(command);
     const spec = responseSpec(parsed?.name ?? "");
     const key = spec?.correlated?.key;
     const correlation = key === undefined ? undefined : parsed?.params[key];
 
-    const [rc, promise] = this.#cmdTrack.register(spec, correlation);
+    const [rc, answered] = this.#cmdTrack.register(spec, correlation);
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
     try {
-      const withRc = appendReturnCode(cmd, rc);
+      const withRc = appendReturnCode(command, rc);
       await this.#throttle.wait();
+      signal?.throwIfAborted();
       await this.#finalCmdHandler(withRc);
 
       const result = await Promise.race([
-        promise,
+        answered,
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new CommandTimeoutError(cmd)), timeoutMs);
+          timer = setTimeout(
+            () => reject(new CommandTimeoutError(parsed?.name ?? command)),
+            timeout,
+          );
+          onAbort = () => reject(abortReason(signal!));
+          signal?.addEventListener("abort", onAbort, { once: true });
         }),
       ]);
       if (result.err) throw result.err;
@@ -294,58 +390,42 @@ export class Client implements CommandExecutor {
       // Cleared, not left to fire: a pending timer keeps the process alive for
       // the full timeout after the last command has long been answered.
       clearTimeout(timer);
+      if (onAbort) signal?.removeEventListener("abort", onAbort);
       this.#cmdTrack.unregister(rc);
     }
   }
 
   // ---- Events --------------------------------------------------------------
 
-  on<K extends keyof EventMap>(
-    event: K,
-    handler: EventMap[K] extends void ? () => void : (payload: EventMap[K]) => void,
-  ): this {
-    switch (event) {
-      case "textMessage":
-        this.#textMsgHandlers.push(handler as AnyHandler);
-        break;
-      case "clientEnter":
-        this.#clientEnterHandlers.push(handler as AnyHandler);
-        break;
-      case "clientLeave":
-        this.#clientLeaveHandlers.push(handler as AnyHandler);
-        break;
-      case "clientMoved":
-        this.#clientMoveHandlers.push(handler as AnyHandler);
-        break;
-      case "poked":
-        this.#pokedHandlers.push(handler as AnyHandler);
-        break;
-      case "voiceData":
-        this.#voiceDataHandlers.push(handler as AnyHandler);
-        break;
-      case "connected":
-        this.#connectedHandlers.push(handler as () => void);
-        break;
-      case "disconnected":
-        this.#disconnectedHandlers.push(handler as AnyHandler);
-        break;
-      case "kicked":
-        this.#kickedHandlers.push(handler as AnyHandler);
-        break;
-    }
-    return this;
+  /** Listen for an event. Returns a function that removes the listener. */
+  on<K extends keyof EventMap>(event: K, listener: Listener<K>): Unsubscribe {
+    const subscription: Subscription = {
+      listener: listener as (payload: unknown) => void,
+      removed: false,
+    };
+    // A new array rather than an edit in place: a delivery may be iterating
+    // over the old one.
+    this.#listeners.set(event, [...(this.#listeners.get(event) ?? []), subscription]);
+
+    const unsubscribe = (): void => {
+      if (subscription.removed) return;
+      subscription.removed = true;
+      const list = this.#listeners.get(event) ?? [];
+      this.#listeners.set(
+        event,
+        list.filter((s) => s !== subscription),
+      );
+    };
+    return Object.assign(unsubscribe, { [Symbol.dispose]: unsubscribe });
   }
 
-  useCommandMiddleware(...mw: CommandMiddleware[]): this {
-    this.#cmdMiddlewares.push(...mw);
-    this.#finalCmdHandler = this.#buildCmdHandler();
-    return this;
-  }
-
-  useEventMiddleware(...mw: EventMiddleware[]): this {
-    this.#eventMiddlewares.push(...mw);
-    this.#finalEvtHandler = this.#buildEvtHandler();
-    return this;
+  /** Listen for the next occurrence of an event only. */
+  once<K extends keyof EventMap>(event: K, listener: Listener<K>): Unsubscribe {
+    const unsubscribe = this.on(event, ((payload: EventMap[K]) => {
+      unsubscribe();
+      (listener as (payload: EventMap[K]) => void)(payload);
+    }) as Listener<K>);
+    return unsubscribe;
   }
 
   // ---- API shorthand -------------------------------------------------------
@@ -380,8 +460,8 @@ export class Client implements CommandExecutor {
   }
 
   /** Send Opus voice directly to specific clients, bypassing channel routing. */
-  sendWhisper(data: Uint8Array, targetClientIds: number[], codec: number): void {
-    this.handler.sendWhisperPacket(data, targetClientIds, codec);
+  sendWhisper(data: Uint8Array, targetClientIds: readonly number[], codec: number): void {
+    this.handler.sendWhisperPacket(data, [...targetClientIds], codec);
   }
 
   sendVoice(data: Uint8Array, codec: number): void {
@@ -403,47 +483,52 @@ export class Client implements CommandExecutor {
   /** @internal */
   _markConnected(): void {
     this.#status = ClientStatus.Connected;
-    this.#connectionError = null;
-    for (const waiter of this.#connectedResolvers) waiter.resolve();
-    this.#connectedResolvers = [];
-    const handlers = this.#connectedHandlers.slice();
-    for (const h of handlers) setImmediate(() => h());
+    this.#attempt.resolve();
+    this.#emit("connected", undefined);
   }
 
   // ---- Private -------------------------------------------------------------
 
+  #newHandler(): PacketHandler {
+    const handler = new PacketHandler(this.crypt, this.logger, this.#socketFactory);
+    handler.onPacket = (p) => this.#handlePacket(p);
+    // Bound to this handler: a close reported late by one that a later
+    // connect() already replaced must not tear down the new connection.
+    handler.onClosed = (err) => {
+      if (handler === this.handler) this.#handleConnectionClosed(err);
+    };
+    return handler;
+  }
+
   #resetForConnect(): void {
-    // Waiters are deliberately left in place: connect() resets first, so a
-    // caller that registered waitConnected() before calling connect() must
-    // still be resolved by the handshake that follows. Clear only the error
-    // carried over from a previous attempt.
-    this.#connectionError = null;
     this.handler.close();
     this.crypt = new Crypt(this.#identity);
-    this.handler = new PacketHandler(this.crypt, this.logger, this.#socketFactory);
-    this.handler.onPacket = (p) => this.#handlePacket(p);
-    this.handler.onClosed = (err) => this.#handleConnectionClosed(err);
+    this.handler = this.#newHandler();
+    this.#attempt = newConnectAttempt();
     this.#cmdTrack.reset(new NotConnectedError());
     this.#clients.clear();
     this.clid = 0;
-    this.#finalCmdHandler = this.#buildCmdHandler();
+    this.uidAlgorithm = "sha1";
+    this.capabilities = unknownServerCapabilities();
   }
 
-  async #resolveAddr(): Promise<string> {
-    const addrWithPort = this.#addr.includes(":") ? this.#addr : `${this.#addr}:9987`;
+  async #resolveAddr(signal: AbortSignal | undefined): Promise<string> {
+    // Parsed, not tested for a colon: an IPv6 literal has colons and no port.
+    const { host, port } = splitHostPort(this.#addr);
+    const fallback = joinHostPort(host, port);
     try {
-      const resolved = await this.#resolver.resolve(this.#addr);
-      return resolved[0]?.addr ?? addrWithPort;
-    } catch {
-      return addrWithPort;
+      const resolved = await this.#resolver.resolve(this.#addr, signal);
+      return resolved[0]?.addr ?? fallback;
+    } catch (error) {
+      signal?.throwIfAborted();
+      this.logger.warn("address resolution failed, falling back to direct", {
+        error: String(error),
+      });
+      return fallback;
     }
   }
 
   #handlePacket(p: Packet): void {
-    this.#handlePacketSync(p);
-  }
-
-  #handlePacketSync(p: Packet): void {
     const pType = p.typeFlagged & 0x0f;
     if (pType === 8 /* Init1 */) {
       const response = processInit1(this.crypt, p.data);
@@ -459,9 +544,7 @@ export class Client implements CommandExecutor {
     }
 
     if ((pType === 2 /* Command */ || pType === 3) /* CommandLow */ && p.data.length > 0) {
-      const text = Buffer.from(p.data).toString("utf8");
-      if (process.env["TEAMSPEAK_TRACE_RAW"]) process.stderr.write(`S2C ${JSON.stringify(text)}\n`);
-      this.#handleCommandLines(text);
+      this.#handleCommandLines(Buffer.from(p.data).toString("utf8"));
     }
   }
 
@@ -470,17 +553,18 @@ export class Client implements CommandExecutor {
    * Format: [VId: u16] [CId: u16] [Codec: u8] [Data: var]
    */
   #handleVoicePacket(payload: Uint8Array): void {
-    if (this.#voiceDataHandlers.length === 0) return;
+    // Audio arrives fifty times a second per speaker; build no event nobody
+    // will see.
+    if (!this.#listeners.get("voiceData")?.length && this.#eventMiddlewares.length === 0) return;
 
     const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
     const clientId = view.getUint16(2, false);
     if (clientId === this.clid) return;
 
-    const codec = payload[4]!;
-    const data = payload.subarray(5);
-
-    const voiceData: import("./types.js").VoiceData = { clientId, codec, data };
-    for (const h of this.#voiceDataHandlers) setImmediate(() => h(voiceData));
+    // Copied: the packet's buffer is reused once this returns, and a listener
+    // runs later.
+    const data = payload.slice(5);
+    this.#emitServerEvent({ name: "voiceData", payload: { clientId, codec: payload[4]!, data } });
   }
 
   #handleCommandLines(s: string): void {
@@ -526,7 +610,7 @@ export class Client implements CommandExecutor {
         this.#cmdTrack.offerCorrelated(cmd.name, cmd.params);
       }
       const result = handleNotification(cmd, this.clid, this.#clients, this.nickname);
-      this.#processNotificationResult(result, cmd.params);
+      this.#processNotificationResult(result);
       return;
     }
 
@@ -572,14 +656,12 @@ export class Client implements CommandExecutor {
     }
 
     if (err?.code === ErrorCode.ConnectFailedBanned) {
+      this.logger.warn("banned by the server, closing the connection");
       setImmediate(() => this.disconnect().catch(() => {}));
     }
   }
 
-  #processNotificationResult(
-    result: import("./notifications.js").NotificationResult,
-    _params: Record<string, string>,
-  ): void {
+  #processNotificationResult(result: import("./notifications.js").NotificationResult): void {
     switch (result.kind) {
       case "clientEnter": {
         const info = result.info;
@@ -608,56 +690,91 @@ export class Client implements CommandExecutor {
           this.handler.setClientID(info.id);
           this.nickname = info.nickname;
         }
-        this.#dispatchEvent("clientEnter", info);
+        this.#emitServerEvent({ name: "clientEnter", payload: info });
         break;
       }
       case "clientLeave": {
-        this.#dispatchEvent("clientLeave", result.event);
-        if (result.isSelf && (result.event.reasonID === 4 || result.event.reasonID === 5)) {
-          const msg = result.event.reasonMsg;
-          for (const h of this.#kickedHandlers) setImmediate(() => h(msg));
+        const event = result.event;
+        this.#emitServerEvent({ name: "clientLeave", payload: event });
+        if (!result.isSelf) break;
+        if (event.reason === Reason.KickServer || event.reason === Reason.KickServerBan) {
+          this.#emit("kicked", kickedEvent(event));
         }
+        this.#removedByServer(
+          new RemovedError(event.reason, event.reasonMessage, event.invokerName),
+        );
         break;
       }
       case "clientMoved":
-        this.#dispatchEvent("clientMoved", result.event);
+        this.#emitServerEvent({ name: "clientMoved", payload: result.event });
+        // A channel kick moves the client to the default channel; it arrives
+        // as a move, not as leaving view, which is where it used to be looked
+        // for.
+        if (result.event.id === this.clid && result.event.reason === Reason.KickChannel) {
+          this.#emit(
+            "kicked",
+            kickedEvent({ ...result.event, reasonMessage: result.reasonMessage }),
+          );
+        }
         break;
       case "textMessage":
-        this.#dispatchEvent("textMessage", result.message);
+        this.#emitServerEvent({ name: "textMessage", payload: result.message });
         break;
       case "poked":
-        this.#dispatchEvent("poked", result.event);
+        this.#emitServerEvent({ name: "poked", payload: result.event });
         break;
     }
   }
 
-  #dispatchEvent<K extends keyof EventMap>(event: K, payload: EventMap[K]): void {
-    this.#finalEvtHandler(payload as EventMap[keyof EventMap]);
+  /**
+   * End a session the server has ended. The server stops answering a client it
+   * has removed, so waiting for the transport to notice reported the end a
+   * minute late, without its cause, and with the client claiming to be
+   * connected meanwhile.
+   */
+  #removedByServer(cause: Error): void {
+    this.#handleConnectionClosed(cause);
+    this.handler.close();
   }
 
-  #dispatchEventDirect<K extends keyof EventMap>(event: K, payload: EventMap[K]): void {
-    switch (event) {
-      case "textMessage":
-        for (const h of this.#textMsgHandlers)
-          setImmediate(() => h(payload as import("./types.js").TextMessage));
-        break;
-      case "clientEnter":
-        for (const h of this.#clientEnterHandlers) setImmediate(() => h(payload as ClientInfo));
-        break;
-      case "clientLeave":
-        for (const h of this.#clientLeaveHandlers)
-          setImmediate(() => h(payload as import("./types.js").ClientLeftViewEvent));
-        break;
-      case "clientMoved":
-        for (const h of this.#clientMoveHandlers)
-          setImmediate(() => h(payload as import("./types.js").ClientMovedEvent));
-        break;
-      case "poked":
-        for (const h of this.#pokedHandlers)
-          setImmediate(() => h(payload as import("./types.js").PokeEvent));
-        break;
+  /** Queue a server event, through the event middleware. */
+  #emitServerEvent(event: ServerEvent): void {
+    this.#enqueue(() => this.#eventChain(event));
+  }
+
+  /** Queue a lifecycle event, which middleware does not see. */
+  #emit<K extends Exclude<keyof EventMap, ServerEventName>>(event: K, payload: EventMap[K]): void {
+    this.#enqueue(() => this.#deliver(event, payload));
+  }
+
+  #deliver<K extends keyof EventMap>(event: K, payload: EventMap[K]): void {
+    for (const subscription of this.#listeners.get(event) ?? []) {
+      // Checked at delivery: a listener removed while its event was queued
+      // does not get it.
+      if (!subscription.removed) subscription.listener(payload);
     }
   }
+
+  /**
+   * Run deliveries one at a time, in order, once the packet being handled is
+   * done with. A listener that throws does so as an uncaught exception, as it
+   * would from an EventEmitter, and the deliveries behind it still run.
+   */
+  #enqueue(delivery: () => void): void {
+    this.#queue.push(delivery);
+    if (this.#draining) return;
+    this.#draining = true;
+    setImmediate(this.#drain);
+  }
+
+  #drain = (): void => {
+    try {
+      while (this.#queue.length > 0) this.#queue.shift()!();
+    } finally {
+      if (this.#queue.length > 0) setImmediate(this.#drain);
+      else this.#draining = false;
+    }
+  };
 
   #handleConnectionClosed(err: Error | null): void {
     if (this.#status === ClientStatus.Disconnected) return;
@@ -668,18 +785,19 @@ export class Client implements CommandExecutor {
       // The socket closed before the handshake finished, so this is a failed
       // connection attempt rather than a disconnect of a live session.
       this.#failConnection(
-        err ?? new Error("Connection closed before the TeamSpeak handshake completed"),
+        err ?? new TeamspeakError("connection closed before the TeamSpeak handshake completed"),
       );
       return;
     }
     this.#status = ClientStatus.Disconnected;
-    const handlers = this.#disconnectedHandlers.slice();
-    for (const h of handlers) setImmediate(() => h(err ?? undefined));
+    // Never undefined for a drop: undefined means disconnect() only.
+    const cause = err ?? new TeamspeakError("connection closed");
 
     // Announced first, then retried: a caller watching `disconnected` should
     // hear about the drop even when a reconnect is already on its way, because
     // a silent recovery hides an outage.
-    void this.#scheduleReconnect(err ?? undefined);
+    this.#emit("disconnected", cause);
+    void this.#scheduleReconnect(cause);
   }
 
   /**
@@ -690,13 +808,12 @@ export class Client implements CommandExecutor {
    * a loop shorter than the server's antiflood window bans the IP rather than
    * reconnecting it.
    */
-  async #scheduleReconnect(err: Error | undefined): Promise<void> {
+  async #scheduleReconnect(err: Error): Promise<void> {
     const options = this.#reconnectOptions;
     if (!options.enabled || this.#stopped || this.#reconnecting) return;
 
     const policy = resolveBackoffPolicy(options);
-    const shouldRetry =
-      options.shouldRetry ?? ((error: Error | undefined) => !isPermanentFailure(error));
+    const shouldRetry = options.shouldRetry ?? defaultShouldRetry;
 
     this.#reconnecting = true;
 
@@ -704,7 +821,7 @@ export class Client implements CommandExecutor {
       for (let attempt = 1; policy.maxAttempts === 0 || attempt <= policy.maxAttempts; attempt++) {
         if (this.#stopped) return;
         if (!shouldRetry(err, attempt)) {
-          this.logger.info("not retrying", { attempt, reason: err?.message });
+          this.logger.info("not retrying", { attempt, reason: err.message });
           return;
         }
 
@@ -714,22 +831,11 @@ export class Client implements CommandExecutor {
         if (this.#stopped) return;
 
         try {
-          await this.connect();
-          await this.waitConnected();
+          await this.connect({ signal: AbortSignal.timeout(RECONNECT_ATTEMPT_TIMEOUT_MS) });
           this.logger.info("reconnected", { attempt });
           return;
         } catch (retryErr) {
-          err = retryErr instanceof Error ? retryErr : new Error(String(retryErr));
-          // A refusal on the retry is as permanent as one on the first attempt.
-          if (isPermanentFailure(err) && options.shouldRetry === undefined) {
-            this.logger.info("reconnect refused", {
-              attempt,
-              reason: err.message,
-              name: err.name,
-              id: (err as { id?: string }).id,
-            });
-            return;
-          }
+          err = retryErr instanceof Error ? retryErr : new TeamspeakError(String(retryErr));
         }
       }
       this.logger.warn("reconnect attempts exhausted", { attempts: policy.maxAttempts });
@@ -739,81 +845,38 @@ export class Client implements CommandExecutor {
   }
 
   /**
-   * A connection attempt has failed for good. Record why, release anyone
-   * waiting on `waitConnected`, and tear the connection down.
+   * A connection attempt has failed for good: settle it with the cause, and
+   * tear the connection down. Does nothing once the handshake has completed,
+   * so it cannot end a live session.
    *
    * Without this, a handshake the server rejects (a wrong password, say, which
    * the server answers with an error instead of closing the socket) surfaces
    * only as the caller's own timeout, and the client stays in `Connecting`
    * forever without ever emitting `disconnected`.
    */
-  #failConnection(error: Error): void {
-    this.#connectionError = error;
-    const waiters = this.#connectedResolvers.splice(0);
-    for (const waiter of waiters) waiter.reject(error);
+  #failConnection(error: unknown): void {
+    if (this.#status === ClientStatus.Connected) return;
+    this.#attempt.reject(error);
 
     if (this.#status === ClientStatus.Disconnected) return;
     this.#status = ClientStatus.Disconnected;
     this.handler.close();
-    const handlers = this.#disconnectedHandlers.slice();
-    for (const h of handlers) setImmediate(() => h(error));
+    this.#emit("disconnected", error instanceof Error ? error : new TeamspeakError(String(error)));
   }
+}
 
-  #buildCmdHandler(): (cmd: string) => Promise<void> {
-    const base = async (cmd: string): Promise<void> => {
-      this.handler.sendPacket(PacketType.Command, Buffer.from(cmd), 0);
-    };
-    return buildCommandChain(this.#cmdMiddlewares, base);
-  }
-
-  #buildEvtHandler(): (evt: EventMap[keyof EventMap]) => void {
-    const base = (evt: EventMap[keyof EventMap]): void => {
-      // Determine which event type this is by checking the shape
-      if (
-        evt !== null &&
-        evt !== undefined &&
-        typeof evt === "object" &&
-        "invokerName" in evt &&
-        "message" in evt &&
-        "targetMode" in evt
-      ) {
-        this.#dispatchEventDirect("textMessage", evt as EventMap["textMessage"]);
-      } else if (
-        evt !== null &&
-        evt !== undefined &&
-        typeof evt === "object" &&
-        "invokerName" in evt &&
-        "message" in evt &&
-        !("targetMode" in evt)
-      ) {
-        this.#dispatchEventDirect("poked", evt as EventMap["poked"]);
-      } else if (
-        evt !== null &&
-        evt !== undefined &&
-        typeof evt === "object" &&
-        "id" in evt &&
-        "uid" in evt
-      ) {
-        this.#dispatchEventDirect("clientEnter", evt as EventMap["clientEnter"]);
-      } else if (
-        evt !== null &&
-        evt !== undefined &&
-        typeof evt === "object" &&
-        "id" in evt &&
-        "reasonID" in evt &&
-        "targetChannelID" in evt
-      ) {
-        this.#dispatchEventDirect("clientMoved", evt as EventMap["clientMoved"]);
-      } else if (
-        evt !== null &&
-        evt !== undefined &&
-        typeof evt === "object" &&
-        "id" in evt &&
-        "reasonID" in evt
-      ) {
-        this.#dispatchEventDirect("clientLeave", evt as EventMap["clientLeave"]);
-      }
-    };
-    return buildEventChain(this.#eventMiddlewares, base);
-  }
+function kickedEvent(event: {
+  readonly reason: number;
+  readonly reasonMessage: string;
+  readonly invokerName: string;
+  readonly invokerUID: string;
+  readonly invokerID: number;
+}): KickedEvent {
+  return {
+    reason: event.reason,
+    reasonMessage: event.reasonMessage,
+    invokerName: event.invokerName,
+    invokerUID: event.invokerUID,
+    invokerID: event.invokerID,
+  };
 }

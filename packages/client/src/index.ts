@@ -10,18 +10,21 @@ export * from "@honeybbq/teamspeak-core";
 
 // The client
 export { Client, ClientStatus } from "./client.js";
-export type { ClientState } from "./client.js";
 
 export type {
   TextMessage,
   ClientMovedEvent,
   ClientLeftViewEvent,
+  KickedEvent,
   ClientInfo,
-  ChannelInfo,
   PokeEvent,
   VoiceData,
   EventMap,
   EventMiddleware,
+  Listener,
+  ServerEvent,
+  ServerEventName,
+  Unsubscribe,
   AddrResolver,
   ClientOptions,
   ResolvedAddr,
@@ -36,6 +39,8 @@ export {
   FileTransferError,
   CryptoInitError,
   InvalidIdentityError,
+  RemovedError,
+  TimedOutError,
 } from "./errors.js";
 
 // Commands only the voice protocol has.
@@ -49,7 +54,7 @@ export { parseServerCapabilities, unknownServerCapabilities } from "./capabiliti
 export type { ServerCapabilities, ServerFamily } from "./capabilities.js";
 
 // Reconnection policy
-export { backoffDelay, isPermanentFailure, defaultBackoffPolicy } from "./reconnect.js";
+export { backoffDelay, defaultShouldRetry, defaultBackoffPolicy } from "./reconnect.js";
 export type { ReconnectOptions, BackoffPolicy } from "./reconnect.js";
 
 // Identity

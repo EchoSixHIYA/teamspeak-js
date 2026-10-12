@@ -13,7 +13,12 @@ export { parseCommand } from "./command/parser.js";
 
 // Requests and the connections that execute them.
 export { encodeRequest } from "./command/request.js";
-export type { CommandExecutor, CommandRequest, ParamValue } from "./command/request.js";
+export type {
+  CommandExecutor,
+  CommandOptions,
+  CommandRequest,
+  ParamValue,
+} from "./command/request.js";
 
 // Branded ids: a ChannelID cannot be passed where a ClientID is meant.
 export {
@@ -39,6 +44,7 @@ export type {
 
 export { TeamspeakError, ServerError, CommandTimeoutError, NotConnectedError } from "./errors.js";
 export { ErrorCode } from "./errorcode.js";
+export { Reason } from "./reason.js";
 
 export { noopLogger, consoleLogger } from "./types.js";
 export type {

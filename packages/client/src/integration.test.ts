@@ -28,7 +28,7 @@ import {
 } from "@honeybbq/teamspeak-core";
 import { deleteFile, initFileDownload, initFileUpload, listFiles } from "@honeybbq/teamspeak-core";
 import { sendTextMessage, TextMessageTarget } from "@honeybbq/teamspeak-core";
-import { getServerInfo, listServerGroups } from "@honeybbq/teamspeak-core";
+import { ErrorCode, getServerInfo, listServerGroups } from "@honeybbq/teamspeak-core";
 import { asChannelID, asClientDBID, asClientID, asUID } from "@honeybbq/teamspeak-core";
 import type { ClientInfo } from "./types.js";
 
@@ -68,9 +68,7 @@ beforeAll(async () => {
     });
   });
 
-  await client.connect();
-
-  await client.waitConnected(AbortSignal.timeout(30_000));
+  await client.connect({ signal: AbortSignal.timeout(30_000) });
 
   sharedClient = client;
 }, 40_000);
@@ -92,12 +90,10 @@ async function connectPeer(nickname: string, setup?: (client: Client) => void): 
     serverPassword: SERVER_PASSWORD,
     defaultChannel: DEFAULT_CHANNEL,
     defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
-    logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
   });
   setup?.(peer);
   peers.set(nickname, peer);
-  await peer.connect();
-  await peer.waitConnected(AbortSignal.timeout(30_000));
+  await peer.connect({ signal: AbortSignal.timeout(30_000) });
   return peer;
 }
 
@@ -121,17 +117,15 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
 
     const rejected = new Client(generateIdentity(8), ADDR!, "ts-js-bad-password", {
       serverPassword: "definitely-not-the-password",
-      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
     });
     const disconnected = new Promise<Error | undefined>((resolve) =>
       rejected.on("disconnected", (err) => resolve(err)),
     );
 
-    await rejected.connect();
     // The cause must be the server's rejection, not the caller's own timeout.
-    await expect(rejected.waitConnected(AbortSignal.timeout(8_000))).rejects.toThrow(
-      /invalid server password/,
-    );
+    await expect(rejected.connect({ signal: AbortSignal.timeout(8_000) })).rejects.toMatchObject({
+      code: ErrorCode.ServerInvalidPassword,
+    });
     expect(rejected.status).toBe(ClientStatus.Disconnected);
     await expect(disconnected).resolves.toBeInstanceOf(Error);
   }, 20_000);
@@ -206,11 +200,8 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // the server's own rows into the response: duplicate cids plus a phantom
     // cid=0, every time, while the same call a second later was correct.
     const identity = generateIdentity(8);
-    const fresh = new Client(identity, ADDR!, "ts-js-welcome", {
-      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-    });
-    await fresh.connect();
-    await fresh.waitConnected(AbortSignal.timeout(30_000));
+    const fresh = new Client(identity, ADDR!, "ts-js-welcome", {});
+    await fresh.connect({ signal: AbortSignal.timeout(30_000) });
 
     const immediate = await listChannels(fresh);
     const ids = immediate.map((c) => c.id);
@@ -410,7 +401,6 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     let socket: import("node:dgram").Socket | undefined;
     const recovering = new Client(generateIdentity(8), ADDR!, "ts-js-reconnect", {
       defaultChannel: DEFAULT_CHANNEL,
-      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       reconnect: { enabled: true, backoff: { initialDelayMs: 500, maxDelayMs: 4_000 } },
       socketFactory: (family) => {
         socket = createSocket(family === 6 ? "udp6" : "udp4");
@@ -418,8 +408,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
       },
     });
 
-    await recovering.connect();
-    await recovering.waitConnected(AbortSignal.timeout(30_000));
+    await recovering.connect({ signal: AbortSignal.timeout(30_000) });
     const firstID = recovering.clientID();
     expect(firstID).toBeGreaterThan(0);
 
@@ -454,12 +443,10 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // process alive that asked to stop.
     const client = new Client(generateIdentity(8), ADDR!, "ts-js-noreconnect", {
       defaultChannel: DEFAULT_CHANNEL,
-      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       reconnect: { enabled: true, backoff: { initialDelayMs: 200 } },
     });
 
-    await client.connect();
-    await client.waitConnected(AbortSignal.timeout(30_000));
+    await client.connect({ signal: AbortSignal.timeout(30_000) });
     await client.disconnect();
 
     await new Promise((r) => setTimeout(r, 2_500));

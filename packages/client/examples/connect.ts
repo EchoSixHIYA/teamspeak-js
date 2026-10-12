@@ -42,7 +42,7 @@ async function main(): Promise<void> {
   });
 
   client.on("clientLeave", (evt) => {
-    console.log(`[event] clientLeave  clid=${evt.id} reasonID=${evt.reasonID}`);
+    console.log(`[event] clientLeave  clid=${evt.id} reason=${evt.reason}`);
   });
 
   client.on("textMessage", (msg) => {
@@ -52,10 +52,7 @@ async function main(): Promise<void> {
   });
 
   console.log(`[example] connecting to ${ADDR}…`);
-  await client.connect();
-
-  // Wait up to 30s for the handshake to complete
-  await client.waitConnected(AbortSignal.timeout(30_000));
+  await client.connect({ signal: AbortSignal.timeout(30_000) });
   console.log(`[example] handshake complete, clid=${client.clientID()}`);
 
   // List channels

@@ -22,10 +22,18 @@ export interface CommandRequest {
   readonly passwords?: readonly string[];
 }
 
+/** How long a command may take, and how to abandon it. */
+export interface CommandOptions {
+  /** Abandons the command; it then rejects with the signal's reason. */
+  readonly signal?: AbortSignal | undefined;
+  /** Milliseconds to wait for the answer before failing with a CommandTimeoutError. */
+  readonly timeout?: number | undefined;
+}
+
 /** A connection the typed commands can run on. */
 export interface CommandExecutor {
   /** Send a command and return the rows that answer it. */
-  send(request: CommandRequest): Promise<Record<string, string>[]>;
+  send(request: CommandRequest, options?: CommandOptions): Promise<Record<string, string>[]>;
 }
 
 /**

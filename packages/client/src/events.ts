@@ -1,11 +1,5 @@
-import type { EventMap, EventMiddleware } from "./types.js";
+import type { EventMiddleware, ServerEvent } from "./types.js";
 import type { CommandMiddleware } from "@honeybbq/teamspeak-core";
-
-type EventHandler<K extends keyof EventMap> = EventMap[K] extends void
-  ? () => void
-  : (payload: EventMap[K]) => void;
-
-export type { EventHandler };
 
 /**
  * Compose a chain of middlewares around a base handler.
@@ -24,8 +18,8 @@ export function buildCommandChain(
 
 export function buildEventChain(
   middlewares: EventMiddleware[],
-  base: (evt: EventMap[keyof EventMap]) => void,
-): (evt: EventMap[keyof EventMap]) => void {
+  base: (event: ServerEvent) => void,
+): (event: ServerEvent) => void {
   let handler = base;
   for (let i = middlewares.length - 1; i >= 0; i--) {
     handler = middlewares[i]!(handler);

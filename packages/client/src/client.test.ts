@@ -1,5 +1,16 @@
-import { describe, it, expect } from "vitest";
-import { Client, generateIdentity } from "./index.js";
+import { afterEach, describe, it, expect } from "vitest";
+import { createSocket, type Socket } from "node:dgram";
+import {
+  Client,
+  ClientStatus,
+  NotConnectedError,
+  Reason,
+  RemovedError,
+  defaultShouldRetry,
+  generateIdentity,
+  type ClientOptions,
+  type KickedEvent,
+} from "./index.js";
 import { PacketType, type Packet } from "./transport/packet.js";
 
 function commandPacket(text: string): Packet {
@@ -75,58 +86,254 @@ describe("Client self identification on notifycliententerview", () => {
   });
 });
 
-describe("waitConnected failure reporting", () => {
+const silentSockets: Socket[] = [];
+afterEach(() => {
+  for (const socket of silentSockets.splice(0)) socket.close();
+});
+
+/**
+ * A client pointed at a UDP socket that never answers, so its handshake never
+ * completes. A port with nothing bound would refuse the datagrams instead.
+ */
+async function silentServerClient(options: ClientOptions = {}): Promise<Client> {
+  const silent = createSocket("udp4");
+  silentSockets.push(silent);
+  await new Promise<void>((resolve) => silent.bind(0, "127.0.0.1", resolve));
+  const addr = `127.0.0.1:${silent.address().port}`;
+  return new Client(generateIdentity(0), "silent.example", "Bot", {
+    resolver: { resolve: async () => [{ addr, source: "test", expiry: new Date() }] },
+    ...options,
+  });
+}
+
+async function until(condition: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !condition(); i++) await new Promise((r) => setTimeout(r, 5));
+  expect(condition()).toBe(true);
+}
+
+/** Wait for every queued delivery to run. */
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+describe("connect()", () => {
   it("rejects with the server error instead of timing out", async () => {
-    const client = new Client(generateIdentity(0), "127.0.0.1:9987", "Bot");
-    const pending = client.waitConnected();
+    const client = await silentServerClient();
+    const connecting = client.connect();
+    await until(() => client.handler.isOpen);
 
     // A handshake the server rejects before the welcome sequence completes.
     client.handler.onPacket?.(commandPacket("error id=1028 msg=invalid\\sserver\\spassword"));
 
-    await expect(pending).rejects.toThrow(/invalid server password/);
+    await expect(connecting).rejects.toThrow(/invalid server password/);
+    expect(client.status).toBe(ClientStatus.Disconnected);
   });
 
-  it("keeps rejecting for waiters that arrive after the failure", async () => {
-    const client = new Client(generateIdentity(0), "127.0.0.1:9987", "Bot");
-    client.handler.onPacket?.(commandPacket("error id=1028 msg=invalid\\sserver\\spassword"));
-
-    await expect(client.waitConnected()).rejects.toThrow(/invalid server password/);
-  });
-
-  it("rejects an already-aborted wait without registering a listener", async () => {
-    const client = new Client(generateIdentity(0), "127.0.0.1:9987", "Bot");
+  it("abandons the attempt when the signal aborts, and can try again", async () => {
+    const client = await silentServerClient();
     const controller = new AbortController();
+    const connecting = client.connect({ signal: controller.signal });
+    await until(() => client.handler.isOpen);
+
     const reason = new Error("caller went away");
     controller.abort(reason);
 
-    await expect(client.waitConnected(controller.signal)).rejects.toBe(reason);
+    await expect(connecting).rejects.toBe(reason);
+    expect(client.status).toBe(ClientStatus.Disconnected);
+
+    const again = client.connect({ signal: AbortSignal.timeout(20) });
+    await expect(again).rejects.not.toThrow(/already/);
   });
 
-  it("stops waiting on abort and is not resolved by a later connect", async () => {
-    const client = new Client(generateIdentity(0), "127.0.0.1:9987", "Bot");
-    const controller = new AbortController();
-    const pending = client.waitConnected(controller.signal);
+  it("rejects at once on a signal that has already aborted", async () => {
+    const client = await silentServerClient();
+    const reason = new Error("too late");
 
-    controller.abort(new Error("aborted by test"));
-    await expect(pending).rejects.toThrow(/aborted by test/);
-
-    // The aborted waiter must have been dropped, so marking connected later
-    // must not resolve it (a resolved-after-reject would be a no-op, but a
-    // leaked entry would also re-resolve on every subsequent connect).
-    expect(() => client._markConnected()).not.toThrow();
+    await expect(client.connect({ signal: AbortSignal.abort(reason) })).rejects.toBe(reason);
+    expect(client.status).toBe(ClientStatus.Disconnected);
   });
-});
 
-describe("waitConnected registered before connect()", () => {
-  it("survives the reset that connect() performs and settles on the handshake", async () => {
-    // connect() calls #resetForConnect() internally. A waiter registered
-    // before it is not stale — it is the documented "block until the handshake
-    // completes" usage — so the reset must leave it in place.
-    const client = new Client(generateIdentity(0), "127.0.0.1:9987", "Bot");
-    const pending = client.waitConnected();
+  // Without a signal, a connect() that disconnect() interrupted used to wait
+  // forever.
+  it("rejects when disconnect() is called during the handshake", async () => {
+    const client = await silentServerClient();
+    const connecting = client.connect();
+    await until(() => client.handler.isOpen);
+
+    await client.disconnect();
+
+    await expect(connecting).rejects.toBeInstanceOf(NotConnectedError);
+  });
+
+  it("resolves once the handshake completes", async () => {
+    const client = await silentServerClient();
+    const connecting = client.connect();
+    await until(() => client.handler.isOpen);
 
     client._markConnected();
 
-    await expect(pending).resolves.toBeUndefined();
+    await expect(connecting).resolves.toBeUndefined();
+    expect(client.status).toBe(ClientStatus.Connected);
+    await client.disconnect();
+  });
+});
+
+describe("events", () => {
+  it("delivers events in the order they arrived", async () => {
+    const client = connectedClient("Bot", 5);
+    const seen: number[] = [];
+    client.on("clientEnter", (info) => seen.push(info.id));
+
+    for (let id = 10; id < 60; id++) {
+      client.handler.onPacket?.(
+        commandPacket(`notifycliententerview clid=${id} ctid=1 client_nickname=C${id}`),
+      );
+    }
+    await settle();
+
+    expect(seen).toEqual(Array.from({ length: 50 }, (_, i) => i + 10));
+  });
+
+  it("stops delivering once unsubscribed, including events already queued", async () => {
+    const client = connectedClient("Bot", 5);
+    const seen: string[] = [];
+    const unsubscribe = client.on("poked", (e) => seen.push(e.message));
+
+    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=queued"));
+    unsubscribe();
+    unsubscribe(); // a second call is harmless
+    await settle();
+
+    expect(seen).toEqual([]);
+  });
+
+  it("is a Disposable, so a listener can live for a scope", async () => {
+    const client = connectedClient("Bot", 5);
+    const seen: string[] = [];
+    {
+      using _listener = client.on("poked", (e) => seen.push(e.message));
+    }
+    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=after"));
+    await settle();
+
+    expect(seen).toEqual([]);
+  });
+
+  it("once() hears only the next occurrence", async () => {
+    const client = connectedClient("Bot", 5);
+    const seen: string[] = [];
+    client.once("poked", (e) => seen.push(e.message));
+
+    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=first"));
+    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=second"));
+    await settle();
+
+    expect(seen).toEqual(["first"]);
+  });
+
+  // The middleware used to guess which event it had by the payload's shape.
+  it("names the event for middleware, which can drop it", async () => {
+    const names: string[] = [];
+    const client = new Client(generateIdentity(0), "127.0.0.1:9987", "Bot", {
+      eventMiddleware: [
+        (next) => (event) => {
+          names.push(event.name);
+          if (event.name !== "poked") next(event);
+        },
+      ],
+    });
+    client.clid = 5;
+    const poked: string[] = [];
+    client.on("poked", (e) => poked.push(e.message));
+
+    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=dropped"));
+    client.handler.onPacket?.(
+      commandPacket("notifycliententerview clid=9 ctid=1 client_nickname=X"),
+    );
+    await settle();
+
+    expect(names).toEqual(["poked", "clientEnter"]);
+    expect(poked).toEqual([]);
+  });
+});
+
+describe("being removed by the server", () => {
+  async function connected(): Promise<Client> {
+    const client = await silentServerClient();
+    const connecting = client.connect();
+    await until(() => client.handler.isOpen);
+    client.clid = 5;
+    client._markConnected();
+    await connecting;
+    return client;
+  }
+
+  it("reports a server kick and ends the session at once, with the cause", async () => {
+    const client = await connected();
+    const kicked: KickedEvent[] = [];
+    const disconnected: Array<Error | undefined> = [];
+    client.on("kicked", (e) => kicked.push(e));
+    client.on("disconnected", (err) => disconnected.push(err));
+
+    client.handler.onPacket?.(
+      commandPacket(
+        "notifyclientleftview clid=5 reasonid=5 reasonmsg=behave invokerid=1 invokername=Admin",
+      ),
+    );
+    await settle();
+
+    expect(kicked).toEqual([
+      expect.objectContaining({
+        reason: Reason.KickServer,
+        reasonMessage: "behave",
+        invokerName: "Admin",
+      }),
+    ]);
+    expect(disconnected[0]).toBeInstanceOf(RemovedError);
+    expect(client.status).toBe(ClientStatus.Disconnected);
+    expect(defaultShouldRetry(disconnected[0])).toBe(false);
+  });
+
+  it("retries a server that stopped, which is not a kick", async () => {
+    const client = await connected();
+    const kicked: KickedEvent[] = [];
+    const disconnected: Array<Error | undefined> = [];
+    client.on("kicked", (e) => kicked.push(e));
+    client.on("disconnected", (err) => disconnected.push(err));
+
+    client.handler.onPacket?.(
+      commandPacket("notifyclientleftview clid=5 reasonid=11 reasonmsg=restart"),
+    );
+    await settle();
+
+    expect(kicked).toEqual([]);
+    expect(defaultShouldRetry(disconnected[0])).toBe(true);
+  });
+
+  // A channel kick arrives as a move, which is not where it used to be looked for.
+  it("reports a channel kick, which leaves the session up", async () => {
+    const client = await connected();
+    const kicked: KickedEvent[] = [];
+    client.on("kicked", (e) => kicked.push(e));
+
+    client.handler.onPacket?.(
+      commandPacket("notifyclientmoved clid=5 ctid=1 reasonid=4 reasonmsg=out invokername=Admin"),
+    );
+    await settle();
+
+    expect(kicked).toEqual([
+      expect.objectContaining({ reason: Reason.KickChannel, reasonMessage: "out" }),
+    ]);
+    expect(client.status).toBe(ClientStatus.Connected);
+    await client.disconnect();
+  });
+
+  it("hears a deliberate disconnect as undefined", async () => {
+    const client = await connected();
+    const disconnected: Array<Error | undefined> = [];
+    client.on("disconnected", (err) => disconnected.push(err));
+
+    await client.disconnect({ signal: AbortSignal.timeout(50) });
+    await settle();
+
+    expect(disconnected).toEqual([undefined]);
   });
 });

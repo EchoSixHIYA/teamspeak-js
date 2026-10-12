@@ -13,7 +13,8 @@
  * recovering from.
  */
 
-import { ErrorCode, ServerError } from "@honeybbq/teamspeak-core";
+import { ErrorCode, Reason, ServerError } from "@honeybbq/teamspeak-core";
+import { RemovedError } from "./errors.js";
 
 /** How long to wait before each attempt. */
 export interface BackoffPolicy {
@@ -34,13 +35,14 @@ export interface BackoffPolicy {
   maxAttempts: number;
 }
 
-export const defaultBackoffPolicy: BackoffPolicy = {
+/** One second, doubling, capped at a minute, with 20% jitter, never giving up. */
+export const defaultBackoffPolicy: Readonly<BackoffPolicy> = Object.freeze({
   initialDelayMs: 1_000,
   maxDelayMs: 60_000,
   factor: 2,
   jitter: 0.2,
   maxAttempts: 0,
-};
+});
 
 export interface ReconnectOptions {
   /**
@@ -52,12 +54,8 @@ export interface ReconnectOptions {
   /** Tuning for the retry delays. */
   backoff?: Partial<BackoffPolicy>;
   /**
-   * Decide whether a given failure is worth retrying.
-   *
-   * Returning false stops the loop. The default retries transport failures and
-   * gives up on the server's own refusals — an invalid password, a ban, a
-   * version mismatch — because retrying those produces the same answer and, for
-   * a ban, makes it worse.
+   * Decide whether a given failure is worth retrying. Returning false stops the
+   * loop. Defaults to {@link defaultShouldRetry}.
    */
   shouldRetry?: (error: Error | undefined, attempt: number) => boolean;
 }
@@ -65,10 +63,19 @@ export interface ReconnectOptions {
 /**
  * Compute the delay before an attempt.
  *
- * `attempt` is 1-based: the delay before the first retry is
- * `initialDelayMs`, and the returned value is never above `maxDelayMs`.
+ * `attempt` is 1-based: the delay before the first retry is `initialDelayMs`,
+ * give or take the jitter, and the delay never grows past `maxDelayMs`.
  */
-export function backoffDelay(policy: BackoffPolicy, attempt: number, random = Math.random): number {
+export function backoffDelay(policy: Readonly<BackoffPolicy>, attempt: number): number {
+  return jitteredDelay(policy, attempt, Math.random);
+}
+
+/** @internal The delay, with `random` supplying the jitter. */
+export function jitteredDelay(
+  policy: Readonly<BackoffPolicy>,
+  attempt: number,
+  random: () => number,
+): number {
   const exponent = Math.max(0, attempt - 1);
   const raw = policy.initialDelayMs * policy.factor ** exponent;
   const capped = Math.min(raw, policy.maxDelayMs);
@@ -77,10 +84,10 @@ export function backoffDelay(policy: BackoffPolicy, attempt: number, random = Ma
 
   // Full jitter would ignore the computed delay; this keeps the trend while
   // spreading peers, so a whole fleet does not retry on the same millisecond.
-  const spread = capped * policy.jitter;
-  const offset = (random() * 2 - 1) * spread;
-
-  return Math.max(0, Math.round(capped + offset));
+  // Kept under the ceiling, which a caller reasonably reads as a promise.
+  const spread = capped * Math.min(policy.jitter, 1);
+  const delay = capped + (random() * 2 - 1) * spread;
+  return Math.round(Math.max(0, Math.min(delay, policy.maxDelayMs)));
 }
 
 /**
@@ -103,11 +110,18 @@ const PERMANENT_SERVER_ERRORS: ReadonlySet<number> = new Set([
   ErrorCode.PermissionsClientInsufficient,
 ]);
 
-export function isPermanentFailure(error: Error | undefined): boolean {
-  // Anything but a listed refusal — a transport failure, or a ServerError the
-  // list does not name — is treated as worth retrying. See
-  // PERMANENT_SERVER_ERRORS for why that is the safer direction to be wrong in.
-  return error instanceof ServerError && PERMANENT_SERVER_ERRORS.has(error.code);
+/**
+ * Whether a failure is worth another attempt.
+ *
+ * Transport failures are retried; so is an unrecognised server error, for the
+ * reason given on PERMANENT_SERVER_ERRORS, and a server that stopped. A kick or
+ * a ban is not: someone removed the client on purpose.
+ */
+export function defaultShouldRetry(error: Error | undefined, _attempt?: number): boolean {
+  if (error instanceof RemovedError) {
+    return error.reason !== Reason.KickServer && error.reason !== Reason.KickServerBan;
+  }
+  return !(error instanceof ServerError && PERMANENT_SERVER_ERRORS.has(error.code));
 }
 
 export function resolveBackoffPolicy(options: ReconnectOptions): BackoffPolicy {

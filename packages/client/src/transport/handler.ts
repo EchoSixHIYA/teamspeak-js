@@ -13,6 +13,7 @@ import {
   buildC2SHeader,
   parseS2CHeader,
 } from "./packet.js";
+import { TimedOutError } from "../errors.js";
 import { GenerationWindow } from "./generation-window.js";
 import { Qlz } from "./quicklz.js";
 import { processInit1 } from "../handshake/crypt-handshake.js";
@@ -666,7 +667,7 @@ export class PacketHandler {
 
     if (now - this.#lastMessageReceived > PACKET_TIMEOUT_MS) {
       this.#logger.warn("idle timeout");
-      this.#triggerClose(new Error("idle timeout"));
+      this.#triggerClose(new TimedOutError());
       return;
     }
 
@@ -677,7 +678,7 @@ export class PacketHandler {
     for (const [key, rp] of this.#ackManager) {
       if (now - rp.firstSend > PACKET_TIMEOUT_MS) {
         this.#ackManager.delete(key);
-        this.#triggerClose(new Error("packet ack timeout"));
+        this.#triggerClose(new TimedOutError());
         return;
       }
       this.#doResend(rp, now);

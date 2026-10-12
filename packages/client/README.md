@@ -69,11 +69,8 @@ client.on("disconnected", (err) => {
   console.log("Disconnected:", err?.message ?? "clean");
 });
 
-// Connect
-await client.connect();
-
-// Wait until connected (with 15s timeout)
-await client.waitConnected(AbortSignal.timeout(15_000));
+// Connect; resolves once the handshake completes.
+await client.connect({ signal: AbortSignal.timeout(15_000) });
 
 // Stay connected until interrupted
 process.on("SIGINT", async () => {
@@ -85,16 +82,15 @@ process.on("SIGINT", async () => {
 
 ### Client Lifecycle
 
-| Method                                        | Description                            |
-| --------------------------------------------- | -------------------------------------- |
-| `new Client(identity, addr, nickname, opts?)` | Create a new client                    |
-| `connect()`                                   | Initiate connection to the server      |
-| `waitConnected(signal?)`                      | Block until the handshake completes    |
-| `disconnect()`                                | Gracefully disconnect                  |
-| `clientID()`                                  | Our clid, assigned by the server       |
-| `channelID()`                                 | The channel we are in                  |
-| `serverCapabilities()`                        | Server version, family and uid hash    |
-| `uniqueIdentifier()`                          | Our own uid, hashed as the server does |
+| Method                                        | Description                                    |
+| --------------------------------------------- | ---------------------------------------------- |
+| `new Client(identity, addr, nickname, opts?)` | Create a new client                            |
+| `connect({ signal? })`                        | Connect; resolves once the handshake completes |
+| `disconnect({ signal? })`                     | Leave the server and close the connection      |
+| `clientID()`                                  | Our clid, assigned by the server               |
+| `channelID()`                                 | The channel we are in                          |
+| `serverCapabilities()`                        | Server version, family and uid hash            |
+| `uniqueIdentifier()`                          | Our own uid, hashed as the server does         |
 
 ### Events
 
@@ -107,8 +103,16 @@ process.on("SIGINT", async () => {
 | `on("clientLeave", handler)`  | Fires when a client leaves         |
 | `on("clientMoved", handler)`  | Fires when a client moves channels |
 | `on("kicked", handler)`       | Fires when the bot is kicked       |
-| `on("poke", handler)`         | Fires when poked by a client       |
-| `on("voice", handler)`        | Fires on incoming voice data       |
+| `on("poked", handler)`        | Fires when poked by a client       |
+
+`on()` and `once()` return a function that removes the listener, which is also
+a `Disposable` (`using listener = client.on(...)`). Listeners run one at a
+time, in the order their events arrived, so a listener may call the client and
+await an answer. `disconnected` delivers `undefined` after `disconnect()`, and
+the cause otherwise — a `TimedOutError`, or a `RemovedError` for a kick, a ban
+or a server stopping. `await using client = new Client(...)` disconnects when
+the scope ends.
+| `on("voice", handler)` | Fires on incoming voice data |
 
 ### Commands
 
@@ -165,8 +169,8 @@ so this is invisible to callers; [docs/voice-protocol-responses.md](https://gith
 has the measured table. A refusal is always thrown, never returned as an empty
 result.
 
-For anything outside the typed set, `client.execCommand()` and
-`client.execCommandWithResponse()` take a raw command.
+For anything outside the typed set, `client.exec(line, { signal?, timeout? })`
+sends a raw command line and resolves to the rows that answer it.
 
 ### File Transfers
 
@@ -209,7 +213,7 @@ identity.upgradeToLevel(10);
 
 ```typescript
 const client = new Client(identity, "ts.example.com", "Bot", {
-  logger: consoleLogger,
+  logger: consoleLogger, // silent unless set
   resolver: customResolver,
   commandMiddleware: [loggingMiddleware],
   eventMiddleware: [filterMiddleware],

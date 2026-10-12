@@ -1,69 +1,74 @@
 import type { CommandMiddleware, Logger } from "@honeybbq/teamspeak-core";
 import type { ReconnectOptions } from "./reconnect.js";
 
-// ---- Branded primitive types ------------------------------------------------
-
-// ---- Event map --------------------------------------------------------------
+// ---- Events ---------------------------------------------------------------
 
 export interface TextMessage {
-  invokerName: string;
-  invokerUID: string;
-  message: string;
-  invokerGroups: string[];
-  targetMode: number;
-  targetID: bigint;
-  invokerID: number;
+  readonly invokerName: string;
+  readonly invokerUID: string;
+  readonly message: string;
+  readonly invokerGroups: readonly string[];
+  readonly targetMode: number;
+  readonly targetID: bigint;
+  readonly invokerID: number;
 }
 
 export interface ClientMovedEvent {
-  invokerName: string;
-  invokerUID: string;
-  targetChannelID: bigint;
-  reasonID: number;
-  id: number;
-  invokerID: number;
+  readonly invokerName: string;
+  readonly invokerUID: string;
+  readonly targetChannelID: bigint;
+  /** Why the client moved; compare it with `Reason`. */
+  readonly reason: number;
+  readonly id: number;
+  readonly invokerID: number;
 }
 
 export interface ClientLeftViewEvent {
-  reasonMsg: string;
-  reasonID: number;
-  id: number;
-  targetID: number;
+  /** The reason given for a kick or a ban, or the client's own parting message. */
+  readonly reasonMessage: string;
+  /** Why the client left; compare it with `Reason`. */
+  readonly reason: number;
+  readonly id: number;
+  /** Who kicked or banned the client; empty otherwise. */
+  readonly invokerName: string;
+  readonly invokerUID: string;
+  readonly invokerID: number;
+}
+
+/** This client being kicked from its channel or the server. */
+export interface KickedEvent {
+  /** The reason the invoker gave. */
+  readonly reasonMessage: string;
+  /** `Reason.KickChannel`, `Reason.KickServer` or `Reason.KickServerBan`. */
+  readonly reason: number;
+  readonly invokerName: string;
+  readonly invokerUID: string;
+  readonly invokerID: number;
 }
 
 export interface ClientInfo {
-  nickname: string;
-  uid: string;
-  serverGroups: string[];
-  channelID: bigint;
-  type: number;
-  id: number;
-}
-
-export interface ChannelInfo {
-  name: string;
-  description: string;
-  id: bigint;
-  parentID: bigint;
-  /** ID of the sibling channel this one is sorted after; 0 means first. */
-  order: bigint;
+  readonly nickname: string;
+  readonly uid: string;
+  readonly serverGroups: readonly string[];
+  readonly channelID: bigint;
+  readonly type: number;
+  readonly id: number;
 }
 
 export interface PokeEvent {
-  invokerName: string;
-  invokerUID: string;
-  invokerID: number;
-  message: string;
+  readonly invokerName: string;
+  readonly invokerUID: string;
+  readonly invokerID: number;
+  readonly message: string;
 }
 
 export interface VoiceData {
-  clientId: number;
-  codec: number;
-  data: Uint8Array;
+  readonly clientId: number;
+  readonly codec: number;
+  readonly data: Uint8Array;
 }
 
-// ---- Typed event map used by Client.on() ------------------------------------
-
+/** The events `Client.on()` takes, and what each delivers. */
 export interface EventMap {
   textMessage: TextMessage;
   clientEnter: ClientInfo;
@@ -72,9 +77,37 @@ export interface EventMap {
   poked: PokeEvent;
   voiceData: VoiceData;
   connected: void;
+  /**
+   * `undefined` after `disconnect()`, and the cause otherwise: a failed
+   * handshake, a `TimedOutError`, or a `RemovedError` for a kick, a
+   * ban or a server stopping.
+   */
   disconnected: Error | undefined;
-  kicked: string;
+  /** A kick from the server also ends the connection, which `disconnected` reports. */
+  kicked: KickedEvent;
 }
+
+/** The events that come from the server, and so pass through event middleware. */
+export type ServerEventName =
+  | "textMessage"
+  | "clientEnter"
+  | "clientLeave"
+  | "clientMoved"
+  | "poked"
+  | "voiceData";
+
+/** A server event as event middleware sees it. */
+export type ServerEvent = {
+  [K in ServerEventName]: { readonly name: K; readonly payload: EventMap[K] };
+}[ServerEventName];
+
+/** A listener for one event. */
+export type Listener<K extends keyof EventMap> = EventMap[K] extends void
+  ? () => void
+  : (payload: EventMap[K]) => void;
+
+/** Removes a listener; calling it again does nothing. Also a `Disposable`, for `using`. */
+export type Unsubscribe = (() => void) & Disposable;
 
 // ---- Transport seam ---------------------------------------------------------
 
@@ -86,15 +119,15 @@ export type FileTransferSocketFactory = (host: string, port: number) => import("
 
 // ---- Client status ----------------------------------------------------------
 
-export const enum ClientStatus {
-  Disconnected = 0,
-  Connecting = 1,
-  Connected = 2,
-}
+export const ClientStatus = {
+  Disconnected: "disconnected",
+  Connecting: "connecting",
+  Connected: "connected",
+} as const;
+export type ClientStatus = (typeof ClientStatus)[keyof typeof ClientStatus];
 
-export type EventMiddleware = (
-  next: (evt: EventMap[keyof EventMap]) => void,
-) => (evt: EventMap[keyof EventMap]) => void;
+/** Wraps the delivery of server events; it may observe, alter or drop them. */
+export type EventMiddleware = (next: (event: ServerEvent) => void) => (event: ServerEvent) => void;
 
 // ---- Resolved address (from discovery) --------------------------------------
 
@@ -113,6 +146,7 @@ export interface AddrResolver {
 // ---- ClientOptions ----------------------------------------------------------
 
 export interface ClientOptions {
+  /** Where the client logs. Silent unless set: a library has no business writing to the console. */
   logger?: Logger;
   /**
    * Creates the UDP socket the client talks through, given the address family

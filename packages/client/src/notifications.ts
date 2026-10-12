@@ -11,7 +11,7 @@ import { parseUint64, parseUint16, parseInt10 } from "@honeybbq/teamspeak-core/i
 export type NotificationResult =
   | { kind: "clientEnter"; info: ClientInfo }
   | { kind: "clientLeave"; event: ClientLeftViewEvent; isSelf: boolean }
-  | { kind: "clientMoved"; event: ClientMovedEvent }
+  | { kind: "clientMoved"; event: ClientMovedEvent; reasonMessage: string }
   | { kind: "textMessage"; message: TextMessage }
   | { kind: "poked"; event: PokeEvent }
   | { kind: "unknown" };
@@ -70,18 +70,17 @@ function handleClientLeftView(
   clients: Map<number, ClientInfo>,
 ): NotificationResult {
   const clid = parseUint16(cmd.params["clid"] ?? "");
-  const reasonID = parseInt10(cmd.params["reasonid"] ?? "");
-
-  const isSelf = clid === selfCLID;
+  const isSelf = clid !== 0 && clid === selfCLID;
   if (clid !== 0) clients.delete(clid);
-
   return {
     kind: "clientLeave",
     event: {
       id: clid,
-      reasonID,
-      reasonMsg: cmd.params["reasonmsg"] ?? "",
-      targetID: parseUint16(cmd.params["targetid"] ?? ""),
+      reason: parseInt10(cmd.params["reasonid"] ?? ""),
+      reasonMessage: cmd.params["reasonmsg"] ?? "",
+      invokerID: parseUint16(cmd.params["invokerid"] ?? ""),
+      invokerName: cmd.params["invokername"] ?? "",
+      invokerUID: cmd.params["invokeruid"] ?? "",
     },
     isSelf,
   };
@@ -101,11 +100,12 @@ function handleClientMoved(cmd: Command, clients: Map<number, ClientInfo>): Noti
     event: {
       id: clid,
       targetChannelID: ctid,
-      reasonID: parseInt10(cmd.params["reasonid"] ?? ""),
+      reason: parseInt10(cmd.params["reasonid"] ?? ""),
       invokerID: parseUint16(cmd.params["invokerid"] ?? ""),
       invokerName: cmd.params["invokername"] ?? "",
       invokerUID: cmd.params["invokeruid"] ?? "",
     },
+    reasonMessage: cmd.params["reasonmsg"] ?? "",
   };
 }
 

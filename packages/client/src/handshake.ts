@@ -61,7 +61,7 @@ export function handleInitServer(client: Client, params: Record<string, string>)
       client_input_muted: "0",
       client_output_muted: "0",
     });
-    client.sendCommandNoWait(updateCmd).catch(() => {});
+    client.execNoWait(updateCmd).catch(() => {});
   });
 }
 
