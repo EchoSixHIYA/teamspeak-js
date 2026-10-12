@@ -292,7 +292,11 @@ export interface ClientOptions {
   fileTransferSocketFactory?: FileTransferSocketFactory;
   /** Replaces the SRV and TSDNS resolution `connect()` performs. */
   resolver?: AddrResolver;
-  /** Wraps every command line sent, outermost first. Fixed for the client's life. */
+  /**
+   * Wraps every typed command, outermost first; see `CommandMiddleware`. Raw
+   * lines sent with `exec` and `execNoWait` do not pass through it. Fixed for
+   * the client's life.
+   */
   commandMiddleware?: CommandMiddleware[];
   /** Wraps the delivery of every server event, outermost first. Fixed for the client's life. */
   eventMiddleware?: EventMiddleware[];

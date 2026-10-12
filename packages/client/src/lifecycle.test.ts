@@ -224,3 +224,24 @@ describe("reconnecting", () => {
     expect(errors[0]).toMatch(/shouldRetry/);
   });
 });
+
+describe("command middleware", () => {
+  it("sees typed requests, can answer them itself, and never sees raw lines", async () => {
+    const seen: string[] = [];
+    const { client } = await connected({
+      commandMiddleware: [
+        (next) => async (request, options) => {
+          seen.push(request.command);
+          if (request.command === "whoami") return [{ client_id: "42" }];
+          return next(request, options);
+        },
+      ],
+    });
+    const { whoAmI } = await import("@honeybbq/teamspeak-core");
+
+    await expect(whoAmI(client)).resolves.toMatchObject({ clientID: 42 });
+    await client.execNoWait("clientupdate");
+    expect(seen).toEqual(["whoami"]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});

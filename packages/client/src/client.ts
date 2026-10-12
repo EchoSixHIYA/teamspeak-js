@@ -113,6 +113,18 @@ export interface ClientInternals {
 
 let internalsOf: (client: Client) => ClientInternals;
 
+let sentLineHook: ((client: Client, line: string) => void) | undefined;
+
+/**
+ * Observe every command line the client sends, as encoded. A seam for the
+ * package's own tests; not exported from the package.
+ *
+ * @internal
+ */
+export function onSentLine(hook: ((client: Client, line: string) => void) | undefined): void {
+  sentLineHook = hook;
+}
+
 /** @internal The internals of `client`. */
 export function clientInternals(client: Client): ClientInternals {
   return internalsOf(client);
@@ -244,7 +256,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #voiceDropWarnedAt = -Infinity;
 
   #eventMiddlewares: readonly EventMiddleware[];
-  #finalCmdHandler: (cmd: string) => Promise<void>;
+  #send: CommandExecutor["send"];
   #eventChain: (event: ServerEvent) => void;
 
   constructor(identity: Identity, addr: string, nickname: string, options: ClientOptions = {}) {
@@ -303,9 +315,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // changing them while those run would make the behaviour depend on timing.
     const cmdMiddlewares: readonly CommandMiddleware[] = options.commandMiddleware ?? [];
     this.#eventMiddlewares = options.eventMiddleware ?? [];
-    this.#finalCmdHandler = buildCommandChain([...cmdMiddlewares], async (cmd) => {
-      this.#handler.sendPacket(PacketType.Command, Buffer.from(cmd), 0);
-    });
+    this.#send = buildCommandChain(cmdMiddlewares, (request, commandOptions = {}) =>
+      this.#exec(encodeRequest(request, prepareClientPassword), commandOptions),
+    );
     this.#eventChain = buildEventChain([...this.#eventMiddlewares], (event) =>
       this.#deliver(event.name, event.payload),
     );
@@ -436,18 +448,25 @@ export class Client implements CommandExecutor, AsyncDisposable {
     if (!this.#handler.isOpen) throw new NotConnectedError();
     await this.#throttle.wait(signal);
     if (!this.#handler.isOpen) throw new NotConnectedError();
-    await this.#finalCmdHandler(command);
+    this.#sendLine(command);
   }
 
   /**
    * Send a typed command; this is the CommandExecutor the typed commands run on.
    *
-   * Channel passwords are hashed here because that is this protocol's rule:
-   * the voice protocol expects `base64(sha1(password))`, where ServerQuery
-   * takes the password itself.
+   * The request passes through the `commandMiddleware` first. Channel
+   * passwords are then hashed, because that is this protocol's rule: the voice
+   * protocol expects `base64(sha1(password))`, where ServerQuery takes the
+   * password itself.
    */
   send(request: CommandRequest, options: CommandOptions = {}): Promise<Record<string, string>[]> {
-    return this.#exec(encodeRequest(request, prepareClientPassword), options);
+    return this.#send(request, options);
+  }
+
+  #sendLine(line: string): void {
+    const hook = sentLineHook;
+    if (hook) hook(this, line);
+    this.#handler.sendPacket(PacketType.Command, Buffer.from(line), 0);
   }
 
   #exec(command: string, options: CommandOptions): Promise<Record<string, string>[]> {
@@ -486,7 +505,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
       const withRc = appendReturnCode(command, rc);
       await Promise.race([this.#throttle.wait(throttleAbort.signal), givenUp]);
       if (!this.#handler.isOpen) throw new NotConnectedError();
-      await this.#finalCmdHandler(withRc);
+      this.#sendLine(withRc);
 
       const result = await Promise.race([answered, givenUp]);
       if (result.err) throw result.err;

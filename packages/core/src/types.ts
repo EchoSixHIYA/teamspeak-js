@@ -1,16 +1,22 @@
+import type { CommandExecutor } from "./command/request.js";
+
 /** A TS3-escaped string. Obtained only via escape(). */
 export type EscapedString = string & { readonly __escaped: unique symbol };
 
 // ---- Middleware types --------------------------------------------------------
 
 /**
- * Wraps the sending of every command line, outermost first: it may observe,
- * alter or drop a command. It sees the line as sent, so it must not log it
- * whole — its parameters can carry password hashes and privilege keys.
+ * Wraps the typed command layer, outermost first: it sees each request — the
+ * command's name and its parameters, passwords still in plain text — with its
+ * options, and returns the rows that answer it, or throws. So it can observe,
+ * time, retry, or answer a command itself without sending it.
+ *
+ * Only the typed commands, which reach the client through `send`, pass
+ * through it. Raw lines sent with `exec` or `execNoWait` and the client's own
+ * handshake-time commands do not. A request's parameters can hold passwords
+ * and privilege keys, so a middleware must not log them whole.
  */
-export type CommandMiddleware = (
-  next: (cmd: string) => Promise<void>,
-) => (cmd: string) => Promise<void>;
+export type CommandMiddleware = (next: CommandExecutor["send"]) => CommandExecutor["send"];
 
 // ---- Logger interface --------------------------------------------------------
 

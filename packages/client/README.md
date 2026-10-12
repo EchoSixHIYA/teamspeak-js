@@ -258,12 +258,28 @@ The private key never leaves the identity except through `export()`:
 const client = new Client(identity, "ts.example.com", "Bot", {
   logger: consoleLogger, // silent unless set
   resolver: customResolver,
-  commandMiddleware: [loggingMiddleware],
+  commandMiddleware: [timing],
   eventMiddleware: [filterMiddleware],
   serverPassword: process.env.TEAMSPEAK_SERVER_PASSWORD,
   defaultChannel: "Lobby",
   defaultChannelPassword: process.env.TEAMSPEAK_DEFAULT_CHANNEL_PASSWORD,
 });
+```
+
+`commandMiddleware` wraps the typed commands: each middleware receives the
+request (its command name and parameters) with its options and returns the
+answering rows, so it can time, retry or answer a command itself. Raw `exec`
+and `execNoWait` lines do not pass through it.
+
+```typescript
+const timing: CommandMiddleware = (next) => async (request, options) => {
+  const started = Date.now();
+  try {
+    return await next(request, options);
+  } finally {
+    console.log(request.command, Date.now() - started, "ms");
+  }
+};
 ```
 
 Connection auth options:

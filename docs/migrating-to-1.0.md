@@ -147,6 +147,28 @@ Middleware is set with the `commandMiddleware` and `eventMiddleware` options;
 `useCommandMiddleware()` and `useEventMiddleware()` are gone. Event middleware
 receives `{ name, payload }`.
 
+Command middleware wraps the typed commands rather than the wire: it receives
+the request and its options and returns the rows, so it can time, retry or
+answer a command itself.
+
+```ts
+// 0.x: a line, and nothing back
+const logging: CommandMiddleware = (next) => async (line) => next(line);
+
+// 1.0
+const timing: CommandMiddleware = (next) => async (request, options) => {
+  const started = Date.now();
+  try {
+    return await next(request, options);
+  } finally {
+    console.log(request.command, Date.now() - started, "ms");
+  }
+};
+```
+
+Raw lines sent with `exec` and `execNoWait`, and the handshake's own commands,
+do not pass through it.
+
 ## Transports
 
 `socketFactory` returns a `DatagramSocket` — a `node:dgram` socket still is
