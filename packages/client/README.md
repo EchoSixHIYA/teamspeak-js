@@ -26,7 +26,7 @@ Upgrading from 0.x? See the [migration guide](https://github.com/HoneyBBQ/teamsp
 - **Middleware** — Pluggable command and event middleware chains
 - **Built-in rate limiter** — Token-bucket throttling to prevent server-side flood kicks
 - **Identity management** — Generate, import/export, and upgrade security level of identities
-- **Full command set** — 115 typed functions covering every command the voice protocol answers
+- **Full command set** — 111 typed functions covering every command the voice protocol answers
 - **Reconnection** — Opt-in retry with backoff, tuned for TeamSpeak's antiflood ban
 - **Server capabilities** — Reports the server version and the uid hash it uses (SHA-1 on TS3, SHA-256 on TS6)
 - **Custom transports** — Supply your own socket, for proxies, tunnels or tests
@@ -116,6 +116,10 @@ await an answer. `disconnected` delivers `undefined` after `disconnect()`, and
 the cause otherwise — a `TimedOutError`, or a `RemovedError` for a kick, a ban
 or a server stopping. `await using client = new Client(...)` disconnects when
 the scope ends.
+
+Voice is the exception to "every event in order": while more than 256
+deliveries are waiting, voice frames are dropped (and counted in a warning at
+most every ten seconds) rather than queued without bound.
 
 `events(name, { signal })` is the same as an async iterator, buffering events
 that arrive while the loop body runs:

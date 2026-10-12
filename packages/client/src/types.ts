@@ -145,7 +145,12 @@ export interface EventMap {
   clientMoved: ClientMovedEvent;
   /** This client being poked. */
   poked: PokeEvent;
-  /** Audio from another client. Only decoded with a listener or event middleware. */
+  /**
+   * Audio from another client. Only decoded with a listener or event
+   * middleware. Voice is dropped, counted and reported in a warning at most
+   * every ten seconds, while more than 256 deliveries are waiting: a listener
+   * that cannot keep up loses audio rather than memory.
+   */
   voiceData: VoiceDataEvent;
   /**
    * Every notification the server sends, modelled or not, after any event it
