@@ -51,7 +51,7 @@ export { dialFileTransfer, uploadFileData, downloadFileData } from "./transfer.j
 export type { FileTransferOptions } from "./transfer.js";
 
 // Server capabilities, read from the handshake
-export { parseServerCapabilities, unknownServerCapabilities } from "./capabilities.js";
+export { unknownServerCapabilities } from "./capabilities.js";
 export type { ServerCapabilities, ServerFamily } from "./capabilities.js";
 
 // Tracing points for diagnostics_channel subscribers

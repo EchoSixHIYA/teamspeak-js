@@ -2,12 +2,12 @@ import {
   CommandTimeoutError,
   NotConnectedError,
   TeamspeakError,
-  encodeRequest,
   type CommandExecutor,
   type CommandOptions,
   type CommandRequest,
 } from "@honeybbq/teamspeak-core";
 import {
+  encodeRequest,
   parseCommand,
   parseServerError,
   splitCommandRows,

@@ -10,7 +10,6 @@
 export { escape, unescape } from "./command/command.js";
 
 // Requests and the connections that execute them.
-export { encodeRequest } from "./command/request.js";
 export type {
   CommandExecutor,
   CommandOptions,

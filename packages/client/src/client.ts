@@ -34,7 +34,7 @@ import { PacketHandler } from "./transport/handler.js";
 import { PacketType } from "./transport/packet.js";
 import type { Packet } from "./transport/packet.js";
 import { CommandTracker, appendReturnCode } from "./commands.js";
-import { parseServerError } from "@honeybbq/teamspeak-core/internal";
+import { encodeRequest, parseServerError } from "@honeybbq/teamspeak-core/internal";
 import { uploadFileData, downloadFileData } from "./transfer.js";
 import { buildCommandChain, buildEventChain } from "./events.js";
 import { processInit1 } from "./handshake/crypt-handshake.js";
@@ -44,7 +44,6 @@ import {
   handleInitServer,
   prepareClientPassword,
 } from "./handshake.js";
-import { encodeRequest } from "@honeybbq/teamspeak-core";
 import type { CommandExecutor, CommandRequest } from "@honeybbq/teamspeak-core";
 import { handleNotification } from "./notifications.js";
 import { parseCommand } from "@honeybbq/teamspeak-core/internal";

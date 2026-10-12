@@ -146,6 +146,9 @@ data in a notification. They now return the data.
 `parseCommand`, `buildCommand`, `buildCommandOrdered` and the `Command` and
 `EscapedString` types are no longer exported: build the line yourself with
 `escape`, or use a typed command. `escape` returns a plain `string`.
+`encodeRequest`, which renders a `CommandRequest` as a line, is no longer
+exported either: a `CommandExecutor` is handed the request, and a client's
+`send()` encodes it.
 
 ## Errors
 
@@ -290,7 +293,9 @@ meaning. `backoffDelay(policy, attempt)` takes no random source, and
 The client's state is read through getters: `client.status`,
 `client.clientID`, `client.channelID`, `client.uid` (was
 `uniqueIdentifier()`) and `client.serverCapabilities` — no parentheses, and
-the ids are already branded.
+the ids are already branded. `parseServerCapabilities` is no longer exported:
+the client reads `initserver` itself, and `client.serverCapabilities` is what
+it read; `unknownServerCapabilities()` stays, for a value to start from.
 
 `ClientStatus` is a string union (`"disconnected"`, `"connecting"`,
 `"connected"`) rather than a `const enum`; compare against
