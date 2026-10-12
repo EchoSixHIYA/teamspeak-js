@@ -418,6 +418,19 @@ may send a value newer than the table.
 `DatagramSocket` describes the part of a socket the client uses; should a
 later release use more, the new members will be optional.
 
+The [Go SDK](https://github.com/honeybbq/teamspeak-go) makes the same calls
+with the same semantics, apart from what the languages make differ:
+
+- Backoff fields: JavaScript takes `undefined` as "the default" and `0` as 0.
+  Go cannot tell an unset field from 0, so there a zero field takes the default
+  and a negative jitter disables it.
+- A listener that throws: here the exception is rethrown from a microtask, an
+  uncaught exception as an EventEmitter listener's would be, and the other
+  listeners still get the event. Go recovers a panicking handler, logs it at
+  Error, and keeps delivering.
+- Durations are milliseconds with an `Ms` suffix here, `time.Duration` in Go;
+  `listClients`' `uid` flag (on by default) is Go's `OmitUID`.
+
 ## Packages
 
 This package is the voice client. It depends on
