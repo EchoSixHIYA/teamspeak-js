@@ -42,7 +42,7 @@ import {
 } from "../command/ids.js";
 import { encodeRequest } from "../command/request.js";
 import type { CommandExecutor, CommandOptions, CommandRequest } from "../command/request.js";
-import { Codec } from "../enums.js";
+import { Codec, PrivilegeKeyType } from "../enums.js";
 import { ErrorCode } from "../errorcode.js";
 import { ServerError } from "../errors.js";
 import { permissionByID, permissionByName } from "../permission.js";
@@ -712,5 +712,19 @@ describe("CommandOptions", () => {
     const { client, options } = recordingClient();
     await listChannels(client);
     expect(options).toEqual([undefined]);
+  });
+});
+
+describe("names", () => {
+  // One name per concept, as the Go SDK has them.
+  it("reads a channel's unique identifier as uid, a ChannelUID", async () => {
+    const { client } = recordingClient([{ cid: "1", channel_unique_identifier: "abc" }]);
+    const [channel] = await listChannels(client);
+    expect(channel?.uid).toBe("abc");
+    expect(channel).not.toHaveProperty("uniqueIdentifier");
+  });
+
+  it("names the privilege key types PrivilegeKeyType", () => {
+    expect(PrivilegeKeyType).toEqual({ ServerGroup: 0, ChannelGroup: 1 });
   });
 });

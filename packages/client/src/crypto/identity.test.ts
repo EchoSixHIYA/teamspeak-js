@@ -15,9 +15,9 @@ describe("Identity", () => {
     expect(id.securityLevel()).toBeGreaterThanOrEqual(8);
   });
 
-  it("publicKeyBase64 returns a non-empty string", () => {
+  it("publicKey returns a non-empty string", () => {
     const id = generateIdentitySync(8);
-    const pub = id.publicKeyBase64();
+    const pub = id.publicKey();
     expect(pub.length).toBeGreaterThan(0);
     // Should be valid base64
     expect(() => Buffer.from(pub, "base64")).not.toThrow();
@@ -30,7 +30,7 @@ describe("Identity", () => {
     // Same offset
     expect(id2.offset).toBe(id.offset);
     // Same public key
-    expect(id2.publicKeyBase64()).toBe(id.publicKeyBase64());
+    expect(id2.publicKey()).toBe(id.publicKey());
   });
 
   // toString() used to return the private key, so an identity interpolated
@@ -65,7 +65,7 @@ describe("Identity", () => {
 
   it("uidFromPublicKey is base64 of the hash of the public key", () => {
     const id = generateIdentitySync(8);
-    const pub = id.publicKeyBase64();
+    const pub = id.publicKey();
     const uid = uidFromPublicKey(pub, "sha1");
     expect(uid.length).toBeGreaterThan(0);
     // Base64 character set
@@ -87,7 +87,7 @@ describe("Identity", () => {
 
   it("uidFromPublicKey uses the requested algorithm", () => {
     const id = generateIdentitySync(8);
-    const pub = id.publicKeyBase64();
+    const pub = id.publicKey();
     const sha1Uid = uidFromPublicKey(pub, "sha1");
     const sha256Uid = uidFromPublicKey(pub, "sha256");
     // 20 bytes and 32 bytes base64-encode to 28 and 44 characters, so the two
@@ -102,7 +102,7 @@ describe("Identity", () => {
     const id = generateIdentitySync(0);
     const upgraded = await id.upgradeToLevel(6);
     expect(upgraded.securityLevel()).toBeGreaterThanOrEqual(6);
-    expect(upgraded.publicKeyBase64()).toBe(id.publicKeyBase64());
+    expect(upgraded.publicKey()).toBe(id.publicKey());
     expect(id.offset).toBe(0n);
     expect(await upgraded.upgradeToLevel(1)).toBe(upgraded);
     expect(() => {

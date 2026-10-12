@@ -38,7 +38,7 @@ import {
   asPermissionID,
   asServerGroupID,
 } from "../command/ids.js";
-import { PermissionTarget, TokenType } from "../enums.js";
+import { PermissionTarget, PrivilegeKeyType } from "../enums.js";
 import type { GroupType } from "../enums.js";
 import type { Permission } from "../permission.js";
 
@@ -484,13 +484,13 @@ export async function resetPermissions(
 export interface PrivilegeKey {
   /** The key itself. */
   readonly token: string;
-  /** Which kind of group the key grants, one of {@link TokenType}. */
+  /** Which kind of group the key grants, one of {@link PrivilegeKeyType}. */
   readonly type: number;
-  /** The server group a `TokenType.ServerGroup` key grants; undefined otherwise. */
+  /** The server group a `PrivilegeKeyType.ServerGroup` key grants; undefined otherwise. */
   readonly serverGroupID: ServerGroupID | undefined;
-  /** The channel group a `TokenType.ChannelGroup` key grants; undefined otherwise. */
+  /** The channel group a `PrivilegeKeyType.ChannelGroup` key grants; undefined otherwise. */
   readonly channelGroupID: ChannelGroupID | undefined;
-  /** The channel a `TokenType.ChannelGroup` key grants its group in; undefined otherwise. */
+  /** The channel a `PrivilegeKeyType.ChannelGroup` key grants its group in; undefined otherwise. */
   readonly channelID: ChannelID | undefined;
   /** The key's description. */
   readonly description: string;
@@ -505,7 +505,7 @@ export interface PrivilegeKey {
  */
 const parseKey = (row: Record<string, string>): PrivilegeKey => {
   const type = num(row, "token_type");
-  const channelGroup = type === TokenType.ChannelGroup;
+  const channelGroup = type === PrivilegeKeyType.ChannelGroup;
   return {
     token: str(row, "token"),
     type,
@@ -566,7 +566,7 @@ function keyParams(key: PrivilegeKeyOptions): Params {
   const description = nonEmpty(key.description ?? "");
   if (isID(serverGroupID) && channelGroupID === undefined && channelID === undefined) {
     return [
-      ["tokentype", TokenType.ServerGroup],
+      ["tokentype", PrivilegeKeyType.ServerGroup],
       ["tokenid1", serverGroupID],
       ["tokenid2", 0],
       ["tokendescription", description],
@@ -574,7 +574,7 @@ function keyParams(key: PrivilegeKeyOptions): Params {
   }
   if (serverGroupID === undefined && isID(channelGroupID) && isID(channelID)) {
     return [
-      ["tokentype", TokenType.ChannelGroup],
+      ["tokentype", PrivilegeKeyType.ChannelGroup],
       ["tokenid1", channelGroupID],
       ["tokenid2", channelID],
       ["tokendescription", description],

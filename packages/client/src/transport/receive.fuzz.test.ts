@@ -27,7 +27,7 @@ import {
 } from "../testing/fake-server.js";
 
 const identity = generateIdentitySync(0);
-const serverKey = generateIdentitySync(0).publicKeyBase64();
+const serverKey = generateIdentitySync(0).publicKey();
 const CASES = 3000;
 
 /** Fails the test if anything escapes to the process. */

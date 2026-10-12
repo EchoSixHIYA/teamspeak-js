@@ -109,9 +109,9 @@ export function sendClientInit(client: ClientInternals): void {
 }
 
 function buildClientInitCommand(client: ClientInternals): string {
-  const pubKeyBase64 = client.crypt.identity.publicKeyBase64();
+  const pubKeyBase64 = client.crypt.identity.publicKey();
   const initOptions = client.initOptions;
-  // HWID should match TS3 client UID format: base64(SHA1(publicKeyBase64))
+  // HWID should match TS3 client UID format: base64(SHA1(publicKey()))
   const hwid = createHash("sha1").update(pubKeyBase64).digest().toString("base64");
 
   return buildCommandOrdered("clientinit", [

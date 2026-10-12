@@ -15,8 +15,8 @@
 import { ErrorCode } from "../errorcode.js";
 import { NoDataError, ServerError } from "../errors.js";
 import type { CommandExecutor, CommandOptions, ParamValue } from "../command/request.js";
-import { asChannelID, asPermissionID, parseIconID } from "../command/ids.js";
-import type { ChannelID, IconID } from "../command/ids.js";
+import { asChannelID, asChannelUID, asPermissionID, parseIconID } from "../command/ids.js";
+import type { ChannelID, ChannelUID, IconID } from "../command/ids.js";
 import { permissionByID, permissionByName } from "../permission.js";
 import type { Permission } from "../permission.js";
 
@@ -440,8 +440,11 @@ export interface Channel {
   readonly neededTalkPower: number;
   /** The channel's icon, or undefined for none. */
   readonly iconID: IconID | undefined;
-  /** A unique identifier the server gives the channel (TS6), or "". */
-  readonly uniqueIdentifier: string;
+  /**
+   * The unique identifier the server gives the channel
+   * (`channel_unique_identifier`): TS6 sends one, TS3 none, which reads as "".
+   */
+  readonly uid: ChannelUID;
 }
 
 function parseChannel(row: Record<string, string>): Channel {
@@ -460,7 +463,7 @@ function parseChannel(row: Record<string, string>): Channel {
     maxClients: num(row, "channel_maxclients"),
     neededTalkPower: num(row, "channel_needed_talk_power"),
     iconID: icon(row, "channel_icon_id"),
-    uniqueIdentifier: str(row, "channel_unique_identifier"),
+    uid: asChannelUID(str(row, "channel_unique_identifier")),
   };
 }
 

@@ -138,3 +138,12 @@ export function parseIconID(raw: string | undefined): IconID | undefined {
 export type UID = string & { readonly __brand: "UID" };
 /** Brand a unique identifier. */
 export const asUID = (v: string): UID => v as UID;
+
+/**
+ * A channel's unique identifier (`channel_unique_identifier`), which TS6
+ * gives every channel and TS3 does not send. Opaque text, and not a client's
+ * {@link UID}.
+ */
+export type ChannelUID = string & { readonly __brand: "ChannelUID" };
+/** Brand a channel's unique identifier. */
+export const asChannelUID = (v: string): ChannelUID => v as ChannelUID;

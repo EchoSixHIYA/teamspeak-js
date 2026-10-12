@@ -112,7 +112,7 @@ function buildInit1Step4Packet(crypt: Crypt, data: Uint8Array): Uint8Array | nul
   const y = crypt.solveRsaChallenge(data, 1, level);
 
   const alphaB64 = Buffer.from(crypt.newAlpha()).toString("base64");
-  const omegaB64 = crypt.identity.publicKeyBase64();
+  const omegaB64 = crypt.identity.publicKey();
 
   const cmd = buildCommandOrdered("clientinitiv", [
     ["alpha", alphaB64],

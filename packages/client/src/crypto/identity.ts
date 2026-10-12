@@ -51,7 +51,7 @@ export class Identity {
   }
 
   /** The public key in TeamSpeak's encoding: base64 of its DER form. */
-  publicKeyBase64(): string {
+  publicKey(): string {
     if (this.#publicKey !== undefined) return this.#publicKey;
     const rawJwk = this.#privateKey.export({ format: "jwk" });
     if (typeof rawJwk.x !== "string" || typeof rawJwk.y !== "string") return "";
@@ -69,7 +69,7 @@ export class Identity {
    * already uses the one its server does.
    */
   uid(algorithm: UIDAlgorithm): UID {
-    return uidFromPublicKey(this.publicKeyBase64(), algorithm);
+    return uidFromPublicKey(this.publicKey(), algorithm);
   }
 
   /**
@@ -95,7 +95,7 @@ export class Identity {
 
   /** The security level: trailing zero bits in SHA-1 of the public key and offset. */
   securityLevel(): number {
-    return levelAt(this.publicKeyBase64(), this.#offset);
+    return levelAt(this.publicKey(), this.#offset);
   }
 
   /**
@@ -114,7 +114,7 @@ export class Identity {
   ): Promise<Identity> {
     checkLevel(targetLevel);
     const { signal } = options;
-    const prefix = this.publicKeyBase64();
+    const prefix = this.publicKey();
     let offset = this.#offset;
     while (true) {
       signal?.throwIfAborted();
@@ -236,7 +236,7 @@ export async function generateIdentity(
 export function generateIdentitySync(targetLevel: number): Identity {
   checkLevel(targetLevel);
   const key = generateKey();
-  const prefix = createIdentity(key, 0n).publicKeyBase64();
+  const prefix = createIdentity(key, 0n).publicKey();
   let offset = 0n;
   while (levelAt(prefix, offset) < targetLevel) offset++;
   return createIdentity(key, offset);

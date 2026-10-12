@@ -45,8 +45,10 @@ const uid = getUidFromPublicKey(id.publicKeyBase64());
 
 // 1.0
 const stronger = await id.upgradeToLevel(10);
-const uid = id.uid("sha1"); // or uidFromPublicKey(publicKey, "sha1"); TS6 uses "sha256"
+const uid = id.uid("sha1"); // or uidFromPublicKey(id.publicKey(), "sha1"); TS6 uses "sha256"
 ```
+
+`publicKeyBase64()` is now `publicKey()`; it still returns the base64 text.
 
 ## Connecting
 
@@ -145,6 +147,10 @@ for (const where of await findPermission(client, permissionByName("i_client_talk
     console.log(where.channelID, where.channelGroupID);
 }
 ```
+
+A `Channel`'s `uniqueIdentifier` is now `uid`, a `ChannelUID` — its own brand,
+not a client's `UID` — and the privilege key type table `TokenType` is
+`PrivilegeKeyType`.
 
 Privilege keys have one set of functions: `listPrivilegeKeys`,
 `addPrivilegeKey`, `deletePrivilegeKey` and `usePrivilegeKey`. The `listTokens`,

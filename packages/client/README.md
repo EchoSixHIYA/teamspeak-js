@@ -221,7 +221,7 @@ Results are camelCase too. Timestamps are `Date`s (`undefined` where the server
 sends 0 for "never"), durations are milliseconds with an `Ms` suffix
 (`idleTimeMs`, `durationMs`), and a permission is a `Permission`, built with
 `permissionByID` or `permissionByName`. Small enumerations — `GroupType`,
-`Codec`, `TokenType`, `LogLevel` and the rest — are objects of named values with
+`Codec`, `PrivilegeKeyType`, `LogLevel` and the rest — are objects of named values with
 a type of the same name.
 
 | Module       | Covers                                                         |

@@ -185,7 +185,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(self?.uid).toBe(mine);
   }, 15_000);
 
-  it("uniqueIdentifier matches what the server reports for us", async () => {
+  it("uid matches what the server reports for us", async () => {
     // TS3 hashes the public key with SHA-1 and TS6 with SHA-256. Hard-coding
     // either one silently never matches on the other server, which is exactly
     // how a UID-based self-identification passed on TS3 and failed on TS6.

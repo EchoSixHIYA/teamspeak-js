@@ -32,6 +32,7 @@ export {
   asPermissionID,
   asServerGroupID,
   asUID,
+  asChannelUID,
 } from "./command/ids.js";
 export type {
   BanID,
@@ -47,6 +48,7 @@ export type {
   PermissionID,
   ServerGroupID,
   UID,
+  ChannelUID,
 } from "./command/ids.js";
 
 export {
@@ -68,7 +70,7 @@ export {
   LogLevel,
   PermissionTarget,
   TextMessageTarget,
-  TokenType,
+  PrivilegeKeyType,
 } from "./enums.js";
 
 // Permissions, by id or by name.

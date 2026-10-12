@@ -48,17 +48,18 @@ export const GroupNameMode: typeof groupNameModeValues =
 export type GroupNameMode = (typeof GroupNameMode)[keyof typeof GroupNameMode];
 
 /** The values of the table below, before freezing. */
-const tokenTypeValues = {
+const privilegeKeyTypeValues = {
   /** The key grants a server group. */
   ServerGroup: 0,
   /** The key grants a channel group in one channel. */
   ChannelGroup: 1,
 } as const;
 /** Which kind of group a privilege key grants (`token_type`). */
-export const TokenType: typeof tokenTypeValues = /* @__PURE__ */ Object.freeze(tokenTypeValues);
+export const PrivilegeKeyType: typeof privilegeKeyTypeValues =
+  /* @__PURE__ */ Object.freeze(privilegeKeyTypeValues);
 
 /** A privilege key type. */
-export type TokenType = (typeof TokenType)[keyof typeof TokenType];
+export type PrivilegeKeyType = (typeof PrivilegeKeyType)[keyof typeof PrivilegeKeyType];
 
 /** The values of the table below, before freezing. */
 const clientTypeValues = {
