@@ -1,5 +1,6 @@
 import { parseCommand } from "@honeybbq/teamspeak-core";
 import { ServerError } from "@honeybbq/teamspeak-core";
+import { parseErrorCode } from "@honeybbq/teamspeak-core/internal";
 
 import type { ResponseSpec } from "@honeybbq/teamspeak-core/internal";
 
@@ -110,7 +111,7 @@ export class CommandTracker {
       if (params[c.key] !== p.correlation) continue;
 
       if (name === c.failure && (params["status"] ?? "0") !== "0") {
-        const err = new ServerError(params["status"] ?? "0", params["msg"] ?? "");
+        const err = new ServerError(parseErrorCode(params["status"]), params["msg"] ?? "");
         this.#settle(rc, p, { err, data: [] });
         return;
       }

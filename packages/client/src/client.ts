@@ -6,7 +6,12 @@ import {
   type ClientInfo,
   ClientStatus,
 } from "./types.js";
-import { type CommandMiddleware, type Logger, consoleLogger } from "@honeybbq/teamspeak-core";
+import {
+  type CommandMiddleware,
+  type Logger,
+  ErrorCode,
+  consoleLogger,
+} from "@honeybbq/teamspeak-core";
 import { AlreadyConnectedError } from "./errors.js";
 import { Identity, Crypt, getUidFromPublicKey, type UidAlgorithm } from "./crypto/index.js";
 import { Resolver } from "./discovery/resolver.js";
@@ -566,8 +571,7 @@ export class Client implements CommandExecutor {
       return;
     }
 
-    const id = params["id"] ?? "0";
-    if (id === "3329") {
+    if (err?.code === ErrorCode.ConnectFailedBanned) {
       setImmediate(() => this.disconnect().catch(() => {}));
     }
   }

@@ -1,3 +1,5 @@
+import { ErrorCode } from "./errorcode.js";
+
 export class TeamspeakError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -5,15 +7,34 @@ export class TeamspeakError extends Error {
   }
 }
 
+/**
+ * A refusal from the server: the `error` line that answered a command carried a
+ * non-zero code.
+ *
+ * Compare {@link ServerError.code} with {@link ErrorCode} to tell refusals apart.
+ */
 export class ServerError extends TeamspeakError {
-  readonly id: string;
+  /** The server's error code. A server may report one {@link ErrorCode} does not name. */
+  readonly code: number;
+  /** The server's own text, such as "invalid channel password". */
   readonly serverMessage: string;
+  /** Detail the server adds to some refusals (`extra_msg`). */
+  readonly extraMessage: string | undefined;
+  /** The permission a refused permission check failed on, when the server names one (`failed_permid`). */
+  readonly failedPermissionId: number | undefined;
 
-  constructor(id: string, serverMessage: string) {
-    super(`TeamSpeak server error: ${serverMessage} (id=${id})`);
+  constructor(
+    code: number,
+    serverMessage: string,
+    details: { extraMessage?: string | undefined; failedPermissionId?: number | undefined } = {},
+  ) {
+    const extra = details.extraMessage ? ` (${details.extraMessage})` : "";
+    super(`TeamSpeak server error: ${serverMessage}${extra} (code ${code})`);
     this.name = "ServerError";
-    this.id = id;
+    this.code = code;
     this.serverMessage = serverMessage;
+    this.extraMessage = details.extraMessage;
+    this.failedPermissionId = details.failedPermissionId;
   }
 }
 
@@ -42,20 +63,34 @@ export class NotConnectedError extends TeamspeakError {
 }
 
 /**
+ * Read an error id. One that is missing or unreadable is reported as
+ * {@link ErrorCode.Undefined}: an error line that does not say what went wrong
+ * has still not said that nothing did.
+ */
+export function parseErrorCode(raw: string | undefined): number {
+  if (raw === undefined || !/^\d+$/.test(raw)) return ErrorCode.Undefined;
+  return Number(raw);
+}
+
+/**
  * Parse and handle an `error` command from the server.
  * Returns the error (or null on success) and the resolved return_code.
  */
 export function parseServerError(params: Record<string, string>): {
-  err: Error | null;
+  err: ServerError | null;
   rc: number | null;
 } {
-  const id = params["id"] ?? "0";
-  const msg = params["msg"] ?? "";
+  const code = parseErrorCode(params["id"]);
   const rcStr = params["return_code"];
 
-  let err: Error | null = null;
-  if (id !== "0") {
-    err = new ServerError(id, msg);
+  let err: ServerError | null = null;
+  if (code !== ErrorCode.OK) {
+    const failedPermid = params["failed_permid"];
+    err = new ServerError(code, params["msg"] ?? "", {
+      extraMessage: params["extra_msg"] || undefined,
+      failedPermissionId:
+        failedPermid !== undefined && /^\d+$/.test(failedPermid) ? Number(failedPermid) : undefined,
+    });
   }
 
   let rc: number | null = null;

@@ -60,20 +60,29 @@ describe("backoffDelay", () => {
 describe("isPermanentFailure", () => {
   // Retrying a ban makes it worse; retrying a dropped packet fixes it.
   it("treats a ban as permanent", () => {
-    expect(isPermanentFailure(new ServerError("3329", "connection failed, you are banned"))).toBe(
+    expect(isPermanentFailure(new ServerError(3329, "connection failed, you are banned"))).toBe(
       true,
     );
-    expect(isPermanentFailure(new ServerError("1029", "invalid server password"))).toBe(true);
+    expect(isPermanentFailure(new ServerError(3331, "flood ban"))).toBe(true);
+  });
+
+  // The codes once listed here were wrong: 1029 and 1030 are not the password
+  // refusals, and 2569 is group modify power, so a wrong password was retried.
+  it("treats the real password and permission refusals as permanent", () => {
+    expect(isPermanentFailure(new ServerError(1028, "invalid server password"))).toBe(true);
+    expect(isPermanentFailure(new ServerError(781, "invalid channel password"))).toBe(true);
+    expect(isPermanentFailure(new ServerError(2568, "insufficient client permissions"))).toBe(true);
+    expect(isPermanentFailure(new ServerError(1029, "deployment active"))).toBe(false);
   });
 
   // The server also refuses transiently: a reconnect made while it still holds
   // the dropped session fails with 521 until it reaps the zombie. Giving up on
   // that would mean never recovering from an ordinary drop.
   it("keeps retrying an unrecognised server error", () => {
-    expect(isPermanentFailure(new ServerError("521", "too many clones already connected"))).toBe(
+    expect(isPermanentFailure(new ServerError(521, "too many clones already connected"))).toBe(
       false,
     );
-    expect(isPermanentFailure(new ServerError("9999", "something else"))).toBe(false);
+    expect(isPermanentFailure(new ServerError(9999, "something else"))).toBe(false);
   });
 
   it("treats a transport failure as worth retrying", () => {

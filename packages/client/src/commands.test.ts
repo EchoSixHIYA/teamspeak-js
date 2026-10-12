@@ -128,7 +128,7 @@ describe("CommandTracker", () => {
 
       const { err } = await done;
       expect(err).toBeInstanceOf(ServerError);
-      expect((err as ServerError).id).toBe("2568");
+      expect((err as ServerError).code).toBe(2568);
     });
   });
 

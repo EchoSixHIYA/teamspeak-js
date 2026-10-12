@@ -13,6 +13,8 @@
  * recovering from.
  */
 
+import { ErrorCode, ServerError } from "@honeybbq/teamspeak-core";
+
 /** How long to wait before each attempt. */
 export interface BackoffPolicy {
   /** Delay before the first retry, in milliseconds. */
@@ -93,27 +95,19 @@ export function backoffDelay(policy: BackoffPolicy, attempt: number, random = Ma
  * The asymmetry is deliberate. Retrying a permanent failure costs a few bounded
  * attempts; not retrying a transient one means never recovering.
  */
-const PERMANENT_SERVER_ERRORS = new Set([
-  "3329", // connection failed, you are banned
-  "3331", // banned from the server
-  "1029", // invalid server password
-  "1030", // invalid channel password
-  "2568", // insufficient client permissions
-  "2569", // insufficient permissions to join
+const PERMANENT_SERVER_ERRORS: ReadonlySet<number> = new Set([
+  ErrorCode.ConnectFailedBanned,
+  ErrorCode.BanFlooding,
+  ErrorCode.ServerInvalidPassword,
+  ErrorCode.ChannelInvalidPassword,
+  ErrorCode.PermissionsClientInsufficient,
 ]);
 
 export function isPermanentFailure(error: Error | undefined): boolean {
-  if (error === undefined) return false;
-
-  // ServerError carries the id as a property; a transport failure does not.
-  const id = (error as { id?: unknown }).id;
-  if (typeof id === "string" && PERMANENT_SERVER_ERRORS.has(id)) return true;
-  if (typeof id === "number" && PERMANENT_SERVER_ERRORS.has(String(id))) return true;
-
-  // Anything else — including an unrecognised ServerError — is treated as
-  // worth retrying. See PERMANENT_SERVER_ERRORS for why that is the safer
-  // direction to be wrong in.
-  return false;
+  // Anything but a listed refusal — a transport failure, or a ServerError the
+  // list does not name — is treated as worth retrying. See
+  // PERMANENT_SERVER_ERRORS for why that is the safer direction to be wrong in.
+  return error instanceof ServerError && PERMANENT_SERVER_ERRORS.has(error.code);
 }
 
 export function resolveBackoffPolicy(options: ReconnectOptions): BackoffPolicy {

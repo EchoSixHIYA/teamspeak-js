@@ -38,6 +38,7 @@ export type {
 } from "./command/ids.js";
 
 export { TeamspeakError, ServerError, CommandTimeoutError, NotConnectedError } from "./errors.js";
+export { ErrorCode } from "./errorcode.js";
 
 export { noopLogger, consoleLogger } from "./types.js";
 export type {
