@@ -12,14 +12,14 @@ export * from "@honeybbq/teamspeak-core";
 export { Client, ClientStatus } from "./client.js";
 
 export type {
-  TextMessage,
+  TextMessageEvent,
   ClientMovedEvent,
-  ClientLeftViewEvent,
+  ClientLeaveEvent,
   KickedEvent,
-  RawNotification,
-  ClientInfo,
+  NotificationEvent,
+  ClientEnterEvent,
   PokeEvent,
-  VoiceData,
+  VoiceDataEvent,
   EventMap,
   EventMiddleware,
   Listener,

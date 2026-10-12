@@ -1,9 +1,9 @@
 import type { Command } from "@honeybbq/teamspeak-core";
 import type {
-  ClientInfo,
-  ClientLeftViewEvent,
+  ClientEnterEvent,
+  ClientLeaveEvent,
   ClientMovedEvent,
-  TextMessage,
+  TextMessageEvent,
   PokeEvent,
 } from "./types.js";
 import {
@@ -12,20 +12,20 @@ import {
   parseUint16,
   parseInt10,
 } from "@honeybbq/teamspeak-core/internal";
-import { asChannelID, asClientID, asUID, type TextMessageTarget } from "@honeybbq/teamspeak-core";
+import { asChannelID, asClientID, asUID } from "@honeybbq/teamspeak-core";
 
 export type NotificationResult =
-  | { kind: "clientEnter"; info: ClientInfo }
-  | { kind: "clientLeave"; event: ClientLeftViewEvent; isSelf: boolean }
+  | { kind: "clientEnter"; info: ClientEnterEvent }
+  | { kind: "clientLeave"; event: ClientLeaveEvent; isSelf: boolean }
   | { kind: "clientMoved"; event: ClientMovedEvent; reasonMessage: string }
-  | { kind: "textMessage"; message: TextMessage }
+  | { kind: "textMessage"; message: TextMessageEvent }
   | { kind: "poked"; event: PokeEvent }
   | { kind: "unknown" };
 
 export function handleNotification(
   cmd: Command,
   selfCLID: number,
-  clients: Map<number, ClientInfo>,
+  clients: Map<number, ClientEnterEvent>,
   _nickname: string,
 ): NotificationResult {
   switch (cmd.name) {
@@ -44,7 +44,10 @@ export function handleNotification(
   }
 }
 
-function handleClientEnterView(cmd: Command, clients: Map<number, ClientInfo>): NotificationResult {
+function handleClientEnterView(
+  cmd: Command,
+  clients: Map<number, ClientEnterEvent>,
+): NotificationResult {
   const info = parseClient(cmd.params);
   if (info.id !== 0) clients.set(info.id, info);
   return { kind: "clientEnter", info };
@@ -53,7 +56,7 @@ function handleClientEnterView(cmd: Command, clients: Map<number, ClientInfo>): 
 function handleClientLeftView(
   cmd: Command,
   selfCLID: number,
-  clients: Map<number, ClientInfo>,
+  clients: Map<number, ClientEnterEvent>,
 ): NotificationResult {
   const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
   const isSelf = clid !== 0 && clid === selfCLID;
@@ -61,7 +64,7 @@ function handleClientLeftView(
   return {
     kind: "clientLeave",
     event: {
-      id: clid,
+      clientID: clid,
       reason: parseInt10(cmd.params["reasonid"] ?? ""),
       reasonMessage: cmd.params["reasonmsg"] ?? "",
       invokerID: asClientID(parseUint16(cmd.params["invokerid"] ?? "")),
@@ -72,7 +75,10 @@ function handleClientLeftView(
   };
 }
 
-function handleClientMoved(cmd: Command, clients: Map<number, ClientInfo>): NotificationResult {
+function handleClientMoved(
+  cmd: Command,
+  clients: Map<number, ClientEnterEvent>,
+): NotificationResult {
   const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
   const ctid = asChannelID(parseUint64(cmd.params["ctid"] ?? ""));
 
@@ -84,7 +90,7 @@ function handleClientMoved(cmd: Command, clients: Map<number, ClientInfo>): Noti
   return {
     kind: "clientMoved",
     event: {
-      id: clid,
+      clientID: clid,
       targetChannelID: ctid,
       reason: parseInt10(cmd.params["reasonid"] ?? ""),
       invokerID: asClientID(parseUint16(cmd.params["invokerid"] ?? "")),
@@ -95,12 +101,15 @@ function handleClientMoved(cmd: Command, clients: Map<number, ClientInfo>): Noti
   };
 }
 
-function handleTextMessage(cmd: Command, clients: Map<number, ClientInfo>): NotificationResult {
+function handleTextMessage(
+  cmd: Command,
+  clients: Map<number, ClientEnterEvent>,
+): NotificationResult {
   const invokerID = asClientID(parseUint16(cmd.params["invokerid"] ?? ""));
   const invokerInfo = clients.get(invokerID);
 
-  const message: TextMessage = {
-    targetMode: parseInt10(cmd.params["targetmode"] ?? "") as TextMessageTarget,
+  const message: TextMessageEvent = {
+    targetMode: parseInt10(cmd.params["targetmode"] ?? ""),
     targetID: asClientID(parseUint16(cmd.params["target"] ?? "")),
     invokerID,
     invokerName: cmd.params["invokername"] ?? "",

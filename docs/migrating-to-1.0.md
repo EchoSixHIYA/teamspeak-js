@@ -124,8 +124,24 @@ for await (const message of client.events("textMessage", { signal })) { … }
 Listeners run one at a time, in arrival order. `disconnected` is `undefined`
 only after `disconnect()`; otherwise it is the cause, such as a `RemovedError`
 for a kick or a `TimedOutError`. Channel kicks now reach `kicked`. Ids in
-events are branded, `VoiceData.clientId` is `clientID`, and `clientEnter`
-delivers the same `ClientEntry` that `listClients` returns.
+events are branded, and `clientEnter` delivers the same `ClientEntry` that
+`listClients` returns.
+
+The event types are named after their event, with an `Event` suffix:
+
+| 0.x                   | 1.0                                  |
+| --------------------- | ------------------------------------ |
+| `TextMessage`         | `TextMessageEvent`                   |
+| `ClientInfo`          | `ClientEnterEvent` (a `ClientEntry`) |
+| `ClientLeftViewEvent` | `ClientLeaveEvent`                   |
+| `VoiceData`           | `VoiceDataEvent`                     |
+| `RawNotification`     | `NotificationEvent`                  |
+
+The client an event is about is `clientID` in `ClientMovedEvent`,
+`ClientLeaveEvent` and `VoiceDataEvent` (was `id`, and `clientId` for voice).
+`TextMessageEvent.targetMode` and `VoiceDataEvent.codec` are plain numbers, to
+compare with `TextMessageTarget` and `Codec`: a server may send a value newer
+than those tables.
 
 Middleware is set with the `commandMiddleware` and `eventMiddleware` options;
 `useCommandMiddleware()` and `useEventMiddleware()` are gone. Event middleware

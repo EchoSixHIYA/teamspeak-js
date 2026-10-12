@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { handleNotification } from "./notifications.js";
-import type { ClientInfo } from "./types.js";
+import type { ClientEnterEvent } from "./types.js";
 
-function makeClients(): Map<number, ClientInfo> {
+function makeClients(): Map<number, ClientEnterEvent> {
   return new Map();
 }
 

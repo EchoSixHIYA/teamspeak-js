@@ -2,11 +2,9 @@ import type {
   ChannelID,
   ClientEntry,
   ClientID,
-  Codec,
   CommandMiddleware,
   Logger,
   ServerGroupID,
-  TextMessageTarget,
   UID,
 } from "@honeybbq/teamspeak-core";
 import type { Duplex } from "node:stream";
@@ -15,7 +13,7 @@ import type { ReconnectOptions } from "./reconnect.js";
 // ---- Events ---------------------------------------------------------------
 
 /** A text message, sent privately, to a channel, or to the whole server. */
-export interface TextMessage {
+export interface TextMessageEvent {
   /** The sender's nickname. */
   readonly invokerName: string;
   /** The sender's unique identifier. */
@@ -24,8 +22,11 @@ export interface TextMessage {
   readonly message: string;
   /** The sender's server groups, as this client last saw them. */
   readonly invokerGroups: readonly ServerGroupID[];
-  /** Private, channel or server; one of `TextMessageTarget`. */
-  readonly targetMode: TextMessageTarget;
+  /**
+   * Private, channel or server; compare it with `TextMessageTarget`. A plain
+   * number, since a server may send a mode that table does not name.
+   */
+  readonly targetMode: number;
   /**
    * The client a private message was sent to. Channel and server messages
    * carry no target, so it is 0 for them.
@@ -46,7 +47,7 @@ export interface ClientMovedEvent {
   /** Why the client moved; compare it with `Reason`. */
   readonly reason: number;
   /** The client that moved. */
-  readonly id: ClientID;
+  readonly clientID: ClientID;
   /** The mover. */
   readonly invokerID: ClientID;
 }
@@ -55,13 +56,13 @@ export interface ClientMovedEvent {
  * A client going out of view: leaving the server, kicked or banned from it, or
  * in a channel that stopped being subscribed.
  */
-export interface ClientLeftViewEvent {
+export interface ClientLeaveEvent {
   /** The reason given for a kick or a ban, or the client's own parting message. */
   readonly reasonMessage: string;
   /** Why the client left; compare it with `Reason`. */
   readonly reason: number;
   /** The client that left. */
-  readonly id: ClientID;
+  readonly clientID: ClientID;
   /** Who kicked or banned the client; empty otherwise. */
   readonly invokerName: string;
   /** The kicker's unique identifier; empty unless kicked or banned. */
@@ -86,10 +87,11 @@ export interface KickedEvent {
 
 /**
  * A client coming into view: the same record `listClients` returns, so one
- * type describes a client however it was learned of. The fields only
- * `clientlist -times` reports are undefined here.
+ * type describes a client however it was learned of; its own id is `id`, as
+ * in every record. The fields only `clientlist -times` reports are undefined
+ * here.
  */
-export type ClientInfo = ClientEntry;
+export type ClientEnterEvent = ClientEntry;
 
 /** This client being poked. */
 export interface PokeEvent {
@@ -104,11 +106,14 @@ export interface PokeEvent {
 }
 
 /** Audio from another client, in the channel or whispered. */
-export interface VoiceData {
+export interface VoiceDataEvent {
   /** Who is speaking. */
   readonly clientID: ClientID;
-  /** How the audio is encoded; one of `Codec`. */
-  readonly codec: Codec;
+  /**
+   * How the audio is encoded; compare it with `Codec`. A plain number, since a
+   * server may relay a codec that table does not name.
+   */
+  readonly codec: number;
   /** One encoded frame, copied: it stays valid after the listener returns. */
   readonly data: Uint8Array;
 }
@@ -117,7 +122,7 @@ export interface VoiceData {
  * A notification from the server, as it arrived: the escape hatch for one the
  * SDK does not model.
  */
-export interface RawNotification {
+export interface NotificationEvent {
   /** The notification's name, such as `notifyserveredited`. */
   readonly name: string;
   /** Its parameters, unescaped. */
@@ -127,22 +132,22 @@ export interface RawNotification {
 /** The events `Client.on()` takes, and what each delivers. */
 export interface EventMap {
   /** A text message to this client, its channel or the server. */
-  textMessage: TextMessage;
+  textMessage: TextMessageEvent;
   /** A client coming into view, including every client already there on connecting. */
-  clientEnter: ClientInfo;
+  clientEnter: ClientEnterEvent;
   /** A client going out of view. */
-  clientLeave: ClientLeftViewEvent;
+  clientLeave: ClientLeaveEvent;
   /** A client changing channel. */
   clientMoved: ClientMovedEvent;
   /** This client being poked. */
   poked: PokeEvent;
   /** Audio from another client. Only decoded with a listener or event middleware. */
-  voiceData: VoiceData;
+  voiceData: VoiceDataEvent;
   /**
    * Every notification the server sends, modelled or not, after any event it
    * produces.
    */
-  notification: RawNotification;
+  notification: NotificationEvent;
   /** The handshake completing, on `connect()` and on every reconnection. */
   connected: void;
   /**

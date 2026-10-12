@@ -3,7 +3,7 @@ import {
   type ClientOptions,
   type EventMiddleware,
   type AddrResolver,
-  type ClientInfo,
+  type ClientEnterEvent,
   type KickedEvent,
   type Listener,
   type ServerEvent,
@@ -233,7 +233,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #status: ClientStatus = ClientStatus.Disconnected;
   #throttle = new CommandThrottle();
   #cmdTrack = new CommandTracker(() => this.#clid);
-  #clients = new Map<number, ClientInfo>();
+  #clients = new Map<number, ClientEnterEvent>();
   #attempt: ConnectAttempt = newConnectAttempt();
 
   #listeners = new Map<keyof EventMap, Subscription[]>();
@@ -816,7 +816,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     const data = payload.slice(5);
     this.#emitServerEvent({
       name: "voiceData",
-      payload: { clientID: asClientID(clientId), codec: payload[4]! as Codec, data },
+      payload: { clientID: asClientID(clientId), codec: payload[4]!, data },
     });
   }
 
@@ -972,7 +972,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         // A channel kick moves the client to the default channel; it arrives
         // as a move, not as leaving view, which is where it used to be looked
         // for.
-        if (result.event.id === this.#clid && result.event.reason === Reason.KickChannel) {
+        if (result.event.clientID === this.#clid && result.event.reason === Reason.KickChannel) {
           this.#emit(
             "kicked",
             kickedEvent({ ...result.event, reasonMessage: result.reasonMessage }),

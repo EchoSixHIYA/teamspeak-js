@@ -42,7 +42,7 @@ async function main(): Promise<void> {
   });
 
   client.on("clientLeave", (evt) => {
-    console.log(`[event] clientLeave  clid=${evt.id} reason=${evt.reason}`);
+    console.log(`[event] clientLeave  clid=${evt.clientID} reason=${evt.reason}`);
   });
 
   client.on("textMessage", (msg) => {

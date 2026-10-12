@@ -37,7 +37,7 @@ import {
 import { sendPrivateMessage, whoAmI } from "@honeybbq/teamspeak-core";
 import { ErrorCode, getServerInfo, listServerGroups } from "@honeybbq/teamspeak-core";
 import { asChannelID, asClientDBID, asClientID, asUID } from "@honeybbq/teamspeak-core";
-import type { ClientInfo } from "./types.js";
+import type { ClientEnterEvent } from "./types.js";
 
 const ADDR = process.env["TEAMSPEAK_ADDR"];
 const SERVER_PASSWORD = process.env["TEAMSPEAK_SERVER_PASSWORD"] ?? "";
@@ -52,7 +52,7 @@ const USES_CONNECT_AUTH =
 
 // Shared connection — established once for the entire suite
 let sharedClient: Client;
-let selfClientEnter: Promise<ClientInfo>;
+let selfClientEnter: Promise<ClientEnterEvent>;
 
 beforeAll(async () => {
   if (SKIP) return;
