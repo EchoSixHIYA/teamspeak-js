@@ -127,6 +127,13 @@ the cause otherwise — a `ConnectionTimeoutError`, or a `RemovedError` for a ki
 or a server stopping. `await using client = new Client(...)` disconnects when
 the scope ends.
 
+`connected` is delivered after `connect()` resolves, so a listener added right
+after `await client.connect()` still hears it. `disconnect()` waits a second at
+most for the server to acknowledge its goodbye, less if its `signal` aborts
+sooner, and resolves once `disconnected` has been delivered. A `connect()` waits
+for an earlier session's `disconnected` to be delivered before it starts, so no
+listener or `events()` iterator of the new session hears the old one end.
+
 A listener that throws does not stop the others: the event still reaches the
 listeners after it, and the exception surfaces as an `uncaughtException`, as an
 EventEmitter listener's would.

@@ -157,6 +157,13 @@ interface ConnectAttempt {
   settled: boolean;
   resolve(): void;
   reject(error: unknown): void;
+  /**
+   * Settle the attempt as failed now, which stops its lookup and socket, but
+   * reject its promise only once `until` settles: disconnect() holds it until
+   * `disconnected` has been delivered, so a caller that awaits disconnect()
+   * before the connect() it interrupted still hears that reject in time.
+   */
+  rejectAfter(error: unknown, until: Promise<unknown>): void;
 }
 
 function newConnectAttempt(): ConnectAttempt {
@@ -184,6 +191,12 @@ function newConnectAttempt(): ConnectAttempt {
       attempt.settled = true;
       controller.abort(error);
       reject(error);
+    },
+    rejectAfter(error, until) {
+      if (attempt.settled) return;
+      attempt.settled = true;
+      controller.abort(error);
+      void until.finally(() => reject(error));
     },
   };
   return attempt;
@@ -259,6 +272,13 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #leaving: Promise<void> | undefined;
   /** How many times disconnect() was called, so a waiting connect() sees one. */
   #disconnects = 0;
+  /**
+   * Settles once the last queued `disconnected` has been delivered. A
+   * connect() waits for it, so the end of one session is never heard during
+   * the next: not by a listener added for the new session, and not by an
+   * events() iterator started for it.
+   */
+  #disconnectedDelivered: Promise<void> | undefined;
   /** Cuts short the reconnect loop's wait, on disconnect(). */
   #stopReconnecting: AbortController | undefined;
   #status: ClientStatus = ClientStatus.Disconnected;
@@ -365,19 +385,25 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * `connect()` does not retry; the `reconnect` option only retries a
    * connection that drops after it was established.
    *
-   * Called while a `disconnect()` is still saying goodbye, this waits for that
-   * to finish first, so the old session is closed, and its `disconnected`
-   * announced, before the new one starts. A `disconnect()` called during that
-   * wait wins: this then rejects with a NotConnectedError.
+   * Called while a `disconnect()` is still saying goodbye, or while an earlier
+   * session's `disconnected` is still waiting to be delivered, this waits for
+   * that first, so the old session is closed, and its `disconnected`
+   * delivered, before the new one starts: no listener or `events()` iterator
+   * of the new session hears the old one end. A `disconnect()` called during
+   * that wait wins: this then rejects with a NotConnectedError.
+   *
+   * `connected` is delivered after this resolves, so a listener added right
+   * after `await client.connect()` still hears it.
    */
   async connect(options: { readonly signal?: AbortSignal | undefined } = {}): Promise<void> {
     const { signal } = options;
     signal?.throwIfAborted();
-    if (this.#leaving !== undefined) {
-      const disconnects = this.#disconnects;
-      await abortable(this.#leaving, signal);
-      if (this.#disconnects !== disconnects) throw new NotConnectedError();
+    const disconnects = this.#disconnects;
+    if (this.#leaving !== undefined) await abortable(this.#leaving, signal);
+    while (this.#disconnectedDelivered !== undefined) {
+      await abortable(this.#disconnectedDelivered, signal);
     }
+    if (this.#disconnects !== disconnects) throw new NotConnectedError();
     if (this.#status !== ClientStatus.Disconnected) throw new AlreadyConnectedError();
     // Checked before anything changes: an address that can never work leaves
     // the client as it was, with no attempt to announce the end of.
@@ -414,12 +440,14 @@ export class Client implements CommandExecutor, AsyncDisposable {
   /**
    * Leave the server and close the connection.
    *
-   * Says goodbye first, waiting for the server's acknowledgement until `signal`
-   * aborts, or for a second. The connection is closed either way. A
-   * `connect()` still waiting for its handshake rejects with a
+   * Says goodbye first, waiting for the server's acknowledgement for a second
+   * at most, or less if `signal` aborts sooner. The connection is closed
+   * either way. A `connect()` still waiting for its handshake rejects with a
    * NotConnectedError, and so do the commands still waiting for an answer.
-   * Does nothing on a client that is not connected; called again while an
-   * earlier call is still saying goodbye, it waits for that one.
+   * Resolves once `disconnected` has been delivered to the listeners, so one
+   * added after `await client.disconnect()` does not hear it. Does nothing on
+   * a client that is not connected; called again while an earlier call is
+   * still saying goodbye, it waits for that one.
    */
   async disconnect(options: { readonly signal?: AbortSignal | undefined } = {}): Promise<void> {
     // Recorded before anything else: a dropped socket during the goodbye below
@@ -429,13 +457,16 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#stopReconnecting?.abort();
 
     if (this.#leaving !== undefined) return this.#leaving;
-    if (this.#status === ClientStatus.Disconnected) return;
+    // Already ended, by a drop or a failed attempt: its `disconnected` may
+    // still be on its way.
+    if (this.#status === ClientStatus.Disconnected) return this.#disconnectedDelivered;
 
     const wasConnected = this.#status === ClientStatus.Connected;
     this.#status = ClientStatus.Disconnected;
-    this.#attempt.reject(new NotConnectedError());
+    let left!: () => void;
+    this.#attempt.rejectAfter(new NotConnectedError(), new Promise<void>((r) => (left = r)));
 
-    const leaving = this.#leave(wasConnected, options.signal);
+    const leaving = this.#leave(wasConnected, options.signal).finally(left);
     this.#leaving = leaving;
     try {
       await leaving;
@@ -464,7 +495,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#cmdTrack.reset(new NotConnectedError());
     // Announced here; #handleConnectionClosed stays quiet once the status is
     // already Disconnected, so listeners hear about it once.
-    this.#emit("disconnected", undefined);
+    await this.#announceDisconnected(undefined);
   }
 
   /** `await using client = …` disconnects when the scope ends. */
@@ -1143,6 +1174,27 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#enqueue(() => this.#eventChain(event));
   }
 
+  /**
+   * Queue `disconnected`; the promise settles once it has been delivered, and
+   * a connect() waits for it until then.
+   */
+  #announceDisconnected(cause: Error | undefined): Promise<void> {
+    const delivered = new Promise<void>((resolve) =>
+      this.#enqueue(() => {
+        try {
+          this.#deliver("disconnected", cause);
+        } finally {
+          resolve();
+        }
+      }),
+    );
+    this.#disconnectedDelivered = delivered;
+    void delivered.then(() => {
+      if (this.#disconnectedDelivered === delivered) this.#disconnectedDelivered = undefined;
+    });
+    return delivered;
+  }
+
   /** Queue a lifecycle event, which middleware does not see. */
   #emit<K extends Exclude<keyof EventMap, ServerEventName>>(event: K, payload: EventMap[K]): void {
     this.#enqueue(() => this.#deliver(event, payload));
@@ -1209,7 +1261,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // Announced first, then retried: a caller watching `disconnected` should
     // hear about the drop even when a reconnect is already on its way, because
     // a silent recovery hides an outage.
-    this.#emit("disconnected", cause);
+    void this.#announceDisconnected(cause);
     this.#scheduleReconnect(cause).catch((error: unknown) => {
       this.#logger.error("reconnecting failed", { error: String(error) });
     });
@@ -1303,7 +1355,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
     if (this.#status === ClientStatus.Disconnected) return;
     this.#status = ClientStatus.Disconnected;
     this.#handler.close();
-    this.#emit("disconnected", error instanceof Error ? error : new TeamspeakError(String(error)));
+    void this.#announceDisconnected(
+      error instanceof Error ? error : new TeamspeakError(String(error)),
+    );
   }
 }
 

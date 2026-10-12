@@ -209,7 +209,11 @@ stop the others: its exception surfaces as an `uncaughtException`, as an
 EventEmitter listener's would, and the event still reaches the listeners after
 it. `disconnected` is `undefined`
 only after `disconnect()`; otherwise it is the cause, such as a `RemovedError`
-for a kick or a `ConnectionTimeoutError`. Channel kicks now reach `kicked`. Ids in
+for a kick or a `ConnectionTimeoutError`. `disconnect()` resolves once
+`disconnected` has been delivered, and a `connect()` waits for an earlier
+session's `disconnected` to be delivered first, so the new session never hears
+the old one end. `connected` is delivered after `connect()` resolves. Channel
+kicks now reach `kicked`. Ids in
 events are branded, and `clientEnter` delivers the same `ClientEntry` that
 `listClients` returns.
 

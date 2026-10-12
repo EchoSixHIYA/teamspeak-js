@@ -434,3 +434,96 @@ describe("the idle timeout", () => {
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 });
+
+describe("one session after another", () => {
+  // The old session's `disconnected` used to be still queued when
+  // disconnect() resolved, and reached whatever the new session had set up.
+  it("delivers disconnected before disconnect() resolves", async () => {
+    const { client } = await connected();
+    await client.disconnect({ signal: AbortSignal.abort() });
+    const late: unknown[] = [];
+    client.on("disconnected", (error) => late.push(error));
+    const next = client.connect();
+    next.catch(() => {});
+    await settle();
+    await settle();
+
+    expect(late).toEqual([]);
+    expect(client.status).toBe("connecting");
+    await client.disconnect();
+  });
+
+  it("does not end an events() iterator started for the new session", async () => {
+    const { client } = await connected();
+    await client.disconnect({ signal: AbortSignal.abort() });
+    const iterator = client.events("textMessage");
+    const next = client.connect();
+    next.catch(() => {});
+
+    const first = await Promise.race([
+      iterator.next(),
+      new Promise((resolve) => setTimeout(() => resolve("still open"), 30)),
+    ]);
+    expect(first).toBe("still open");
+    await client.disconnect();
+  });
+
+  it("makes a connect() after a drop wait until the drop has been heard", async () => {
+    const { client } = await connected();
+    const statusWhenHeard: string[] = [];
+    client.on("disconnected", () => statusWhenHeard.push(client.status));
+    clientInternals(client).handler.onClosed?.(new Error("gone"));
+    const next = client.connect();
+    next.catch(() => {});
+    await until(() => client.status === "connecting");
+
+    // Heard while the old session was over and the new one not yet begun.
+    expect(statusWhenHeard).toEqual(["disconnected"]);
+    await client.disconnect();
+  });
+
+  it("delivers connected after connect() resolves, to a listener added then", async () => {
+    let socket: FakeSocket | undefined;
+    const client = clientOn(() => (socket = new FakeSocket()));
+    const connecting = client.connect();
+    await until(() => socket !== undefined && clientInternals(client).handler.isOpen);
+    completeCryptoInit(clientInternals(client).crypt);
+    clientInternals(client).markConnected();
+    await connecting;
+    let heard = false;
+    client.on("connected", () => (heard = true));
+    await settle();
+
+    expect(heard).toBe(true);
+    await client.disconnect({ signal: AbortSignal.abort() });
+  });
+});
+
+describe("the goodbye", () => {
+  // A server that never acknowledges it holds disconnect() a second at most,
+  // even for a caller whose own signal would allow longer.
+  it("waits a second at most, however long the caller's signal allows", async () => {
+    const { client } = await connected();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      let done = false;
+      const leaving = client
+        .disconnect({ signal: new AbortController().signal })
+        .then(() => (done = true));
+      await vi.advanceTimersByTimeAsync(990);
+      expect(done).toBe(false);
+      await vi.advanceTimersByTimeAsync(20);
+      await leaving;
+      expect(done).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits less when the caller's signal aborts sooner", async () => {
+    const { client } = await connected();
+    const started = Date.now();
+    await client.disconnect({ signal: AbortSignal.timeout(20) });
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+});
