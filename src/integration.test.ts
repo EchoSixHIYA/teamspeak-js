@@ -14,10 +14,22 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createSocket } from "node:dgram";
 import { generateIdentity } from "./crypto/identity.js";
 import { Client, ClientStatus } from "./client.js";
-import { listChannels, getChannelInfo } from "./api/channels.js";
-import { listClients, getClientInfo, moveClient } from "./api/clients.js";
+import { Readable, Writable } from "node:stream";
+import { listChannels, getChannelInfo, createChannel } from "./api/channels.js";
+import {
+  listClients,
+  getClientInfo,
+  moveClient,
+  getClientUIDByID,
+  getClientDBIDByUID,
+  getClientNameByUID,
+  getClientNameByDBID,
+  getClientIDs,
+} from "./api/clients.js";
+import { deleteFile, initFileDownload, initFileUpload, listFiles } from "./api/files.js";
 import { sendTextMessage, TextMessageTarget } from "./api/moderation.js";
-import { asChannelID, asClientID } from "./command/ids.js";
+import { getServerInfo, listServerGroups } from "./api/server.js";
+import { asChannelID, asClientDBID, asClientID, asUID } from "./command/ids.js";
 import type { ClientInfo } from "./types.js";
 
 const ADDR = process.env["TEAMSPEAK_ADDR"];
@@ -87,19 +99,6 @@ async function connectPeer(nickname: string, setup?: (client: Client) => void): 
   await peer.connect();
   await peer.waitConnected(AbortSignal.timeout(30_000));
   return peer;
-}
-
-// Helper: skip a test if the server returns a permission error
-function skipOnPermError(err: unknown): void {
-  if (
-    err instanceof Error &&
-    (err.message.includes("insufficient") || err.message.includes("id=2568"))
-  ) {
-    // vitest doesn't have a native skip-inside-test API; log and return.
-    console.log("SKIP — permission denied:", err.message);
-    return;
-  }
-  throw err;
 }
 
 describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
@@ -183,13 +182,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // within one connection.
     expect(sharedClient.uniqueIdentifier()).toBe(mine);
 
-    let clients;
-    try {
-      clients = await listClients(sharedClient);
-    } catch (err) {
-      skipOnPermError(err);
-      return;
-    }
+    const clients = await listClients(sharedClient);
 
     const self = clients.find((c) => c.id === sharedClient.clientID());
     console.log(`uid: ours=${mine} server=${self?.uid}`);
@@ -197,13 +190,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   }, 15_000);
 
   it("listClients — finds ourselves in the list", async () => {
-    let clients;
-    try {
-      clients = await listClients(sharedClient);
-    } catch (err) {
-      skipOnPermError(err);
-      return;
-    }
+    const clients = await listClients(sharedClient);
 
     expect(clients.length).toBeGreaterThan(0);
 
@@ -236,13 +223,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   }, 45_000);
 
   it("listChannels — at least one channel exists", async () => {
-    let channels;
-    try {
-      channels = await listChannels(sharedClient);
-    } catch (err) {
-      skipOnPermError(err);
-      return;
-    }
+    const channels = await listChannels(sharedClient);
 
     expect(channels.length).toBeGreaterThan(0);
     console.log(`channels: ${channels.length} found, first="${channels[0]?.name}"`);
@@ -251,17 +232,10 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   it("joins the configured default channel when provided", async () => {
     if (DEFAULT_CHANNEL === "") return;
 
-    let channels;
-    let clients;
-    try {
-      [channels, clients] = await Promise.all([
-        listChannels(sharedClient),
-        listClients(sharedClient),
-      ]);
-    } catch (err) {
-      skipOnPermError(err);
-      return;
-    }
+    const [channels, clients] = await Promise.all([
+      listChannels(sharedClient),
+      listClients(sharedClient),
+    ]);
 
     const self = clients.find((client) => client.id === sharedClient.clientID());
     const currentChannel = channels.find((channel) => channel.id === self?.channelID);
@@ -287,13 +261,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   }, 15_000);
 
   it("listChannels — exposes channel_order", async () => {
-    let channels;
-    try {
-      channels = await listChannels(sharedClient);
-    } catch (err) {
-      skipOnPermError(err);
-      return;
-    }
+    const channels = await listChannels(sharedClient);
 
     // Every row must carry an order, and a server with more than one channel
     // must not report the same order for all of them — that was the symptom
@@ -325,41 +293,88 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(peer).toBe(shared);
   }, 70_000);
 
-  it("clientlookup commands that the voice protocol leaves empty", async () => {
-    // clientgetuidfromclid, clientgetids, clientgetdbidfromuid and friends are
-    // listed by the server documentation and answer `ok` over the voice
-    // protocol — with no data row at all. The same commands return their rows
-    // over ServerQuery. Worth pinning: they look like they work, so a caller
-    // reading only for errors gets a silent empty result.
-    const me = await getClientInfo(sharedClient, asClientID(sharedClient.clientID()));
-    const uid = me["client_unique_identifier"]!;
-    const dbid = me["client_database_id"]!;
+  // These answer with a notification rather than data rows. The SDK used to
+  // collect only data rows, report an empty success for every one of them, and
+  // pin that as server behaviour in this very test.
+  it("client lookups answer with their data", async () => {
+    const ownID = asClientID(sharedClient.clientID());
+    const me = await getClientInfo(sharedClient, ownID);
+    const uid = asUID(me["client_unique_identifier"]!);
+    const dbid = asClientDBID(BigInt(me["client_database_id"]!));
+    const nickname = me["client_nickname"]!;
 
-    const cases: Array<[string, string]> = [
-      ["clientgetuidfromclid", `clientgetuidfromclid clid=${sharedClient.clientID()}`],
-      ["clientgetids", `clientgetids cluid=${uid}`],
-      ["clientgetdbidfromuid", `clientgetdbidfromuid cluid=${uid}`],
-      ["clientgetnamefromuid", `clientgetnamefromuid cluid=${uid}`],
-      ["clientgetnamefromdbid", `clientgetnamefromdbid cldbid=${dbid}`],
-    ];
-    for (const [name, cmd] of cases) {
-      const rows = await sharedClient.execCommandWithResponse(cmd, 5_000);
-      console.log(`${name}: ${rows.length} rows`);
-      expect(rows).toHaveLength(0);
-    }
-
-    // The uid is still obtainable, just from elsewhere: clientinfo carries it.
-    expect(uid.length).toBeGreaterThan(0);
+    expect(await getClientUIDByID(sharedClient, ownID)).toBe(uid);
+    expect(await getClientDBIDByUID(sharedClient, uid)).toBe(dbid);
+    expect(await getClientNameByUID(sharedClient, uid)).toEqual({
+      databaseID: dbid,
+      name: nickname,
+    });
+    expect(await getClientNameByDBID(sharedClient, dbid)).toBe(nickname);
+    expect(await getClientIDs(sharedClient, uid)).toContain(ownID);
   }, 20_000);
 
-  it("getClientInfo — returns our own nickname", async () => {
-    let info;
+  it("listServerGroups — includes the server's default group", async () => {
+    const [groups, server] = await Promise.all([
+      listServerGroups(sharedClient),
+      getServerInfo(sharedClient),
+    ]);
+    const defaultGroup = BigInt(server["virtualserver_default_server_group"]!);
+
+    expect(groups.length).toBeGreaterThan(1);
+    expect(groups.map((g) => g.id)).toContain(defaultGroup);
+  }, 15_000);
+
+  // The voice protocol answers channelcreate with notifychannelcreated, not a
+  // cid row, so the id came back as 0.
+  it("createChannel — returns the new channel's id", async () => {
+    const before = sharedClient.channelID();
+    const name = `ts-js-${Date.now().toString(36)}`;
+    const cid = await createChannel(sharedClient, { channel_name: name });
     try {
-      info = await getClientInfo(sharedClient, asClientID(sharedClient.clientID()));
-    } catch (err) {
-      skipOnPermError(err);
-      return;
+      expect(cid).not.toBe(0n);
+      expect((await getChannelInfo(sharedClient, cid)).name).toBe(name);
+    } finally {
+      // Creating a channel over the voice protocol moves the creator into it,
+      // and the server deletes a temporary channel once its last client
+      // leaves — so moving back is the cleanup.
+      await moveClient(sharedClient, asClientID(sharedClient.clientID()), asChannelID(before));
     }
+  }, 20_000);
+
+  // The key arrives in a notification after the command has already returned;
+  // without it there is nothing to dial.
+  it("file transfer — uploads and downloads the same bytes", async () => {
+    const cid = asChannelID(sharedClient.channelID());
+    const path = `/ts-js-${Date.now().toString(36)}.bin`;
+    const payload = Buffer.from("hello over file transfer");
+    const host = ADDR!.slice(0, ADDR!.lastIndexOf(":"));
+
+    const upload = await initFileUpload(sharedClient, cid, path, BigInt(payload.length));
+    expect(upload.fileTransferKey).not.toBe("");
+    await sharedClient.uploadFileData(host, upload, Readable.from([payload]));
+
+    try {
+      const files = await listFiles(sharedClient, cid);
+      expect(files.map((f) => `/${f.name}`)).toContain(path);
+
+      const download = await initFileDownload(sharedClient, cid, path);
+      expect(download.size).toBe(BigInt(payload.length));
+      const chunks: Buffer[] = [];
+      const sink = new Writable({
+        write(chunk: Buffer, _encoding, done) {
+          chunks.push(chunk);
+          done();
+        },
+      });
+      await sharedClient.downloadFileData(host, download, sink);
+      expect(Buffer.concat(chunks).equals(payload)).toBe(true);
+    } finally {
+      await deleteFile(sharedClient, cid, [path]);
+    }
+  }, 30_000);
+
+  it("getClientInfo — returns our own nickname", async () => {
+    const info = await getClientInfo(sharedClient, asClientID(sharedClient.clientID()));
 
     expect(Object.keys(info).length).toBeGreaterThan(0);
     console.log("clientinfo keys:", Object.keys(info).sort().join(", "));
@@ -371,13 +386,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // to bypass. Without the base64(sha1(pw)) encoding the server answers 781.
     if (PASSWORD_CHANNEL === "" || PASSWORD_CHANNEL_PASSWORD === "") return;
 
-    let channels;
-    try {
-      channels = await listChannels(sharedClient);
-    } catch (err) {
-      skipOnPermError(err);
-      return;
-    }
+    const channels = await listChannels(sharedClient);
 
     const target = channels.find((c) => c.name === PASSWORD_CHANNEL);
     expect(target).toBeDefined();
@@ -484,17 +493,12 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     });
 
     const ownID = sharedClient.clientID();
-    try {
-      await sendTextMessage(
-        sharedClient,
-        TextMessageTarget.Client,
-        "hello from ts-js-integ",
-        asClientID(ownID),
-      );
-    } catch (err) {
-      skipOnPermError(err);
-      return;
-    }
+    await sendTextMessage(
+      sharedClient,
+      TextMessageTarget.Client,
+      "hello from ts-js-integ",
+      asClientID(ownID),
+    );
 
     const msg = await Promise.race([
       received,
