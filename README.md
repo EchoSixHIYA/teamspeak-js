@@ -7,9 +7,12 @@ TeamSpeak SDKs for TypeScript, in one repository and released together.
 | [`@honeybbq/teamspeak-client`](packages/client) | A clean-room client that connects over the voice protocol, the way the TeamSpeak application does |
 | [`@honeybbq/teamspeak-core`](packages/core)     | What the clients share: the command language, ids, errors, and the typed commands                 |
 
-Install the client you need; it re-exports the core. A ServerQuery client,
-[`@honeybbq/teamspeak-serverquery`](packages/serverquery), is in progress and
-not yet published. The Go counterpart is
+Install the client and nothing else; it pulls in the core and re-exports all of
+it. 1.0 is in beta, so for now that means `npm install @honeybbq/teamspeak-client@beta`.
+
+A ServerQuery client, [`@honeybbq/teamspeak-serverquery`](packages/serverquery),
+is being written and isn't published yet. It will run the same typed commands.
+There's a Go version of all this too:
 [teamspeak-go](https://github.com/honeybbq/teamspeak-go).
 
 Upgrading from 0.x? [docs/migrating-to-1.0.md](docs/migrating-to-1.0.md) walks

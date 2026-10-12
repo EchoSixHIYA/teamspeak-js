@@ -4,10 +4,12 @@
 
 **A clean-room TeamSpeak client protocol library written in pure TypeScript.**
 
-Compatible with TeamSpeak 3, 5 & 6. No proprietary SDK. No copy-pasted code.
+Works with TeamSpeak 3 and TeamSpeak 6 servers. No proprietary SDK, no copied code.
 
 [![CI](https://github.com/honeybbq/teamspeak-js/actions/workflows/ci.yml/badge.svg)](https://github.com/honeybbq/teamspeak-js/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@honeybbq/teamspeak-client)](https://www.npmjs.com/package/@honeybbq/teamspeak-client)
+[![npm beta](https://img.shields.io/npm/v/@honeybbq/teamspeak-client/beta?label=beta)](https://www.npmjs.com/package/@honeybbq/teamspeak-client?activeTab=versions)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/HoneyBBQ/teamspeak-js/badge)](https://scorecard.dev/viewer/?uri=github.com/HoneyBBQ/teamspeak-js)
 [![Node Version](https://img.shields.io/node/v/@honeybbq/teamspeak-client)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -28,20 +30,23 @@ Upgrading from 0.x? See the [migration guide](https://github.com/HoneyBBQ/teamsp
 - **Identity management** — Generate, import/export, and upgrade security level of identities
 - **Full command set** — 111 typed functions covering every command the voice protocol answers
 - **Reconnection** — Opt-in retry with backoff, tuned for TeamSpeak's antiflood ban
-- **Server capabilities** — Reports the server version and the uid hash it uses (SHA-1 on TS3, SHA-256 on TS6)
+- **Server capabilities** — Reports the server version and the uid hash it uses (SHA-1 on TS3, SHA-256 on TS6), and the server's name, icon, banner and welcome message
 - **Custom transports** — Supply your own socket, for proxies, tunnels or tests
 - **ESM with types** — Ships ES modules with full TypeScript declarations
 - **Zero native deps** — Pure TypeScript, no native addons required
 
 ## Installation
 
+1.0 is in beta, published under the `beta` tag. A plain `npm install` still
+gets 0.3, so ask for the beta:
+
 ```bash
-npm install @honeybbq/teamspeak-client
+npm install @honeybbq/teamspeak-client@beta
 # or
-pnpm add @honeybbq/teamspeak-client
+pnpm add @honeybbq/teamspeak-client@beta
 ```
 
-Requires **Node.js 20.19** or later.
+Everything in this README is the 1.0 API. You need Node.js 20.19 or newer.
 
 ## Quick Start
 
@@ -397,7 +402,11 @@ const client = new Client(identity, "ts.example.com", "Bot", {
 
 ```typescript
 const caps = client.serverCapabilities;
-// { version: "6.0.0-beta13.1", major: 6, family: "ts6", uidAlgorithm: "sha256" }
+// {
+//   version: "6.0.0-beta13.1 [Build: 1790080330]", major: 6, family: "ts6",
+//   uidAlgorithm: "sha256", name: "TeamSpeak 6 Server", iconID: undefined,
+//   hostBannerImageURL: undefined, welcomeMessage: "…"
+// }
 ```
 
 Read from `initserver` during the handshake, so it costs no extra round trip.

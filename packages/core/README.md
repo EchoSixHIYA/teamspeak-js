@@ -1,8 +1,8 @@
 # @honeybbq/teamspeak-core
 
 What the TeamSpeak clients in [teamspeak-js](https://github.com/HoneyBBQ/teamspeak-js)
-share: the command language (escaping, parsing, building), branded ids, errors,
-and the typed commands, which run on any `CommandExecutor`.
+share: branded ids, errors, the server's error codes, and the typed commands,
+which run on any `CommandExecutor`.
 
 You do not normally install this directly. Install a client —
 [`@honeybbq/teamspeak-client`](https://www.npmjs.com/package/@honeybbq/teamspeak-client)
