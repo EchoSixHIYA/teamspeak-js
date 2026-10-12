@@ -456,7 +456,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     let socket: import("node:dgram").Socket | undefined;
     const recovering = new Client(generateIdentitySync(8), ADDR!, "ts-js-reconnect", {
       defaultChannel: DEFAULT_CHANNEL,
-      reconnect: { enabled: true, backoff: { initialDelayMs: 500, maxDelayMs: 4_000 } },
+      reconnect: { backoff: { initialDelayMs: 500, maxDelayMs: 4_000 } },
       socketFactory: (family) => {
         socket = createSocket(family === 6 ? "udp6" : "udp4");
         return socket;
@@ -498,7 +498,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // process alive that asked to stop.
     const client = new Client(generateIdentitySync(8), ADDR!, "ts-js-noreconnect", {
       defaultChannel: DEFAULT_CHANNEL,
-      reconnect: { enabled: true, backoff: { initialDelayMs: 200 } },
+      reconnect: { backoff: { initialDelayMs: 200 } },
     });
 
     await client.connect({ signal: AbortSignal.timeout(30_000) });

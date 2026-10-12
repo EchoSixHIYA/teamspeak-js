@@ -14,7 +14,11 @@ export class Resolver {
 
   constructor(_log: Logger = noopLogger) {}
 
-  async resolve(inputAddr: string, signal?: AbortSignal): Promise<ResolvedAddr[]> {
+  async resolve(
+    inputAddr: string,
+    options: { readonly signal?: AbortSignal | undefined } = {},
+  ): Promise<ResolvedAddr[]> {
+    const { signal } = options;
     if (!inputAddr) throw new Error("empty address");
 
     const cached = this.#getValidCache(inputAddr);
@@ -23,14 +27,14 @@ export class Resolver {
     const { host, port } = splitHostPort(inputAddr);
 
     if (isIpAddress(host)) {
-      return [{ addr: joinHostPort(host, port), source: "Direct", expiry: new Date(0) }];
+      return [{ addr: joinHostPort(host, port), source: "Direct" }];
     }
 
     // Nickname resolution (no dots → not a domain)
     if (!host.includes(".") && host !== "localhost") {
       const nickAddr = await resolveNickname(host, signal);
       if (nickAddr) {
-        return this.resolve(nickAddr, signal);
+        return this.resolve(nickAddr, options);
       }
     }
 
@@ -43,23 +47,17 @@ export class Resolver {
     // TSDNS via SRV _tsdns._tcp.<domain>
     const tsdnsSrv = await this.#resolveTSDNSSRV(domainList, host, signal);
     if (tsdnsSrv) {
-      return this.#setCache(inputAddr, [
-        { addr: tsdnsSrv, source: "TSDNS-SRV", expiry: new Date(0) },
-      ]);
+      return this.#setCache(inputAddr, [{ addr: tsdnsSrv, source: "TSDNS-SRV" }]);
     }
 
     // TSDNS direct :41144
     const tsdnsDirect = await this.#resolveTSDNSDirect(domainList, host, signal);
     if (tsdnsDirect) {
-      return this.#setCache(inputAddr, [
-        { addr: tsdnsDirect, source: "TSDNS-Direct", expiry: new Date(0) },
-      ]);
+      return this.#setCache(inputAddr, [{ addr: tsdnsDirect, source: "TSDNS-Direct" }]);
     }
 
     // Plain DNS fallback
-    const fallback: ResolvedAddr[] = [
-      { addr: joinHostPort(host, port), source: "Direct", expiry: new Date(0) },
-    ];
+    const fallback: ResolvedAddr[] = [{ addr: joinHostPort(host, port), source: "Direct" }];
     return this.#setCache(inputAddr, fallback);
   }
 
@@ -67,7 +65,7 @@ export class Resolver {
     const cached = this.#cache.get(inputAddr);
     if (!cached || cached.length === 0) return null;
     const first = cached[0]!;
-    if (first.expiry.getTime() > 0 && Date.now() > first.expiry.getTime()) return null;
+    if (first.expiry !== undefined && Date.now() > first.expiry.getTime()) return null;
     return cached;
   }
 
@@ -85,7 +83,6 @@ export class Resolver {
       return srvs.map((srv) => ({
         addr: joinHostPort(srv.name.replace(/\.$/, ""), String(srv.port)),
         source: "SRV",
-        expiry: new Date(0),
       }));
     } catch {
       return null;

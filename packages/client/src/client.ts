@@ -232,7 +232,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #clientInitOptions: ClientInitOptions;
   #socketFactory: SocketFactory | undefined;
   #fileTransferSocketFactory: FileTransferSocketFactory | undefined;
-  #reconnectOptions: ReconnectOptions;
+  /** Undefined when the client does not reconnect. */
+  #reconnectOptions: ReconnectOptions | undefined;
   /**
    * Set while a reconnect attempt is in flight, so overlapping failures do not
    * start competing loops.
@@ -268,7 +269,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#clientInitOptions = normalizeClientInitOptions(options);
     this.#socketFactory = options.socketFactory;
     this.#fileTransferSocketFactory = options.fileTransferSocketFactory;
-    this.#reconnectOptions = options.reconnect ?? {};
+    this.#reconnectOptions = options.reconnect;
 
     this.#crypt = new Crypt(identity);
     this.#handler = this.#newHandler();
@@ -764,7 +765,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     try {
       // Raced against the signal: a resolver that ignores it must still not
       // hold up an attempt that has been given up.
-      const resolved = await abortable(this.#resolver.resolve(this.#addr, signal), signal);
+      const resolved = await abortable(this.#resolver.resolve(this.#addr, { signal }), signal);
       return resolved[0]?.addr ?? fallback;
     } catch (error) {
       signal?.throwIfAborted();
@@ -1104,7 +1105,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
    */
   async #scheduleReconnect(err: Error): Promise<void> {
     const options = this.#reconnectOptions;
-    if (!options.enabled || this.#stopped || this.#reconnecting) return;
+    if (options === undefined || this.#stopped || this.#reconnecting) return;
 
     const policy = resolveBackoffPolicy(options);
     const shouldRetry = options.shouldRetry ?? defaultShouldRetry;

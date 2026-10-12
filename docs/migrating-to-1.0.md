@@ -221,6 +221,15 @@ const timing: CommandMiddleware = (next) => async (request, options) => {
 Raw lines sent with `exec` and `execNoWait`, and the handshake's own commands,
 do not pass through it.
 
+## Options
+
+Every field of `ClientOptions`, `ReconnectOptions` and `FileTransferOptions`
+is `readonly` and accepts `undefined`, so `serverPassword:
+process.env.TEAMSPEAK_SERVER_PASSWORD` compiles under
+`exactOptionalPropertyTypes`. A custom `AddrResolver.resolve(addr, { signal })`
+takes its signal in an options object, and returns `ResolvedAddr`s whose
+`source` and `expiry` are optional.
+
 ## Transports
 
 `socketFactory` returns a `DatagramSocket` — a `node:dgram` socket still is
@@ -232,6 +241,16 @@ await client.uploadFileData(host, info, Readable.from([data]), { signal });
 ```
 
 ## Reconnecting
+
+Supplying `reconnect` turns reconnecting on; `enabled` is gone:
+
+```ts
+// 0.x
+new Client(identity, addr, "Bot", { reconnect: { enabled: true } });
+
+// 1.0
+new Client(identity, addr, "Bot", { reconnect: {} });
+```
 
 `isPermanentFailure(err)` is `defaultShouldRetry(err)`, with the opposite
 meaning. `backoffDelay(policy, attempt)` takes no random source, and

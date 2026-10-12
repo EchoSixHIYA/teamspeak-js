@@ -311,7 +311,6 @@ An explicit `disconnect()` never reconnects, whatever the policy says.
 ```typescript
 const client = new Client(identity, "ts.example.com", "Bot", {
   reconnect: {
-    enabled: true,
     backoff: { initialDelayMs: 1_000, maxDelayMs: 60_000, factor: 2, jitter: 0.2 },
     // Optional: decide for yourself which failures are worth retrying.
     shouldRetry: (err, attempt) => attempt < 10,

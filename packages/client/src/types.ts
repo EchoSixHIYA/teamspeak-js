@@ -188,6 +188,9 @@ export type Unsubscribe = (() => void) & Disposable;
 /**
  * The part of a UDP socket the client uses. A `node:dgram` socket is one; so
  * is anything else with these methods, such as a tunnel or a test double.
+ *
+ * Should a later release use more of a socket, the new members will be
+ * optional here, so an implementation of this interface keeps compiling.
  */
 export interface DatagramSocket {
   /** Fix the peer, then call `callback`; failure is reported as an `error` event. */
@@ -238,14 +241,17 @@ export type EventMiddleware = (next: (event: ServerEvent) => void) => (event: Se
 
 // ---- Resolved address (from discovery) --------------------------------------
 
-/** An address a server's name resolved to. */
+/**
+ * An address a server's name resolved to. Only `addr` is needed to connect;
+ * the rest describes the answer.
+ */
 export interface ResolvedAddr {
   /** The endpoint, as `host:port`. */
-  addr: string;
-  /** How it was found: an SRV record, TSDNS, or the address as given. */
-  source: string;
-  /** When the answer stops being valid. */
-  expiry: Date;
+  readonly addr: string;
+  /** How it was found, such as `SRV`, `TSDNS-SRV`, `TSDNS-Direct` or `Direct`. */
+  readonly source?: string | undefined;
+  /** When the answer stops being valid; unset for no stated lifetime. */
+  readonly expiry?: Date | undefined;
 }
 
 // ---- AddrResolver interface -------------------------------------------------
@@ -256,8 +262,15 @@ export interface ResolvedAddr {
  * TSDNS, as the TeamSpeak application does.
  */
 export interface AddrResolver {
-  /** The endpoints for `addr`, best first. An empty answer falls back to `addr` itself. */
-  resolve(addr: string, signal?: AbortSignal): Promise<ResolvedAddr[]>;
+  /**
+   * The endpoints for `addr`, best first. An empty answer falls back to `addr`
+   * itself. `signal` aborts when the connection attempt is given up; a
+   * resolver that ignores it is abandoned all the same.
+   */
+  resolve(
+    addr: string,
+    options?: { readonly signal?: AbortSignal | undefined },
+  ): Promise<readonly ResolvedAddr[]>;
 }
 
 // ---- ClientOptions ----------------------------------------------------------
@@ -265,7 +278,7 @@ export interface AddrResolver {
 /** How a `Client` connects, logs and behaves; every field is optional. */
 export interface ClientOptions {
   /** Where the client logs. Silent unless set: a library has no business writing to the console. */
-  logger?: Logger;
+  readonly logger?: Logger | undefined;
   /**
    * Creates the UDP socket the client talks through, given the address family
    * the server's address resolved to.
@@ -274,14 +287,14 @@ export interface ClientOptions {
    * or drive the client from something other than a real socket. It is the only
    * seam into the transport: without it the SDK always creates its own.
    */
-  socketFactory?: SocketFactory;
+  readonly socketFactory?: SocketFactory | undefined;
   /**
    * Reconnect after a dropped connection.
    *
    * Off by default: a silent reconnect makes an outage look like an ordinary
    * session. An explicit `disconnect()` never reconnects regardless.
    */
-  reconnect?: ReconnectOptions;
+  readonly reconnect?: ReconnectOptions | undefined;
   /**
    * Creates the TCP socket a file transfer runs over.
    *
@@ -289,21 +302,21 @@ export interface ClientOptions {
    * connection to a different port, on demand. Set both to route everything
    * through a proxy.
    */
-  fileTransferSocketFactory?: FileTransferSocketFactory;
+  readonly fileTransferSocketFactory?: FileTransferSocketFactory | undefined;
   /** Replaces the SRV and TSDNS resolution `connect()` performs. */
-  resolver?: AddrResolver;
+  readonly resolver?: AddrResolver | undefined;
   /**
    * Wraps every typed command, outermost first; see `CommandMiddleware`. Raw
    * lines sent with `exec` and `execNoWait` do not pass through it. Fixed for
    * the client's life.
    */
-  commandMiddleware?: CommandMiddleware[];
+  readonly commandMiddleware?: readonly CommandMiddleware[] | undefined;
   /** Wraps the delivery of every server event, outermost first. Fixed for the client's life. */
-  eventMiddleware?: EventMiddleware[];
+  readonly eventMiddleware?: readonly EventMiddleware[] | undefined;
   /** Server password sent during the initial `clientinit` handshake. */
-  serverPassword?: string;
+  readonly serverPassword?: string | undefined;
   /** Default channel name to join during the initial `clientinit` handshake. */
-  defaultChannel?: string;
+  readonly defaultChannel?: string | undefined;
   /** Password for `defaultChannel`, sent during the initial `clientinit` handshake. */
-  defaultChannelPassword?: string;
+  readonly defaultChannelPassword?: string | undefined;
 }

@@ -212,7 +212,6 @@ describe("reconnecting", () => {
     const { client } = await connected({
       logger,
       reconnect: {
-        enabled: true,
         shouldRetry: () => {
           throw new Error("buggy policy");
         },

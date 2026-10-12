@@ -19,20 +19,20 @@ import { RemovedError } from "./errors.js";
 /** How long to wait before each attempt. */
 export interface BackoffPolicy {
   /** Delay before the first retry, in milliseconds. */
-  initialDelayMs: number;
+  readonly initialDelayMs: number;
   /** Ceiling for the delay; it never grows past this. */
-  maxDelayMs: number;
+  readonly maxDelayMs: number;
   /** Multiplier applied after each failed attempt. */
-  factor: number;
+  readonly factor: number;
   /**
    * Fraction of the delay to randomise, 0 to 1.
    *
    * A fleet of bots that drop together would otherwise retry in lockstep and
    * hit the server in a burst. Jitter spreads them out.
    */
-  jitter: number;
+  readonly jitter: number;
   /** Give up after this many consecutive failures. 0 means never give up. */
-  maxAttempts: number;
+  readonly maxAttempts: number;
 }
 
 /** One second, doubling, capped at a minute, with 20% jitter, never giving up. */
@@ -44,21 +44,20 @@ export const defaultBackoffPolicy: Readonly<BackoffPolicy> = Object.freeze({
   maxAttempts: 0,
 });
 
-/** Whether and how a client reconnects after its connection drops. */
+/**
+ * How a client reconnects after its connection drops. Supplying it, even as
+ * `{}`, turns reconnecting on; a deliberate `disconnect()` never reconnects.
+ */
 export interface ReconnectOptions {
-  /**
-   * Reconnect after a dropped connection. Off by default.
-   *
-   * A deliberate `disconnect()` never reconnects, whatever this is set to.
-   */
-  enabled?: boolean;
-  /** Tuning for the retry delays. */
-  backoff?: Partial<BackoffPolicy>;
+  /** Tuning for the retry delays; unset fields keep {@link defaultBackoffPolicy}'s. */
+  readonly backoff?:
+    | { readonly [K in keyof BackoffPolicy]?: BackoffPolicy[K] | undefined }
+    | undefined;
   /**
    * Decide whether a given failure is worth retrying. Returning false stops the
    * loop. Defaults to {@link defaultShouldRetry}.
    */
-  shouldRetry?: (error: Error | undefined, attempt: number) => boolean;
+  readonly shouldRetry?: ((error: Error | undefined, attempt: number) => boolean) | undefined;
 }
 
 /**
@@ -118,7 +117,7 @@ const PERMANENT_SERVER_ERRORS: ReadonlySet<number> = new Set([
  * reason given on PERMANENT_SERVER_ERRORS, and a server that stopped. A kick or
  * a ban is not: someone removed the client on purpose.
  */
-export function defaultShouldRetry(error: Error | undefined, _attempt?: number): boolean {
+export function defaultShouldRetry(error: Error | undefined): boolean {
   if (error instanceof RemovedError) {
     return error.reason !== Reason.KickServer && error.reason !== Reason.KickServerBan;
   }
@@ -126,5 +125,10 @@ export function defaultShouldRetry(error: Error | undefined, _attempt?: number):
 }
 
 export function resolveBackoffPolicy(options: ReconnectOptions): BackoffPolicy {
-  return { ...defaultBackoffPolicy, ...options.backoff };
+  const policy: Record<string, number> = { ...defaultBackoffPolicy };
+  // An explicit undefined keeps the default, as an unset field does.
+  for (const [key, value] of Object.entries(options.backoff ?? {})) {
+    if (value !== undefined) policy[key] = value;
+  }
+  return policy as unknown as BackoffPolicy;
 }
