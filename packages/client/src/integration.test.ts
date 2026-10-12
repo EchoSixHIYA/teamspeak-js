@@ -76,6 +76,8 @@ beforeAll(async () => {
   });
 
   await client.connect({ signal: AbortSignal.timeout(30_000) });
+  // The channel is known once the server has shown us entering it.
+  await selfClientEnter;
 
   sharedClient = client;
 }, 40_000);
@@ -420,6 +422,28 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     } finally {
       await deleteFile(sharedClient, cid, [path]);
     }
+  }, 30_000);
+
+  // Several names go as rows of one command (name=/a|name=/b); a single
+  // name parameter holding "/a|/b" is one path that does not exist.
+  it("deleteFile — deletes several files in one command", async () => {
+    const cid = sharedClient.channelID;
+    const stamp = Date.now().toString(36);
+    const paths = [`/ts-js-a-${stamp}.bin`, `/ts-js-b-${stamp}.bin`];
+    const host = ADDR!.slice(0, ADDR!.lastIndexOf(":"));
+    for (const path of paths) {
+      const upload = await initFileUpload(sharedClient, cid, path, 1n);
+      await sharedClient.uploadFileData(host, upload, Readable.from([Buffer.from("x")]));
+    }
+    const names = async (): Promise<string[]> =>
+      (await listFiles(sharedClient, cid, "/")).map((f) => `/${f.name}`);
+    expect(await names()).toEqual(expect.arrayContaining(paths));
+
+    await deleteFile(sharedClient, cid, paths);
+
+    const left = await names();
+    expect(left).not.toContain(paths[0]);
+    expect(left).not.toContain(paths[1]);
   }, 30_000);
 
   it("getClientInfo — returns our own nickname", async () => {

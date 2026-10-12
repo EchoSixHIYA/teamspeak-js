@@ -105,14 +105,16 @@ describe("password handling", () => {
     );
   });
 
-  it("sends a multi-file delete as one pipe-separated parameter", async () => {
+  it("sends a multi-file delete as one row per name", async () => {
     const { client, execCommand } = fakeClient();
-    await deleteFile(client, asChannelID(1), ["/a", "/b"]);
+    await deleteFile(client, asChannelID(1), ["/a", "/b c"]);
 
-    // The separator is escaped as \p, not left as a literal pipe: an unescaped
-    // pipe would split this into a second parameter and the server would see a
-    // parameter named "/b".
-    expect(execCommand).toHaveBeenCalledWith("ftdeletefile cid=1 name=\\/a\\p\\/b cpw=", 10_000);
+    // One name parameter holding "/a|/b" (escaped as \p) is a single path,
+    // which the server refuses; the names are rows of the command.
+    expect(execCommand).toHaveBeenCalledWith(
+      "ftdeletefile cid=1 cpw= name=\\/a|name=\\/b\\sc",
+      10_000,
+    );
   });
 });
 

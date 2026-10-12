@@ -164,7 +164,7 @@ async function* pages<T>(
   }
 }
 
-export { exec, query, list, pages };
+export { exec, query, list, pages, commandOptions };
 export type { ParamValue };
 
 // ---- Field tables -----------------------------------------------------------

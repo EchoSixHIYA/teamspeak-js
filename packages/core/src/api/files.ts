@@ -12,6 +12,7 @@
  */
 
 import {
+  commandOptions,
   exec,
   query,
   list,
@@ -111,10 +112,8 @@ export async function getFileInfo(
 }
 
 /**
- * Delete one or more files.
- *
- * The names travel as a `|`-separated list in a single parameter, which is why
- * this takes an array rather than being called once per file.
+ * Delete one or more files, in one command: each name is a row of it
+ * (`name=/a|name=/b`).
  */
 export async function deleteFile(
   client: CommandExecutor,
@@ -125,16 +124,17 @@ export async function deleteFile(
   const names = (typeof paths === "string" ? [paths] : paths).map(asPath);
   if (names.length === 0) return;
 
-  await exec(
-    client,
-    "ftdeletefile",
-    [
-      ["cid", cid],
-      ["name", names.join("|")],
-      ["cpw", options.password ?? ""],
-    ],
-    options,
-    ["cpw"],
+  await client.send(
+    {
+      command: "ftdeletefile",
+      params: [
+        ["cid", cid],
+        ["cpw", options.password ?? ""],
+      ],
+      rows: names.map((name) => [["name", name]]),
+      passwords: ["cpw"],
+    },
+    commandOptions(options),
   );
 }
 

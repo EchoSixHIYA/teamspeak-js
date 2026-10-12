@@ -23,6 +23,12 @@ export interface CommandRequest {
    * an undefined value is omitted.
    */
   readonly params?: ReadonlyArray<readonly [string, ParamValue]>;
+  /**
+   * Further rows, for a command that takes a list: each is a group of
+   * parameters sent after a `|`, as `ftdeletefile cid=1 cpw= name=/a|name=/b`
+   * sends two names. The first row's parameters follow `params`.
+   */
+  readonly rows?: ReadonlyArray<ReadonlyArray<readonly [string, ParamValue]>>;
   /** Names of the parameters that carry a channel password. */
   readonly passwords?: readonly string[];
 }
@@ -67,8 +73,24 @@ export function encodeRequest(
   encodePassword: (password: string) => string,
 ): string {
   const passwords = request.passwords ?? [];
+  const encode = (params: ReadonlyArray<readonly [string, ParamValue]>) =>
+    encodeParams(params, passwords, encodePassword);
+  const [first = [], ...rest] = request.rows ?? [];
+  const line = buildCommandOrdered(request.command, [
+    ...encode(request.params ?? []),
+    ...encode(first),
+  ]);
+  // A row is the parameters alone, with no command name before them.
+  return [line, ...rest.map((row) => buildCommandOrdered("", encode(row)).slice(1))].join("|");
+}
+
+function encodeParams(
+  params: ReadonlyArray<readonly [string, ParamValue]>,
+  passwords: readonly string[],
+  encodePassword: (password: string) => string,
+): Array<readonly [string, string]> {
   const out: Array<readonly [string, string]> = [];
-  for (const [key, value] of request.params ?? []) {
+  for (const [key, value] of params) {
     // Flags (`-uid`) are switches: present when true, absent otherwise.
     if (key.startsWith("-")) {
       if (value === true) out.push([key, ""]);
@@ -81,5 +103,5 @@ export function encodeRequest(
     const encoded = encodeValue(value);
     if (encoded !== undefined) out.push([key, encoded]);
   }
-  return buildCommandOrdered(request.command, out);
+  return out;
 }
