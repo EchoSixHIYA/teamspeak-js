@@ -1,7 +1,10 @@
 import { ErrorCode } from "./errorcode.js";
 import { asPermissionID, type PermissionID } from "./command/ids.js";
 
-/** Marks the SDK's errors, whichever copy of the package made them. */
+/**
+ * Where an SDK error keeps the kinds it is: its own class's and those of the
+ * classes it extends, whichever copy of the package made it.
+ */
 const BRAND = Symbol.for("@honeybbq/teamspeak.error");
 
 /**
@@ -10,36 +13,42 @@ const BRAND = Symbol.for("@honeybbq/teamspeak.error");
  *
  * `instanceof` works across copies of the package: an application can end up
  * with two installed (two versions, or one bundled), and an error from one is
- * still an instance of the other's classes, matched by class name.
+ * still an instance of the other's classes. Each class names itself in a fixed
+ * {@link TeamspeakError.kind} that a minifier leaves alone, where a class's
+ * own name would not survive one.
  */
 export class TeamspeakError extends Error {
+  /**
+   * The fixed name `instanceof` matches this class by across copies of the
+   * package. Every SDK error class declares its own.
+   */
+  static readonly kind: string = "TeamspeakError";
+
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = "TeamspeakError";
+    const kinds: string[] = [];
+    for (let c: unknown = new.target; typeof c === "function"; c = Object.getPrototypeOf(c)) {
+      if (Object.hasOwn(c, "kind")) kinds.push((c as unknown as { kind: string }).kind);
+      if (c === TeamspeakError) break;
+    }
+    Object.defineProperty(this, BRAND, { value: Object.freeze(kinds) });
   }
 
   /**
    * Whether `value` is an error of this class from any copy of the package:
-   * one carrying the SDK's brand whose class, or a class it extends, has this
-   * one's name.
+   * one whose kinds, its own class's and those it extends, include this
+   * class's {@link TeamspeakError.kind}. A subclass that declares no kind of
+   * its own matches only its own instances.
    */
   static [Symbol.hasInstance](value: unknown): boolean {
     if (Function.prototype[Symbol.hasInstance].call(this, value)) return true;
-    if (typeof value !== "object" || value === null || !(BRAND in value)) return false;
-    for (let p = Object.getPrototypeOf(value); p !== null; p = Object.getPrototypeOf(p)) {
-      if (
-        Object.hasOwn(p, "constructor") &&
-        (p as { constructor: Function }).constructor.name === this.name
-      ) {
-        return true;
-      }
-    }
-    return false;
+    if (!Object.hasOwn(this, "kind")) return false;
+    if (typeof value !== "object" || value === null) return false;
+    const kinds: unknown = (value as { [BRAND]?: unknown })[BRAND];
+    return Array.isArray(kinds) && kinds.includes((this as typeof TeamspeakError).kind);
   }
 }
-
-// On the prototype, so every instance and every subclass carries it.
-Object.defineProperty(TeamspeakError.prototype, BRAND, { value: true });
 
 /**
  * A refusal from the server: the `error` line that answered a command carried a
@@ -48,6 +57,9 @@ Object.defineProperty(TeamspeakError.prototype, BRAND, { value: true });
  * Compare {@link ServerError.code} with {@link ErrorCode} to tell refusals apart.
  */
 export class ServerError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "ServerError";
+
   /** The server's error code. A server may report one {@link ErrorCode} does not name. */
   readonly code: number;
   /** The server's own text, such as "invalid channel password". */
@@ -80,6 +92,9 @@ export class ServerError extends TeamspeakError {
  * have taken effect on the server.
  */
 export class CommandTimeoutError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "CommandTimeoutError";
+
   /** The name of the command that timed out; never its parameters. */
   readonly command: string;
 
@@ -98,6 +113,9 @@ export class CommandTimeoutError extends TeamspeakError {
  * server were slow.
  */
 export class NotConnectedError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "NotConnectedError";
+
   constructor(options?: ErrorOptions) {
     super("not connected", options);
     this.name = "NotConnectedError";

@@ -158,7 +158,10 @@ if (err instanceof ServerError && err.code === ErrorCode.PermissionsClientInsuff
 password is no longer retried by the reconnect loop.
 
 Every error the SDK throws is a `TeamspeakError`, and `instanceof` works even
-when two copies of the package are installed. A handshake that fails on what
+when two copies of the package are installed, minified or not: each class
+names itself in a fixed static `kind`, which instances carry. A subclass of
+your own that declares no `kind` matches only its own instances across
+copies. A handshake that fails on what
 the server sent rejects with a `CryptoInitError`; `parseIdentity` throws only
 an `InvalidIdentityError`. `EAXTagMismatchError` and
 `FakeSignatureMismatchError` are no longer exported: a packet that fails them

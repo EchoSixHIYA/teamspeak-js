@@ -30,7 +30,7 @@ describe("parseServerError", () => {
 });
 
 describe("instanceof across copies of the package", () => {
-  it("matches by class name, up the chain, and only with the brand", async () => {
+  it("matches by kind, up the chain, and only with the brand", async () => {
     const core = await import("./errors.js");
     // A second installed copy: the same module, loaded again.
     vi.resetModules();

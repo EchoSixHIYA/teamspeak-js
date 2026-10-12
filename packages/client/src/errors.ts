@@ -2,6 +2,9 @@ import { Reason, TeamspeakError } from "@honeybbq/teamspeak-core";
 
 /** `connect()` was called on a client that is connecting or connected. */
 export class AlreadyConnectedError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "AlreadyConnectedError";
+
   constructor() {
     super("already connecting or connected");
     this.name = "AlreadyConnectedError";
@@ -13,6 +16,9 @@ export class AlreadyConnectedError extends TeamspeakError {
  * Internal: the packet is dropped, and this never reaches a caller.
  */
 export class EAXTagMismatchError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "EAXTagMismatchError";
+
   constructor() {
     super("EAX tag mismatch");
     this.name = "EAXTagMismatchError";
@@ -24,6 +30,9 @@ export class EAXTagMismatchError extends TeamspeakError {
  * dropped, and this never reaches a caller.
  */
 export class FakeSignatureMismatchError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "FakeSignatureMismatchError";
+
   constructor() {
     super("fake signature mismatch");
     this.name = "FakeSignatureMismatchError";
@@ -32,6 +41,9 @@ export class FakeSignatureMismatchError extends TeamspeakError {
 
 /** A file transfer connection failed: it could not be opened, or broke during the transfer. */
 export class FileTransferError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "FileTransferError";
+
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = "FileTransferError";
@@ -44,6 +56,9 @@ export class FileTransferError extends TeamspeakError {
  * underlying failure as its `cause`.
  */
 export class CryptoInitError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "CryptoInitError";
+
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = "CryptoInitError";
@@ -52,6 +67,9 @@ export class CryptoInitError extends TeamspeakError {
 
 /** An identity string `parseIdentity()` cannot read. */
 export class InvalidIdentityError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "InvalidIdentityError";
+
   constructor(message = "invalid identity format", options?: ErrorOptions) {
     super(message, options);
     this.name = "InvalidIdentityError";
@@ -63,6 +81,9 @@ export class InvalidIdentityError extends TeamspeakError {
  * unacknowledged, for a minute.
  */
 export class TimedOutError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "TimedOutError";
+
   constructor() {
     super("connection timed out: the server stopped answering");
     this.name = "TimedOutError";
@@ -75,6 +96,9 @@ export class TimedOutError extends TeamspeakError {
  * not a kick or a ban.
  */
 export class RemovedError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "RemovedError";
+
   /** Why: `Reason.KickServer`, `KickServerBan`, `ServerStop` or `ServerShutdown`. */
   readonly reason: number;
   /** The reason the server or the invoker gave, if any. */
