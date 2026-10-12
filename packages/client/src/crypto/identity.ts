@@ -12,6 +12,14 @@ const P256_SCALAR_SIZE = 32;
 const P256_UNCOMPRESSED_KEY_SIZE = 65;
 const P256_POINT_PREFIX = 0x04;
 
+/**
+ * A TeamSpeak client identity: a P-256 key pair plus a counter, the offset,
+ * whose hash with the public key sets the identity's security level.
+ *
+ * `toString()`, `toJSON()` and `util.inspect()` never reveal the private key,
+ * so an identity that reaches a log or an error message does not leak;
+ * `export()` is the one way to get the secret form, for storing it.
+ */
 export class Identity {
   readonly privateKey: KeyObject;
   offset: bigint;
@@ -40,7 +48,11 @@ export class Identity {
     return encodeTsPublicKey(xBytes, yBytes);
   }
 
-  toString(): string {
+  /**
+   * The identity in the form `parseIdentity()` reads, private key included.
+   * Store it as you would a password.
+   */
+  export(): string {
     const jwk = this.privateKey.export({ format: "jwk" }) as { d?: string };
     if (!jwk.d) {
       return `:${this.offset}`;
@@ -50,6 +62,22 @@ export class Identity {
     return `${Buffer.from(dBytes).toString("base64")}:${this.offset}`;
   }
 
+  /**
+   * Describes the identity without its private key. It used to return the key
+   * itself, so interpolating an identity into a log line leaked it.
+   */
+  toString(): string {
+    return `identity ${getUidFromPublicKey(this.publicKeyBase64())} (private key redacted)`;
+  }
+
+  toJSON(): string {
+    return this.toString();
+  }
+
+  [Symbol.for("nodejs.util.inspect.custom")](): string {
+    return `Identity <${this.toString()}>`;
+  }
+
   securityLevel(): number {
     const h = createHash("sha1");
     h.update(this.publicKeyBase64());
@@ -57,10 +85,19 @@ export class Identity {
     return countLeadingZeros(h.digest());
   }
 
-  async upgradeToLevel(targetLevel: number, signal?: AbortSignal): Promise<void> {
+  /**
+   * Advance the offset until the security level reaches `targetLevel`. Each
+   * level doubles the expected work, so a high level can take a long time;
+   * `signal` bounds it, and the event loop keeps running meanwhile.
+   */
+  async upgradeToLevel(
+    targetLevel: number,
+    options: { readonly signal?: AbortSignal | undefined } = {},
+  ): Promise<void> {
+    const { signal } = options;
     const prefix = this.publicKeyBase64();
     while (true) {
-      if (signal?.aborted) throw signal.reason as Error;
+      signal?.throwIfAborted();
       const h = createHash("sha1");
       h.update(prefix);
       h.update(this.offset.toString(10));
@@ -74,7 +111,8 @@ export class Identity {
   }
 }
 
-export function identityFromString(s: string): Identity {
+/** Read an identity from the form `Identity.export()` writes. */
+export function parseIdentity(s: string): Identity {
   const colonIdx = s.lastIndexOf(":");
   if (colonIdx < 0) throw new InvalidIdentityError();
 
@@ -107,12 +145,27 @@ export function identityFromString(s: string): Identity {
   return new Identity(privateKey, offset);
 }
 
-export function generateIdentity(targetLevel: number): Identity {
-  const { privateKey } = generateKeyPairSync("ec", {
-    namedCurve: "prime256v1",
-  });
-  const id = new Identity(privateKey, 0n);
+/**
+ * Create an identity at the given security level. Each level doubles the
+ * expected work; `signal` bounds it, and the event loop keeps running
+ * meanwhile.
+ */
+export async function generateIdentity(
+  targetLevel: number,
+  options: { readonly signal?: AbortSignal | undefined } = {},
+): Promise<Identity> {
+  const id = new Identity(generateKey(), 0n);
+  await id.upgradeToLevel(targetLevel, options);
+  return id;
+}
 
+/**
+ * Create an identity at the given security level, blocking until done. Fine
+ * for a low level; a high one can block the event loop for minutes, so prefer
+ * `generateIdentity()` there.
+ */
+export function generateIdentitySync(targetLevel: number): Identity {
+  const id = new Identity(generateKey(), 0n);
   const prefix = id.publicKeyBase64();
   while (true) {
     const h = createHash("sha1");
@@ -121,6 +174,10 @@ export function generateIdentity(targetLevel: number): Identity {
     if (countLeadingZeros(h.digest()) >= targetLevel) return id;
     id.offset++;
   }
+}
+
+function generateKey(): KeyObject {
+  return generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey;
 }
 
 /**

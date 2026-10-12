@@ -4,7 +4,7 @@ import { isIP } from "node:net";
 import type { Socket as UdpSocket } from "node:dgram";
 import { PacketHandler } from "./handler.js";
 import { Crypt } from "../crypto/crypt.js";
-import { generateIdentity } from "../crypto/identity.js";
+import { generateIdentitySync } from "../crypto/identity.js";
 
 /**
  * A socket stand-in that records the family it was created for and accepts any
@@ -39,7 +39,7 @@ describe("PacketHandler.connect", () => {
     expect(isIP("localhost")).toBe(0);
 
     const seen: Array<4 | 6> = [];
-    const handler = new PacketHandler(new Crypt(generateIdentity(1)), undefined, (family) => {
+    const handler = new PacketHandler(new Crypt(generateIdentitySync(1)), undefined, (family) => {
       seen.push(family);
       return recordingSocket(family).socket;
     });
@@ -56,7 +56,7 @@ describe("PacketHandler.connect", () => {
 
   it("connects to the resolved address, not the original hostname", async () => {
     const sockets: Array<{ connects: Array<[number, string]> }> = [];
-    const handler = new PacketHandler(new Crypt(generateIdentity(1)), undefined, (family) => {
+    const handler = new PacketHandler(new Crypt(generateIdentitySync(1)), undefined, (family) => {
       const rec = recordingSocket(family);
       sockets.push(rec);
       return rec.socket;
@@ -77,7 +77,7 @@ describe("PacketHandler.connect", () => {
 
   it("keeps the requested port for an IPv6 literal in brackets", async () => {
     const sockets: Array<{ connects: Array<[number, string]> }> = [];
-    const handler = new PacketHandler(new Crypt(generateIdentity(1)), undefined, (family) => {
+    const handler = new PacketHandler(new Crypt(generateIdentitySync(1)), undefined, (family) => {
       const rec = recordingSocket(family);
       sockets.push(rec);
       return rec.socket;

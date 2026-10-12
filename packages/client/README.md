@@ -47,7 +47,7 @@ Requires **Node.js 20.19** or later.
 import { Client, generateIdentity } from "@honeybbq/teamspeak-client";
 
 // Generate a new identity (or load an existing one)
-const identity = generateIdentity(8);
+const identity = await generateIdentity(8);
 
 // Create the client
 const client = new Client(identity, "localhost", "TSBot", {
@@ -194,19 +194,19 @@ await client.uploadFileData(host, info, Readable.from([data]));
 ### Identity
 
 ```typescript
-import { generateIdentity, identityFromString } from "@honeybbq/teamspeak-client";
+import { generateIdentity, parseIdentity } from "@honeybbq/teamspeak-client";
 
 // Generate a new identity with security level 8
-const identity = generateIdentity(8);
+const identity = await generateIdentity(8);
 
 // Export to string for persistent storage
-const exported = identity.exportString();
+const exported = identity.export();
 
 // Import from a previously exported string
-const restored = identityFromString(exported);
+const restored = parseIdentity(exported);
 
 // Upgrade security level (CPU-intensive)
-identity.upgradeToLevel(10);
+await identity.upgradeToLevel(10);
 ```
 
 ### Options

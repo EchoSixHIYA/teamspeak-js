@@ -1,7 +1,8 @@
 export {
   Identity,
-  identityFromString,
+  parseIdentity,
   generateIdentity,
+  generateIdentitySync,
   getUidFromPublicKey,
   uidAlgorithmForVersion,
   hash512,

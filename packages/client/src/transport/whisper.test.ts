@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import type { Socket as UdpSocket } from "node:dgram";
 import { PacketHandler } from "./handler.js";
 import { Crypt } from "../crypto/crypt.js";
-import { generateIdentity } from "../crypto/identity.js";
+import { generateIdentitySync } from "../crypto/identity.js";
 import { type Packet, PacketType, PacketFlags, packetType, packetFlags } from "./packet.js";
 
 const TAG_SIZE = 8;
@@ -22,7 +22,7 @@ function fakeSocket(): { socket: UdpSocket; sent: Uint8Array[] } {
 
 function newHandler(): { handler: PacketHandler; sent: Uint8Array[] } {
   const { socket, sent } = fakeSocket();
-  const handler = new PacketHandler(new Crypt(generateIdentity(1)));
+  const handler = new PacketHandler(new Crypt(generateIdentitySync(1)));
   handler.start(socket);
   handler.setClientID(0x1234);
   sent.length = 0; // discard the init1 packet start() emits

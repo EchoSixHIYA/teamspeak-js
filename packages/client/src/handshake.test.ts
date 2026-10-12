@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
 import { Client } from "./client.js";
-import { generateIdentity } from "./crypto/identity.js";
+import { generateIdentitySync } from "./crypto/identity.js";
 import { sendClientInit } from "./handshake.js";
 import { parseCommand } from "@honeybbq/teamspeak-core";
 import { PacketType } from "./transport/packet.js";
@@ -13,7 +13,7 @@ function prepareClientPassword(password: string): string {
 }
 
 function captureClientInit(options: ClientOptions = {}) {
-  const client = new Client(generateIdentity(0), "localhost", "TS Bot", options);
+  const client = new Client(generateIdentitySync(0), "localhost", "TS Bot", options);
   let packetType: PacketType | undefined;
   let packetData: Uint8Array | undefined;
   let packetFlags: number | undefined;

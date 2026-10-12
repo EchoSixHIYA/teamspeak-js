@@ -9,13 +9,13 @@
  *   docker run -d --name ts3 -e TS3SERVER_LICENSE=accept -p 9987:9987/udp teamspeak:latest
  */
 
-import { Client, generateIdentity, listChannels, listClients } from "../src/index.js";
+import { Client, generateIdentitySync, listChannels, listClients } from "../src/index.js";
 
 const ADDR = process.env["TEAMSPEAK_ADDR"] ?? "127.0.0.1:9987";
 
 async function main(): Promise<void> {
   console.log(`[example] generating identity (level 8)…`);
-  const identity = generateIdentity(8);
+  const identity = generateIdentitySync(8);
   console.log(`[example] identity UID: ${identity.publicKeyBase64().slice(0, 24)}…`);
 
   const client = new Client(identity, ADDR, "ts-js-example", {

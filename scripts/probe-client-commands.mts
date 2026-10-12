@@ -17,14 +17,19 @@
  * This only tells whether a command is accepted. How its data comes back is
  * scripts/probe-response-shapes.mts.
  */
-import { generateIdentity } from "../packages/client/src/crypto/identity.js";
+import { generateIdentitySync } from "../packages/client/src/crypto/identity.js";
 import { Client } from "../packages/client/src/client.js";
 
 const quiet = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
-const c = new Client(generateIdentity(8), process.env["ADDR"] ?? "127.0.0.1:9987", "js-cmdprobe", {
-  defaultChannel: process.env["CHANNEL"] ?? "Alpha",
-  logger: quiet,
-});
+const c = new Client(
+  generateIdentitySync(8),
+  process.env["ADDR"] ?? "127.0.0.1:9987",
+  "js-cmdprobe",
+  {
+    defaultChannel: process.env["CHANNEL"] ?? "Alpha",
+    logger: quiet,
+  },
+);
 await c.connect();
 await c.waitConnected(AbortSignal.timeout(10_000));
 
@@ -175,7 +180,7 @@ for (let i = 0; i < candidates.length; i++) {
   if (i > 0 && i % 25 === 0) {
     await client.disconnect().catch(() => {});
     client = new Client(
-      generateIdentity(8),
+      generateIdentitySync(8),
       process.env["ADDR"] ?? "127.0.0.1:9987",
       `js-cmdprobe-${i}`,
       {

@@ -27,7 +27,7 @@ import { Client } from "../packages/client/src/client.js";
 import { asChannelID } from "../packages/core/src/command/ids.js";
 import { escape } from "../packages/core/src/command/command.js";
 import { parseCommand } from "../packages/core/src/command/parser.js";
-import { generateIdentity } from "../packages/client/src/crypto/identity.js";
+import { generateIdentitySync } from "../packages/client/src/crypto/identity.js";
 import { packetType, PacketType } from "../packages/client/src/transport/packet.js";
 
 const addr = process.env["ADDR"] ?? "127.0.0.1:9987";
@@ -44,7 +44,7 @@ interface Arrival {
 const timeline: Arrival[] = [];
 
 async function connect(nickname: string): Promise<Client> {
-  const client = new Client(generateIdentity(8), addr, nickname, {
+  const client = new Client(generateIdentitySync(8), addr, nickname, {
     defaultChannel: process.env["CHANNEL"] ?? "Alpha",
     logger: quiet,
   });

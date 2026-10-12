@@ -12,7 +12,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createSocket } from "node:dgram";
-import { generateIdentity } from "./crypto/identity.js";
+import { generateIdentitySync } from "./crypto/identity.js";
 import { Client, ClientStatus } from "./client.js";
 import { Readable, Writable } from "node:stream";
 import { listChannels, getChannelInfo, createChannel } from "@honeybbq/teamspeak-core";
@@ -50,7 +50,7 @@ let selfClientEnter: Promise<ClientInfo>;
 beforeAll(async () => {
   if (SKIP) return;
 
-  const identity = generateIdentity(8);
+  const identity = generateIdentitySync(8);
   const client = new Client(identity, ADDR!, "ts-js-integ", {
     serverPassword: SERVER_PASSWORD,
     defaultChannel: DEFAULT_CHANNEL,
@@ -86,7 +86,7 @@ afterAll(async () => {
 const peers = new Map<string, Client>();
 
 async function connectPeer(nickname: string, setup?: (client: Client) => void): Promise<Client> {
-  const peer = new Client(generateIdentity(8), ADDR!, nickname, {
+  const peer = new Client(generateIdentitySync(8), ADDR!, nickname, {
     serverPassword: SERVER_PASSWORD,
     defaultChannel: DEFAULT_CHANNEL,
     defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
@@ -115,7 +115,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // later tests are banned with id=3329.
     if (!SERVER_HAS_PASSWORD) return;
 
-    const rejected = new Client(generateIdentity(8), ADDR!, "ts-js-bad-password", {
+    const rejected = new Client(generateIdentitySync(8), ADDR!, "ts-js-bad-password", {
       serverPassword: "definitely-not-the-password",
     });
     const disconnected = new Promise<Error | undefined>((resolve) =>
@@ -199,7 +199,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // unprompted. Asking for channellist before that sequence ends used to fold
     // the server's own rows into the response: duplicate cids plus a phantom
     // cid=0, every time, while the same call a second later was correct.
-    const identity = generateIdentity(8);
+    const identity = generateIdentitySync(8);
     const fresh = new Client(identity, ADDR!, "ts-js-welcome", {});
     await fresh.connect({ signal: AbortSignal.timeout(30_000) });
 
@@ -399,7 +399,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // already connected" until it reaps the zombie, so the loop has to keep
     // trying rather than give up on the first refusal.
     let socket: import("node:dgram").Socket | undefined;
-    const recovering = new Client(generateIdentity(8), ADDR!, "ts-js-reconnect", {
+    const recovering = new Client(generateIdentitySync(8), ADDR!, "ts-js-reconnect", {
       defaultChannel: DEFAULT_CHANNEL,
       reconnect: { enabled: true, backoff: { initialDelayMs: 500, maxDelayMs: 4_000 } },
       socketFactory: (family) => {
@@ -441,7 +441,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   it("does not reconnect after an explicit disconnect", async () => {
     // A deliberate disconnect means the caller is done. Retrying would keep a
     // process alive that asked to stop.
-    const client = new Client(generateIdentity(8), ADDR!, "ts-js-noreconnect", {
+    const client = new Client(generateIdentitySync(8), ADDR!, "ts-js-noreconnect", {
       defaultChannel: DEFAULT_CHANNEL,
       reconnect: { enabled: true, backoff: { initialDelayMs: 200 } },
     });

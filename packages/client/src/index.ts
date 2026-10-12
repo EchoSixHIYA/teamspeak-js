@@ -60,7 +60,8 @@ export type { ReconnectOptions, BackoffPolicy } from "./reconnect.js";
 // Identity
 export {
   Identity,
-  identityFromString,
+  parseIdentity,
   generateIdentity,
+  generateIdentitySync,
   getUidFromPublicKey,
 } from "./crypto/index.js";

@@ -7,7 +7,7 @@ import {
   Reason,
   RemovedError,
   defaultShouldRetry,
-  generateIdentity,
+  generateIdentitySync,
   type ClientOptions,
   type KickedEvent,
 } from "./index.js";
@@ -26,7 +26,7 @@ function commandPacket(text: string): Packet {
 
 /** A client already past the handshake, as initserver would have left it. */
 function connectedClient(nickname: string, clid: number): Client {
-  const client = new Client(generateIdentity(0), "127.0.0.1:9987", nickname);
+  const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", nickname);
   client.clid = clid;
   client.handler.setClientID(clid);
   return client;
@@ -58,7 +58,7 @@ describe("Client self identification on notifycliententerview", () => {
   });
 
   it("still learns its clid from the welcome enter when initserver carried no aclid", () => {
-    const client = new Client(generateIdentity(0), "127.0.0.1:9987", "Bot");
+    const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "Bot");
 
     client.handler.onPacket?.(
       commandPacket("notifycliententerview clid=7 ctid=1 client_nickname=Bot"),
@@ -72,7 +72,7 @@ describe("Client self identification on notifycliententerview", () => {
     // While initserver has given us no clid, a nickname match is the only
     // signal available, so the first one wins. The clid is then known, which
     // is what stops any later lookalike from taking over.
-    const client = new Client(generateIdentity(0), "127.0.0.1:9987", "Bot");
+    const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "Bot");
 
     client.handler.onPacket?.(
       commandPacket("notifycliententerview clid=9 ctid=1 client_nickname=Bot3"),
@@ -100,7 +100,7 @@ async function silentServerClient(options: ClientOptions = {}): Promise<Client> 
   silentSockets.push(silent);
   await new Promise<void>((resolve) => silent.bind(0, "127.0.0.1", resolve));
   const addr = `127.0.0.1:${silent.address().port}`;
-  return new Client(generateIdentity(0), "silent.example", "Bot", {
+  return new Client(generateIdentitySync(0), "silent.example", "Bot", {
     resolver: { resolve: async () => [{ addr, source: "test", expiry: new Date() }] },
     ...options,
   });
@@ -232,7 +232,7 @@ describe("events", () => {
   // The middleware used to guess which event it had by the payload's shape.
   it("names the event for middleware, which can drop it", async () => {
     const names: string[] = [];
-    const client = new Client(generateIdentity(0), "127.0.0.1:9987", "Bot", {
+    const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "Bot", {
       eventMiddleware: [
         (next) => (event) => {
           names.push(event.name);
