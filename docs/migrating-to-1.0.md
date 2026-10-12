@@ -152,7 +152,10 @@ Privilege keys have one set of functions: `listPrivilegeKeys`,
 
 About a hundred more commands are new: channels, groups, permissions, bans,
 files, tokens and the server. An id comes from a result, an event, or a
-constructor: `asChannelID(5)`, `asClientID(3)`.
+constructor: `asChannelID(5)`, `asClientID(3)`. A constructor throws a
+`RangeError` for anything but an integer in the id's wire range — 0–65535 for a
+`ClientID` and the file transfer ids, 0–2^32−1 for a `PermissionID`, 0–2^64−1
+for the `bigint` ids.
 
 Many queries were answered with nothing in 0.x, because the server sends their
 data in a notification. They now return the data.

@@ -13,6 +13,8 @@
  */
 
 import {
+  uint,
+  U16,
   firstRow,
   commandOptions,
   exec,
@@ -265,13 +267,13 @@ export async function listActiveTransfers(
 ): Promise<ActiveTransfer[]> {
   const rows = await list(client, "ftlist", [], options);
   return rows.map((row) => ({
-    clientID: asClientID(num(row, "clid")),
+    clientID: asClientID(uint(row, "clid", U16)),
     path: str(row, "path"),
     name: str(row, "name"),
     size: big(row, "size"),
     sizeDone: big(row, "sizedone"),
-    clientFileTransferID: asClientFileTransferID(num(row, "clientftfid")),
-    serverFileTransferID: asServerFileTransferID(num(row, "serverftfid")),
+    clientFileTransferID: asClientFileTransferID(uint(row, "clientftfid", U16)),
+    serverFileTransferID: asServerFileTransferID(uint(row, "serverftfid", U16)),
     sender: str(row, "sender"),
     status: num(row, "status"),
     currentSpeed: num(row, "current_speed"),
@@ -344,8 +346,8 @@ export async function initFileUpload(
     fileTransferKey: str(row, "ftkey"),
     port: num(row, "port"),
     seekPosition: big(row, "seekpos"),
-    clientFileTransferID: asClientFileTransferID(num(row, "clientftfid")),
-    serverFileTransferID: asServerFileTransferID(num(row, "serverftfid")),
+    clientFileTransferID: asClientFileTransferID(uint(row, "clientftfid", U16)),
+    serverFileTransferID: asServerFileTransferID(uint(row, "serverftfid", U16)),
   };
 }
 
@@ -388,7 +390,7 @@ export async function initFileDownload(
     fileTransferKey: str(row, "ftkey"),
     port: num(row, "port"),
     size: big(row, "size"),
-    clientFileTransferID: asClientFileTransferID(num(row, "clientftfid")),
-    serverFileTransferID: asServerFileTransferID(num(row, "serverftfid")),
+    clientFileTransferID: asClientFileTransferID(uint(row, "clientftfid", U16)),
+    serverFileTransferID: asServerFileTransferID(uint(row, "serverftfid", U16)),
   };
 }

@@ -45,36 +45,75 @@ export type ClientFileTransferID = number & { readonly __brand: "ClientFileTrans
 /** The server's id for a file transfer (`serverftfid`), a 16-bit value. */
 export type ServerFileTransferID = number & { readonly __brand: "ServerFileTransferID" };
 
-/** Brand a ban id, from a number or a bigint. */
-export const asBanID = (v: bigint | number): BanID => BigInt(v) as BanID;
-/** Brand an offline message id, from a number or a bigint. */
-export const asMessageID = (v: bigint | number): MessageID => BigInt(v) as MessageID;
-/** Brand a virtual server id, from a number or a bigint. */
-export const asServerID = (v: bigint | number): ServerID => BigInt(v) as ServerID;
-/** Brand the client's id for a file transfer. */
-export const asClientFileTransferID = (v: number): ClientFileTransferID =>
-  v as ClientFileTransferID;
-/** Brand the server's id for a file transfer. */
-export const asServerFileTransferID = (v: number): ServerFileTransferID =>
-  v as ServerFileTransferID;
+const MAX_UINT16 = 0xffff;
+const MAX_UINT32 = 0xffff_ffff;
+const MAX_UINT64 = (1n << 64n) - 1n;
 
-/** Brand a channel id, from a number or a bigint. */
-export const asChannelID = (v: bigint | number): ChannelID => BigInt(v) as ChannelID;
-/** Brand a client id. */
-export const asClientID = (v: number): ClientID => v as ClientID;
-/** Brand a client database id, from a number or a bigint. */
-export const asClientDBID = (v: bigint | number): ClientDBID => BigInt(v) as ClientDBID;
-/** Brand a server group id, from a number or a bigint. */
-export const asServerGroupID = (v: bigint | number): ServerGroupID => BigInt(v) as ServerGroupID;
-/** Brand a channel group id, from a number or a bigint. */
-export const asChannelGroupID = (v: bigint | number): ChannelGroupID => BigInt(v) as ChannelGroupID;
-/** Brand a permission id. */
-export const asPermissionID = (v: number): PermissionID => v as PermissionID;
+/** `v` if it is an integer from 0 to `max`; a RangeError otherwise. */
+function uintInRange(v: number, max: number, what: string): number {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > max) {
+    throw new RangeError(`${what} is an integer from 0 to ${max}, not ${String(v)}`);
+  }
+  return v;
+}
+
+/** `v` as a bigint if it is an integer from 0 to 2^64-1; a RangeError otherwise. */
+function uint64(v: bigint | number, what: string): bigint {
+  const integer = typeof v === "bigint" || (typeof v === "number" && Number.isInteger(v));
+  const value = integer ? BigInt(v) : -1n;
+  if (value < 0n || value > MAX_UINT64) {
+    throw new RangeError(`${what} is an integer from 0 to 2^64-1, not ${String(v)}`);
+  }
+  return value;
+}
+
+// Every constructor checks its value against the id's wire width and throws a
+// RangeError for anything else — a fraction, a negative, a value too wide —
+// rather than brand a value no server could mean.
+
+/** Brand a ban id, an integer from 0 to 2^64-1, from a number or a bigint. */
+export const asBanID = (v: bigint | number): BanID => uint64(v, "a ban id") as BanID;
+/** Brand an offline message id, an integer from 0 to 2^64-1. */
+export const asMessageID = (v: bigint | number): MessageID =>
+  uint64(v, "a message id") as MessageID;
+/** Brand a virtual server id, an integer from 0 to 2^64-1. */
+export const asServerID = (v: bigint | number): ServerID => uint64(v, "a server id") as ServerID;
+/** Brand the client's id for a file transfer, an integer from 0 to 65535. */
+export const asClientFileTransferID = (v: number): ClientFileTransferID =>
+  uintInRange(v, MAX_UINT16, "a client file transfer id") as ClientFileTransferID;
+/** Brand the server's id for a file transfer, an integer from 0 to 65535. */
+export const asServerFileTransferID = (v: number): ServerFileTransferID =>
+  uintInRange(v, MAX_UINT16, "a server file transfer id") as ServerFileTransferID;
+
+/** Brand a channel id, an integer from 0 to 2^64-1, from a number or a bigint. */
+export const asChannelID = (v: bigint | number): ChannelID =>
+  uint64(v, "a channel id") as ChannelID;
+/** Brand a client id, an integer from 0 to 65535: the voice protocol's width. */
+export const asClientID = (v: number): ClientID =>
+  uintInRange(v, MAX_UINT16, "a client id") as ClientID;
+/** Brand a client database id, an integer from 0 to 2^64-1. */
+export const asClientDBID = (v: bigint | number): ClientDBID =>
+  uint64(v, "a client database id") as ClientDBID;
+/** Brand a server group id, an integer from 0 to 2^64-1. */
+export const asServerGroupID = (v: bigint | number): ServerGroupID =>
+  uint64(v, "a server group id") as ServerGroupID;
+/** Brand a channel group id, an integer from 0 to 2^64-1. */
+export const asChannelGroupID = (v: bigint | number): ChannelGroupID =>
+  uint64(v, "a channel group id") as ChannelGroupID;
+/** Brand a permission id, an integer from 0 to 2^32-1. */
+export const asPermissionID = (v: number): PermissionID =>
+  uintInRange(v, MAX_UINT32, "a permission id") as PermissionID;
 /**
- * Brand an icon id. A negative value is taken as the signed form of the same
- * CRC32, which is how the server sometimes sends one, and stored unsigned.
+ * Brand an icon id, an integer from -2^31 to 2^32-1. A negative value is taken
+ * as the signed form of the same CRC32, which is how the server sometimes
+ * sends one, and stored unsigned.
  */
-export const asIconID = (v: number): IconID => (v >>> 0) as IconID;
+export const asIconID = (v: number): IconID => {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < -(2 ** 31) || v > MAX_UINT32) {
+    throw new RangeError(`an icon id is an integer from -2^31 to 2^32-1, not ${String(v)}`);
+  }
+  return (v >>> 0) as IconID;
+};
 
 /**
  * Read an icon id as the server sends it: the CRC32, sometimes as a negative

@@ -171,7 +171,9 @@ export function parseServerError(params: Record<string, string>): {
     err = new ServerError(code, params["msg"] ?? "", {
       extraMessage: params["extra_msg"] || undefined,
       failedPermissionID:
-        failedPermid !== undefined && /^\d+$/.test(failedPermid)
+        failedPermid !== undefined &&
+        /^\d{1,10}$/.test(failedPermid) &&
+        Number(failedPermid) <= 0xffff_ffff
           ? asPermissionID(Number(failedPermid))
           : undefined,
     });

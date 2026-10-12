@@ -278,16 +278,32 @@ export const inSeconds = (ms: number): number => toWireDuration(ms, SECOND);
  */
 const str = (row: Record<string, string>, key: string): string => row[key] ?? "";
 
-/** Read a bigint field, tolerating absence. */
+/**
+ * Read an unsigned 64-bit field, tolerating absence. Garbage, and a value
+ * outside 0 to 2^64-1, read as 0: every field read this way is an id or a
+ * size, and reading one must not throw where the id constructors would.
+ */
 const big = (row: Record<string, string>, key: string): bigint => {
   const raw = row[key];
-  if (raw === undefined || raw === "") return 0n;
-  try {
-    return BigInt(raw);
-  } catch {
-    return 0n;
-  }
+  if (raw === undefined || !/^\d+$/.test(raw)) return 0n;
+  const value = BigInt(raw);
+  return value > MAX_UINT64 ? 0n : value;
 };
+
+const MAX_UINT64 = (1n << 64n) - 1n;
+
+/**
+ * Read an id no wider than `max`: an integer from 0 to `max`, or 0 for
+ * anything else, so the id constructors never see a value they refuse.
+ */
+const uint = (row: Record<string, string>, key: string, max: number): number => {
+  const value = num(row, key);
+  return Number.isInteger(value) && value >= 0 && value <= max ? value : 0;
+};
+
+/** The widths {@link uint} reads ids at. */
+const U16 = 0xffff;
+const U32 = 0xffff_ffff;
 
 /** Read a number field, tolerating absence. Fractions are kept. */
 const num = (row: Record<string, string>, key: string): number => {
@@ -334,7 +350,7 @@ const date = (row: Record<string, string>, key: string): Date | undefined => {
 const durationMs = (row: Record<string, string>, key: string, unitMs: number): number =>
   num(row, key) * unitMs;
 
-export { str, big, num, bool, icon, date, durationMs };
+export { str, big, num, uint, U16, U32, bool, icon, date, durationMs };
 
 // ---- Shared shapes ----------------------------------------------------------
 
@@ -476,7 +492,9 @@ export function parsePermission(row: Record<string, string>): PermissionEntry {
   const name = str(row, "permsid");
   return {
     permission:
-      name === "" ? permissionByID(asPermissionID(num(row, "permid"))) : permissionByName(name),
+      name === ""
+        ? permissionByID(asPermissionID(uint(row, "permid", U32)))
+        : permissionByName(name),
     value: num(row, "permvalue"),
     negated: bool(row, "permnegated"),
     skip: bool(row, "permskip"),

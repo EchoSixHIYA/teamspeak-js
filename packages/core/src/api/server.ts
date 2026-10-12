@@ -8,6 +8,8 @@
  */
 
 import {
+  uint,
+  U16,
   firstRow,
   exec,
   query,
@@ -261,7 +263,7 @@ export async function whoAmI(client: CommandExecutor, options?: CommandOptions):
     serverID: asServerID(big(row, "virtualserver_id")),
     serverUID: str(row, "virtualserver_unique_identifier"),
     serverPort: num(row, "virtualserver_port"),
-    clientID: asClientID(num(row, "client_id")),
+    clientID: asClientID(uint(row, "client_id", U16)),
     channelID: asChannelID(big(row, "client_channel_id")),
     nickname: str(row, "client_nickname"),
     databaseID: asClientDBID(big(row, "client_database_id")),

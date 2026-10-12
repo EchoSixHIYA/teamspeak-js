@@ -3,6 +3,8 @@
  */
 
 import {
+  uint,
+  U32,
   firstRow,
   exec,
   query,
@@ -294,7 +296,7 @@ export async function listPermissions(
   return rows
     .filter((row) => row["permname"] !== undefined)
     .map((row) => ({
-      id: asPermissionID(num(row, "permid")),
+      id: asPermissionID(uint(row, "permid", U32)),
       name: str(row, "permname"),
       description: str(row, "permdesc"),
     }));
@@ -315,7 +317,7 @@ export async function getPermissionIDByName(
 ): Promise<PermissionID | undefined> {
   const rows = await query(client, "permidgetbyname", [["permsid", name]], options);
   if (rows.length === 0) return undefined;
-  return asPermissionID(num(firstRow(rows, "permidgetbyname", "permid"), "permid"));
+  return asPermissionID(uint(firstRow(rows, "permidgetbyname", "permid"), "permid", U32));
 }
 
 /**
@@ -372,7 +374,7 @@ export type PermissionLocation =
 
 /** Read a location from a `permfind` or `permoverview` row; undefined for an unknown target. */
 function parseLocation(row: Record<string, string>): PermissionLocation | undefined {
-  const permission = asPermissionID(num(row, "p"));
+  const permission = asPermissionID(uint(row, "p", U32));
   const id1 = big(row, "id1");
   const id2 = big(row, "id2");
   switch (num(row, "t")) {

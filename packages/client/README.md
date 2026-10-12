@@ -158,7 +158,11 @@ does not model.
 
 Every command the voice protocol answers is a typed function, grouped by area.
 Each is addressed by branded ids, so a `ChannelID` cannot be passed where a
-`ClientID` is meant. Required arguments are positional; everything optional
+`ClientID` is meant. The constructors — `asChannelID(5)`, `asClientID(3)` and
+the rest — throw a `RangeError` for anything but an integer in the id's wire
+range: 0–65535 for a `ClientID` and the file transfer ids, 0–2^32−1 for a
+`PermissionID` (an `IconID` also takes the signed form), 0–2^64−1 for the
+`bigint` ids. Required arguments are positional; everything optional
 goes in one options object, always the last argument, which also carries
 `signal` and `timeout` to abandon the command or bound how long it waits.
 

@@ -4,7 +4,7 @@
  * them through `./internal`.
  */
 
-import { str, big, num, bool, date, durationMs, MILLISECOND } from "./command.js";
+import { str, big, num, uint, U16, bool, date, durationMs, MILLISECOND } from "./command.js";
 import type { ServerGroupID } from "../command/ids.js";
 import {
   asChannelID,
@@ -18,7 +18,11 @@ import type { ClientEntry } from "./clients.js";
 /** A comma-separated list of server group ids; anything that is not one is skipped. */
 export function parseServerGroups(raw: string): ServerGroupID[] {
   if (raw === "") return [];
-  return raw.split(",").flatMap((id) => (/^\d+$/.test(id) ? [asServerGroupID(BigInt(id))] : []));
+  return raw
+    .split(",")
+    .flatMap((id) =>
+      /^\d{1,20}$/.test(id) && BigInt(id) < 1n << 64n ? [asServerGroupID(BigInt(id))] : [],
+    );
 }
 
 /**
@@ -28,7 +32,7 @@ export function parseServerGroups(raw: string): ServerGroupID[] {
  */
 export function parseClient(row: Record<string, string>): ClientEntry {
   return {
-    id: asClientID(num(row, "clid")),
+    id: asClientID(uint(row, "clid", U16)),
     nickname: str(row, "client_nickname"),
     uid: asUID(str(row, "client_unique_identifier")),
     channelID: asChannelID(big(row, row["cid"] === undefined ? "ctid" : "cid")),

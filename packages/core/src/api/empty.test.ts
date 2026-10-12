@@ -208,3 +208,26 @@ describe("required data", () => {
     );
   });
 });
+
+describe("ids read off the wire", () => {
+  // The constructors refuse out-of-range values; a server sending one must
+  // not make a whole list throw.
+  it("read as 0 when the server sends one no id can be", async () => {
+    const clients = await listClients(
+      answering([
+        {
+          clid: "70000",
+          cid: "-1",
+          client_channel_group_id: "18446744073709551616",
+          client_servergroups: "18446744073709551616,6",
+        },
+      ]),
+    );
+    expect(clients[0]).toMatchObject({
+      id: 0,
+      channelID: 0n,
+      channelGroupID: 0n,
+      serverGroups: [6n],
+    });
+  });
+});

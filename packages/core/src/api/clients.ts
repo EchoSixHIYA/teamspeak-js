@@ -8,6 +8,8 @@
  */
 
 import {
+  uint,
+  U16,
   firstRow,
   exec,
   query,
@@ -351,7 +353,7 @@ export async function findClients(
     noMatch: ErrorCode.ClientInvalidID,
   });
   return rows.map((row) => ({
-    id: asClientID(num(row, "clid")),
+    id: asClientID(uint(row, "clid", U16)),
     nickname: str(row, "client_nickname"),
   }));
 }
@@ -363,7 +365,7 @@ export async function getClientIDs(
   options?: CommandOptions,
 ): Promise<ClientID[]> {
   const rows = await list(client, "clientgetids", [["cluid", uid]], options);
-  return rows.map((row) => asClientID(num(row, "clid")));
+  return rows.map((row) => asClientID(uint(row, "clid", U16)));
 }
 
 /** The uid of a connected client. */
