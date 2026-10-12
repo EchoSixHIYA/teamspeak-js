@@ -106,8 +106,6 @@ const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   servergroupsbyclientid: inline("notifyservergroupsbyclientid"),
   serverrequestconnectioninfo: inline("notifyserverconnectioninfo"),
   servertemppasswordlist: inline("notifyservertemppasswordlist"),
-  tokenadd: inline("notifytokenadd"),
-  tokenlist: inline("notifytokenlist"),
 };
 
 /** The response shape of a command, or undefined for plain rows. */

@@ -258,8 +258,6 @@ const queries: string[] = [
   "serverrequestconnectioninfo",
   "servertemppasswordadd pw=probe desc=probe duration=60",
   "servertemppasswordlist",
-  "tokenadd tokentype=0 tokenid1=" + defaultSgid + " tokenid2=0",
-  "tokenlist",
   "version",
   "whoami",
   // Last: banning the victim drops it, which is noise for anything after.

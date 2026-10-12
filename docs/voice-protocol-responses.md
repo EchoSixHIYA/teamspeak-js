@@ -114,7 +114,5 @@ id over the voice protocol; ServerQuery reports one.
 | `serverrequestconnectioninfo` | `notifyserverconnectioninfo`                                                      |
 | `servertemppasswordadd`       | nothing                                                                           |
 | `servertemppasswordlist`      | `notifyservertemppasswordlist`                                                    |
-| `tokenadd`                    | `notifytokenadd`                                                                  |
-| `tokenlist`                   | `notifytokenlist`                                                                 |
 | `version`                     | nameless rows                                                                     |
 | `whoami`                      | nameless rows                                                                     |
