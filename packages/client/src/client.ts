@@ -905,7 +905,13 @@ export class Client implements CommandExecutor, AsyncDisposable {
         if (!this.#crypt.cryptoInitComplete) handleHandshakeExpand2(this.#internals, cmd.params);
         break;
       case "initserver":
-        if (this.#status === ClientStatus.Connecting) handleInitServer(this.#internals, cmd.params);
+        // Only on a session with its keys: before crypto init a packet needs
+        // nothing but the public dummy key, and an initserver taken then would
+        // report a connection whose next command — clientinit with its password
+        // hashes among them — goes out under that dummy key.
+        if (this.#status === ClientStatus.Connecting && this.#crypt.cryptoInitComplete) {
+          handleInitServer(this.#internals, cmd.params);
+        }
         break;
       case "error":
         this.#handleError(cmd.params);

@@ -371,6 +371,37 @@ describe("unencrypted packets once connected", () => {
 });
 
 describe("garbage before the handshake", () => {
+  it("does not take an initserver before crypto init", async () => {
+    let socket: FakeSocket | undefined;
+    const client = new Client(identity, "127.0.0.1:9987", "Bot", {
+      socketFactory: () => (socket = new FakeSocket()),
+    });
+    let outcome = "pending";
+    const connecting = client.connect().then(
+      () => (outcome = "resolved"),
+      (error: Error) => (outcome = error.name),
+    );
+    for (let i = 0; i < 100 && socket === undefined; i++) await settle();
+    const crypt = clientInternals(client).crypt;
+    socket!.deliver(
+      dummyPacket(
+        crypt,
+        2,
+        0x20,
+        0,
+        new TextEncoder().encode("initserver aclid=7 virtualserver_version=3.13.7"),
+      ),
+    );
+    await settle();
+    await settle();
+    expect(outcome).toBe("pending");
+    expect(client.status).toBe("connecting");
+    expect(client.clientID).toBe(0);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+    await connecting;
+    expect(outcome).toBe("NotConnectedError");
+  });
+
   it("leaves no key behind for the session to use", async () => {
     const { client, socket } = await startedClient();
     for (const [type, id] of [
