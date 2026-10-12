@@ -1,26 +1,59 @@
 import { resolveSrv } from "node:dns/promises";
 import { createConnection } from "node:net";
-import type { Logger } from "@honeybbq/teamspeak-core";
 import type { ResolvedAddr } from "../types.js";
-import { noopLogger } from "@honeybbq/teamspeak-core";
 import { isIpAddress, joinHostPort, splitHostPort } from "../address.js";
+import { abortable } from "../abort.js";
 
 const TS_DNS_DEFAULT_PORT = 41144;
 const NICKNAME_LOOKUP_URL = "https://named.myteamspeak.com/lookup";
 const CACHE_TTL_MS = 10 * 60 * 1000;
+/** How long resolution may take in all; past it, the address is used as given. */
+const RESOLVE_BUDGET_MS = 8_000;
+/** How long one TSDNS server may take to answer. */
+const TSDNS_TIMEOUT_MS = 3_000;
+
+/** How the default resolver resolves. */
+export interface ResolverOptions {
+  /** Look dot-less names up at named.myteamspeak.com; off by default. */
+  readonly resolveNicknames?: boolean | undefined;
+}
 
 export class Resolver {
   readonly #cache = new Map<string, ResolvedAddr[]>();
+  readonly #resolveNicknames: boolean;
 
-  constructor(_log: Logger = noopLogger) {}
+  constructor(options: ResolverOptions = {}) {
+    this.#resolveNicknames = options.resolveNicknames ?? false;
+  }
 
+  /**
+   * Resolve as the TeamSpeak application does: a server nickname (only with
+   * `resolveNicknames`), then SRV, then TSDNS, then the address as given. The
+   * whole resolution is bounded: past the budget, or when a step fails, the
+   * address as given is the answer.
+   */
   async resolve(
     inputAddr: string,
     options: { readonly signal?: AbortSignal | undefined } = {},
   ): Promise<ResolvedAddr[]> {
-    const { signal } = options;
     if (!inputAddr) throw new Error("empty address");
+    const budget = AbortSignal.timeout(RESOLVE_BUDGET_MS);
+    const signal = options.signal ? AbortSignal.any([options.signal, budget]) : budget;
+    try {
+      return await this.#resolve(inputAddr, signal, true);
+    } catch (error) {
+      options.signal?.throwIfAborted();
+      if (!budget.aborted) throw error;
+      const { host, port } = splitHostPort(inputAddr);
+      return [{ addr: joinHostPort(host, port), source: "Direct" }];
+    }
+  }
 
+  async #resolve(
+    inputAddr: string,
+    signal: AbortSignal,
+    nicknames: boolean,
+  ): Promise<ResolvedAddr[]> {
     const cached = this.#getValidCache(inputAddr);
     if (cached) return cached;
 
@@ -30,12 +63,13 @@ export class Resolver {
       return [{ addr: joinHostPort(host, port), source: "Direct" }];
     }
 
-    // Nickname resolution (no dots → not a domain)
-    if (!host.includes(".") && host !== "localhost") {
+    // A dot-less name may be a server nickname, which only the TeamSpeak
+    // service can answer: asking it sends the name to a third party, so it is
+    // opt-in. Otherwise the name is resolved like any host.
+    if (nicknames && this.#resolveNicknames && !host.includes(".") && host !== "localhost") {
       const nickAddr = await resolveNickname(host, signal);
-      if (nickAddr) {
-        return this.resolve(nickAddr, options);
-      }
+      signal.throwIfAborted();
+      if (nickAddr) return this.#resolve(nickAddr, signal, false);
     }
 
     // SRV _ts3._udp.<host>
@@ -56,6 +90,7 @@ export class Resolver {
       return this.#setCache(inputAddr, [{ addr: tsdnsDirect, source: "TSDNS-Direct" }]);
     }
 
+    signal.throwIfAborted();
     // Plain DNS fallback
     const fallback: ResolvedAddr[] = [{ addr: joinHostPort(host, port), source: "Direct" }];
     return this.#setCache(inputAddr, fallback);
@@ -78,7 +113,7 @@ export class Resolver {
 
   async #resolveSRV(host: string, signal?: AbortSignal): Promise<ResolvedAddr[] | null> {
     try {
-      const srvs = await withSignal(resolveSrv(`_ts3._udp.${host}`), signal);
+      const srvs = await abortable(resolveSrv(`_ts3._udp.${host}`), signal);
       if (!srvs || srvs.length === 0) return null;
       return srvs.map((srv) => ({
         addr: joinHostPort(srv.name.replace(/\.$/, ""), String(srv.port)),
@@ -96,7 +131,7 @@ export class Resolver {
   ): Promise<string | null> {
     for (const domain of domains) {
       try {
-        const srvs = await withSignal(resolveSrv(`_tsdns._tcp.${domain}`), signal);
+        const srvs = await abortable(resolveSrv(`_tsdns._tcp.${domain}`), signal);
         if (!srvs || srvs.length === 0) continue;
         for (const srv of srvs) {
           const tsdnsAddr = joinHostPort(srv.name.replace(/\.$/, ""), String(srv.port));
@@ -115,12 +150,14 @@ export class Resolver {
     queryHost: string,
     signal?: AbortSignal,
   ): Promise<string | null> {
-    for (const domain of domains) {
-      const tsdnsAddr = joinHostPort(domain, String(TS_DNS_DEFAULT_PORT));
-      const result = await queryTSDNS(tsdnsAddr, queryHost, signal);
-      if (result) return result;
-    }
-    return null;
+    // Asked at once rather than in turn, so the probes cost one timeout in
+    // all; the most specific domain's answer wins.
+    const answers = await Promise.all(
+      domains.map((domain) =>
+        queryTSDNS(joinHostPort(domain, String(TS_DNS_DEFAULT_PORT)), queryHost, signal),
+      ),
+    );
+    return answers.find((answer) => answer !== null) ?? null;
   }
 }
 
@@ -150,10 +187,15 @@ function queryTSDNS(
   const port = parseInt(portStr, 10);
 
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
+    if (signal?.aborted) return resolve(null);
+    const finish = (answer: string | null): void => {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
       socket.destroy();
-      resolve(null);
-    }, 3_000);
+      resolve(answer);
+    };
+    const onAbort = (): void => finish(null);
+    const timeout = setTimeout(() => finish(null), TSDNS_TIMEOUT_MS);
 
     const socket = createConnection({ host, port, timeout: 2_000 }, () => {
       socket.write(`${queryHost}\n`);
@@ -164,30 +206,14 @@ function queryTSDNS(
       buf += chunk.toString();
       const idx = buf.indexOf("\n");
       if (idx >= 0) {
-        clearTimeout(timeout);
-        socket.destroy();
         const line = buf.slice(0, idx).trim();
-        if (!line || line === "404" || line === "errors") resolve(null);
-        else resolve(line);
+        finish(!line || line === "404" || line === "errors" ? null : line);
       }
     });
 
-    socket.on("error", () => {
-      clearTimeout(timeout);
-      resolve(null);
-    });
-
-    if (signal) {
-      signal.addEventListener(
-        "abort",
-        () => {
-          clearTimeout(timeout);
-          socket.destroy();
-          resolve(null);
-        },
-        { once: true },
-      );
-    }
+    socket.on("error", () => finish(null));
+    socket.on("timeout", () => finish(null));
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -203,14 +229,4 @@ function getDomainList(host: string): string[] {
     list.push(parts.slice(i).join("."));
   }
   return list.slice(0, 3);
-}
-
-function withSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return promise;
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
-    ),
-  ]);
 }

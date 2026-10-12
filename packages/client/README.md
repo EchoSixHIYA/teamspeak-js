@@ -22,7 +22,7 @@ Upgrading from 0.x? See the [migration guide](https://github.com/HoneyBBQ/teamsp
 - **Event-driven API** — Register handlers for text messages, client enter/leave, channel moves, kicks, etc.
 - **Voice data** — Send Opus voice packets (codec 4 & 5)
 - **File transfers** — Upload, download, and delete files on the server
-- **Address resolution** — SRV records, TSDNS, and direct address support
+- **Address resolution** — SRV records, TSDNS, and direct addresses; server nicknames on request (`resolveNicknames: true`), since that lookup goes to named.myteamspeak.com
 - **Middleware** — Pluggable command and event middleware chains
 - **Built-in rate limiter** — Token-bucket throttling to prevent server-side flood kicks
 - **Identity management** — Generate, import/export, and upgrade security level of identities

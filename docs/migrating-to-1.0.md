@@ -230,6 +230,13 @@ process.env.TEAMSPEAK_SERVER_PASSWORD` compiles under
 takes its signal in an options object, and returns `ResolvedAddr`s whose
 `source` and `expiry` are optional.
 
+## Address resolution
+
+A dot-less address (`mybox`) was sent to named.myteamspeak.com as a server
+nickname. That lookup is now opt-in, with `resolveNicknames: true`; without it
+the name is resolved like any host. Resolution as a whole is bounded at eight
+seconds, after which the address is used as given.
+
 ## Transports
 
 `socketFactory` returns a `DatagramSocket` — a `node:dgram` socket still is

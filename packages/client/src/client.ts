@@ -265,7 +265,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#addr = addr;
     this.#nickname = nickname;
     this.#logger = options.logger ?? noopLogger;
-    this.#resolver = options.resolver ?? new Resolver(this.#logger);
+    this.#resolver =
+      options.resolver ?? new Resolver({ resolveNicknames: options.resolveNicknames });
     this.#clientInitOptions = normalizeClientInitOptions(options);
     this.#socketFactory = options.socketFactory;
     this.#fileTransferSocketFactory = options.fileTransferSocketFactory;

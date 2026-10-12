@@ -303,6 +303,13 @@ export interface ClientOptions {
    * through a proxy.
    */
   readonly fileTransferSocketFactory?: FileTransferSocketFactory | undefined;
+  /**
+   * Look a dot-less address up as a server nickname at named.myteamspeak.com,
+   * as the TeamSpeak application does. Off by default, since it sends the name
+   * to a third party; without it a dot-less name is resolved like any host.
+   * Ignored with a custom `resolver`.
+   */
+  readonly resolveNicknames?: boolean | undefined;
   /** Replaces the SRV and TSDNS resolution `connect()` performs. */
   readonly resolver?: AddrResolver | undefined;
   /**
