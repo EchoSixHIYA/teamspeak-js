@@ -51,6 +51,7 @@ import type { Readable, Writable } from "node:stream";
 import type { SocketFactory, FileTransferSocketFactory } from "./types.js";
 import { unknownServerCapabilities, type ServerCapabilities } from "./capabilities.js";
 import { joinHostPort, splitHostPort } from "./address.js";
+import { commandChannel, packetChannel, type CommandTrace } from "./diagnostics.js";
 import {
   backoffDelay,
   defaultShouldRetry,
@@ -350,7 +351,13 @@ export class Client implements CommandExecutor, AsyncDisposable {
     return this.#exec(encodeRequest(request, prepareClientPassword), options);
   }
 
-  async #exec(command: string, options: CommandOptions): Promise<Record<string, string>[]> {
+  #exec(command: string, options: CommandOptions): Promise<Record<string, string>[]> {
+    if (!commandChannel.hasSubscribers) return this.#execUntraced(command, options);
+    const trace: CommandTrace = { command: parseCommand(command)?.name ?? "", client: this };
+    return commandChannel.tracePromise(() => this.#execUntraced(command, options), trace);
+  }
+
+  async #execUntraced(command: string, options: CommandOptions): Promise<Record<string, string>[]> {
     const { signal, timeout = DEFAULT_COMMAND_TIMEOUT_MS } = options;
     signal?.throwIfAborted();
     // A command sent on no socket used to vanish and surface 10 seconds later
@@ -582,6 +589,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #handleCommandStr(s: string): void {
     const cmd = parseCommand(s);
     if (!cmd) return;
+    if (packetChannel.hasSubscribers) packetChannel.publish({ command: cmd.name, client: this });
 
     // No name means a response row: the server sends data without echoing the
     // command, so the row belongs to whichever command is awaiting a result.

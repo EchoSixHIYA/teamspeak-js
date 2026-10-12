@@ -10,6 +10,8 @@ import {
   generateIdentitySync,
   type ClientOptions,
   type KickedEvent,
+  type CommandTrace,
+  commandChannel,
 } from "./index.js";
 import { PacketType, type Packet } from "./transport/packet.js";
 
@@ -335,5 +337,39 @@ describe("being removed by the server", () => {
     await settle();
 
     expect(disconnected).toEqual([undefined]);
+  });
+});
+
+describe("diagnostics channels", () => {
+  it("traces a command by name, never with its parameters", async () => {
+    const client = await silentServerClient();
+    const connecting = client.connect();
+    await until(() => client.handler.isOpen);
+    client.clid = 5;
+    client._markConnected();
+    await connecting;
+
+    const traced: Array<{ event: string; command: string }> = [];
+    const handlers = {
+      start: (m: CommandTrace) => traced.push({ event: "start", command: m.command }),
+      asyncEnd: (m: CommandTrace) => traced.push({ event: "end", command: m.command }),
+      error: (m: CommandTrace) => traced.push({ event: "error", command: m.command }),
+    };
+    commandChannel.subscribe(handlers);
+    try {
+      const answered = client.exec("clientmove clid=5 cid=1 cpw=secret", { timeout: 1_000 });
+      await new Promise((r) => setImmediate(r));
+      client.handler.onPacket?.(commandPacket("error id=0 msg=ok return_code=1"));
+      await answered;
+    } finally {
+      commandChannel.unsubscribe(handlers);
+    }
+
+    expect(traced).toEqual([
+      { event: "start", command: "clientmove" },
+      { event: "end", command: "clientmove" },
+    ]);
+    expect(JSON.stringify(traced)).not.toContain("secret");
+    await client.disconnect({ signal: AbortSignal.timeout(50) });
   });
 });

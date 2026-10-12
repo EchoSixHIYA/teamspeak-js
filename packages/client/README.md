@@ -229,6 +229,20 @@ Connection auth options:
 - `defaultChannel`: default channel name requested during `clientinit`
 - `defaultChannelPassword`: plain-text password for `defaultChannel`; sent as the TeamSpeak protocol hash
 
+### Diagnostics
+
+The client logs nothing unless given a `logger`. For tracing, it publishes on
+two [`diagnostics_channel`](https://nodejs.org/api/diagnostics_channel.html)
+channels, which cost nothing without a subscriber:
+
+- `honeybbq:teamspeak:command` (`commandChannel`), a tracing channel: `start`
+  when a command is sent, `asyncEnd` when its answer arrives, `error` when it
+  fails.
+- `honeybbq:teamspeak:packet` (`packetChannel`): every command the server sends.
+
+Both carry the command's name, never its parameters, which hold password hashes
+and privilege keys.
+
 ### Reconnection
 
 Off by default: a silent reconnect makes an outage look like a healthy session.
