@@ -95,6 +95,12 @@ process.on("SIGINT", async () => {
 | `serverCapabilities`                          | Server version, family and uid hash               |
 | `uid`                                         | Our own uid, hashed as the server does            |
 
+`connect()` rejects with an `InvalidAddressError` for an address that cannot be
+one — no host, or a port outside 1–65535 — before anything starts; a host name
+that does not resolve fails with a `TeamspeakError` whose `cause` is the lookup's
+error. A `connect()` called while `disconnect()` is still saying goodbye waits
+for it to finish, then connects.
+
 ### Events
 
 | Method                        | Description                        |
@@ -116,6 +122,10 @@ await an answer. `disconnected` delivers `undefined` after `disconnect()`, and
 the cause otherwise — a `ConnectionTimeoutError`, or a `RemovedError` for a kick, a ban
 or a server stopping. `await using client = new Client(...)` disconnects when
 the scope ends.
+
+A listener that throws does not stop the others: the event still reaches the
+listeners after it, and the exception surfaces as an `uncaughtException`, as an
+EventEmitter listener's would.
 
 Voice is the exception to "every event in order": while more than 256
 deliveries are waiting, voice frames are dropped (and counted in a warning at
@@ -327,7 +337,9 @@ three rapid connects** — a retry loop without a delay bans itself, and the ban
 outlasts the outage it was recovering from. Recovery is also not instant even
 when it succeeds: the server holds the dropped session for a while and refuses a
 reconnect with `521 too many clones already connected` until it reaps it, so the
-loop keeps trying rather than giving up on the first refusal.
+loop keeps trying rather than giving up on the first refusal. It stops once a
+`connect()` of your own has connected the client, and it does not retry an
+address that cannot be one (`InvalidAddressError`).
 
 ### Custom transports
 

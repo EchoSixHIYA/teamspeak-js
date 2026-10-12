@@ -1,6 +1,6 @@
 import { createSocket } from "node:dgram";
 import { lookup } from "node:dns/promises";
-import { splitHostPort } from "../address.js";
+import { parseConnectAddress } from "../address.js";
 import type { Crypt } from "../crypto/crypt.js";
 import type { DatagramSocket, SocketFactory } from "../types.js";
 import type { Logger } from "@honeybbq/teamspeak-core";
@@ -16,7 +16,7 @@ import {
 } from "./packet.js";
 import { ConnectionTimeoutError } from "../errors.js";
 import { abortable, abortReason } from "../abort.js";
-import { NotConnectedError } from "@honeybbq/teamspeak-core";
+import { NotConnectedError, TeamspeakError } from "@honeybbq/teamspeak-core";
 import { GenerationWindow } from "./generation-window.js";
 import { Qlz } from "./quicklz.js";
 import { processInit1 } from "../handshake/crypt-handshake.js";
@@ -128,8 +128,7 @@ export class PacketHandler {
    * the connection was given up.
    */
   async connect(addr: string, signal?: AbortSignal): Promise<void> {
-    const { host, port } = splitHostPort(addr);
-    const portNumber = parseInt(port, 10);
+    const { host, portNumber } = parseConnectAddress(addr);
     this.#throwIfAbandoned(signal);
 
     // Resolve before choosing a socket family. `isIP()` only recognises literal
@@ -138,7 +137,16 @@ export class PacketHandler {
     // that resolves to IPv6 drops the datagrams with no error at all. On a
     // stock macOS/Linux box `localhost` resolves to ::1 first, so that path
     // silently never connected. Let DNS decide, then match the family.
-    const { address, family } = await abortable(lookup(host), signal);
+    let resolved: { address: string; family: number };
+    try {
+      resolved = await abortable(lookup(host), signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // Wrapped, not classed as an invalid address: a lookup can fail for a
+      // while (EAI_AGAIN) and then succeed, which a reconnect should retry.
+      throw new TeamspeakError(`could not resolve ${host}`, { cause: error });
+    }
+    const { address, family } = resolved;
     this.#throwIfAbandoned(signal);
 
     const family6 = family === 6;

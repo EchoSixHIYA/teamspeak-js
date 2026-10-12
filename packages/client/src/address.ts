@@ -1,4 +1,5 @@
 import { isIP } from "node:net";
+import { InvalidAddressError } from "./errors.js";
 
 export interface HostPort {
   host: string;
@@ -32,6 +33,29 @@ export function splitHostPort(address: string, defaultPort = "9987"): HostPort {
     return { host: input.slice(0, lastColon), port: candidatePort };
   }
   return { host: input, port: defaultPort };
+}
+
+/** Characters no host name or IP address contains, whitespace among them. */
+const NOT_IN_A_HOST = /[\s\p{Cc}/?#@[\]\\]/u;
+
+/**
+ * Parse an address to connect to, and check it can be one: a host, which
+ * contains nothing a host name or IP address cannot, and a port from 1 to
+ * 65535. Throws an InvalidAddressError otherwise.
+ */
+export function parseConnectAddress(address: string): HostPort & { portNumber: number } {
+  const { host, port } = splitHostPort(address);
+  if (host === "") throw new InvalidAddressError(address, "no host");
+  // A colon is left only in an IPv6 literal; anywhere else it is a port that
+  // is not a number, which splitHostPort keeps as part of the host.
+  if (NOT_IN_A_HOST.test(host) || (host.includes(":") && isIP(host) !== 6)) {
+    throw new InvalidAddressError(address, "not a host name, IP address or host:port");
+  }
+  const portNumber = Number(port);
+  if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
+    throw new InvalidAddressError(address, `port ${port} is not from 1 to 65535`);
+  }
+  return { host, port, portNumber };
 }
 
 export function joinHostPort(host: string, port: string): string {

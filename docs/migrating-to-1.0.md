@@ -172,7 +172,11 @@ copies. A handshake that fails on what
 the server sent rejects with a `CryptoInitError`; `parseIdentity` throws only
 an `InvalidIdentityError`. `EAXTagMismatchError` and
 `FakeSignatureMismatchError` are no longer exported: a packet that fails them
-is dropped, and they never reached a caller. `TimedOutError` is now
+is dropped, and they never reached a caller. An address that
+cannot be one — no host, a port outside 1–65535 — makes `connect()` reject with
+an `InvalidAddressError` instead of a Node `RangeError` or `TypeError`, and a
+host name that does not resolve with a `TeamspeakError` whose `cause` is the
+lookup's error. `TimedOutError` is now
 `ConnectionTimeoutError`, which says which timeout it is: a command's is a
 `CommandTimeoutError`.
 

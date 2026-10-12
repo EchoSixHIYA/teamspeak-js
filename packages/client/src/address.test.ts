@@ -20,3 +20,50 @@ describe("TeamSpeak address helpers", () => {
     expect(joinHostPort("voice.example.com", "9988")).toBe("voice.example.com:9988");
   });
 });
+
+describe("connecting to an address that cannot be one", () => {
+  it("rejects with an InvalidAddressError and leaves the client disconnected", async () => {
+    const { Client } = await import("./client.js");
+    const { generateIdentitySync } = await import("./crypto/identity.js");
+    const { InvalidAddressError } = await import("./errors.js");
+    const { FakeSocket } = await import("./testing/fake-server.js");
+    const identity = generateIdentitySync(0);
+    for (const address of [
+      "127.0.0.1:70000",
+      "127.0.0.1:0",
+      "[::1]:99999",
+      "",
+      "  ",
+      "bad host:9987",
+      "127.0.0.1:abc",
+    ]) {
+      let sockets = 0;
+      const client = new Client(identity, address, "Bot", {
+        resolver: { resolve: async () => [] },
+        socketFactory: () => {
+          sockets++;
+          return new FakeSocket();
+        },
+      });
+      const events: unknown[] = [];
+      client.on("disconnected", (e) => events.push(e));
+      await expect(client.connect(), address).rejects.toBeInstanceOf(InvalidAddressError);
+      expect(client.status).toBe("disconnected");
+      expect(sockets).toBe(0);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(events).toEqual([]);
+    }
+  });
+
+  it("wraps a failed lookup in a TeamspeakError with the cause", async () => {
+    const { Client } = await import("./client.js");
+    const { generateIdentitySync } = await import("./crypto/identity.js");
+    const { TeamspeakError } = await import("@honeybbq/teamspeak-core");
+    const client = new Client(generateIdentitySync(0), "no-such-host.invalid:9987", "Bot", {
+      resolver: { resolve: async () => [] },
+    });
+    const error: unknown = await client.connect().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(TeamspeakError);
+    expect((error as Error).cause).toMatchObject({ code: "ENOTFOUND" });
+  });
+});

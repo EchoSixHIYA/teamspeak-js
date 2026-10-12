@@ -38,6 +38,7 @@ export {
   AlreadyConnectedError,
   FileTransferError,
   CryptoInitError,
+  InvalidAddressError,
   InvalidIdentityError,
   RemovedError,
   ConnectionTimeoutError,

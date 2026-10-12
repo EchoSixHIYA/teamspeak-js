@@ -8,7 +8,7 @@ import {
   type BackoffPolicy,
 } from "./reconnect.js";
 import { ServerError } from "@honeybbq/teamspeak-core";
-import { AlreadyConnectedError, FileTransferError } from "./errors.js";
+import { AlreadyConnectedError, FileTransferError, InvalidAddressError } from "./errors.js";
 
 const policy = (overrides: Partial<BackoffPolicy> = {}): BackoffPolicy => ({
   ...defaultBackoffPolicy,
@@ -100,6 +100,7 @@ describe("defaultShouldRetry", () => {
 
   it("stops once the client is connected already", () => {
     expect(defaultShouldRetry(new AlreadyConnectedError())).toBe(false);
+    expect(defaultShouldRetry(new InvalidAddressError("x:0", "bad port"))).toBe(false);
   });
 
   it("treats no error at all as worth retrying", () => {

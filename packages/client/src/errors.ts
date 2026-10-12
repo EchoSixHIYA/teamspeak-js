@@ -12,6 +12,28 @@ export class AlreadyConnectedError extends TeamspeakError {
 }
 
 /**
+ * The address a client was given cannot be connected to: no host, a host with
+ * characters no host name or IP address has, or a port outside 1–65535.
+ * `connect()` rejects with it before it starts, and the client stays
+ * disconnected. A name that does not resolve is not this: that fails with a
+ * TeamspeakError whose `cause` is the lookup's error, since DNS failures are
+ * often transient.
+ */
+export class InvalidAddressError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "InvalidAddressError";
+
+  /** The address as given. */
+  readonly address: string;
+
+  constructor(address: string, reason: string) {
+    super(`invalid address ${JSON.stringify(address)}: ${reason}`);
+    this.name = "InvalidAddressError";
+    this.address = address;
+  }
+}
+
+/**
  * A packet failed authentication: it was corrupted, or not from the server.
  * Internal: the packet is dropped, and this never reaches a caller.
  */

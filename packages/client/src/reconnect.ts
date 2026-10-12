@@ -14,7 +14,7 @@
  */
 
 import { ErrorCode, Reason, ServerError } from "@honeybbq/teamspeak-core";
-import { AlreadyConnectedError, RemovedError } from "./errors.js";
+import { AlreadyConnectedError, InvalidAddressError, RemovedError } from "./errors.js";
 
 /** How long to wait before each attempt. */
 export interface BackoffPolicy {
@@ -118,11 +118,13 @@ const PERMANENT_SERVER_ERRORS: ReadonlySet<number> = new Set([
  * channel password, missing permissions — since some, such as 521 "too many
  * clones" right after a drop, clear by themselves. A kick or a ban is not:
  * someone removed the client on purpose. Nor is an AlreadyConnectedError: the
- * client was connected by other means.
+ * client was connected by other means; nor an InvalidAddressError.
  */
 export function defaultShouldRetry(error: Error | undefined): boolean {
   // The client is connected, or connecting, already: there is nothing to retry.
   if (error instanceof AlreadyConnectedError) return false;
+  // An address that cannot be one stays that way.
+  if (error instanceof InvalidAddressError) return false;
   if (error instanceof RemovedError) {
     return error.reason !== Reason.KickServer && error.reason !== Reason.KickServerBan;
   }

@@ -56,7 +56,7 @@ import { responseSpec } from "@honeybbq/teamspeak-core/internal";
 import type { Readable, Writable } from "node:stream";
 import type { SocketFactory, FileTransferSocketFactory } from "./types.js";
 import { unknownServerCapabilities, type ServerCapabilities } from "./capabilities.js";
-import { joinHostPort, splitHostPort } from "./address.js";
+import { joinHostPort, parseConnectAddress, splitHostPort } from "./address.js";
 import { commandChannel, packetChannel, type CommandTrace } from "./diagnostics.js";
 import {
   backoffDelay,
@@ -347,6 +347,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
   /**
    * Connect to the server. Resolves once the handshake completes.
    *
+   * An address that cannot be one — no host, a port outside 1–65535 — rejects
+   * with an InvalidAddressError at once, before anything starts. A host name
+   * that does not resolve fails the attempt with a TeamspeakError whose
+   * `cause` is the lookup's error.
+   *
    * A failed attempt rejects with its cause, such as the server's error for a
    * rejected password. Aborting `signal` abandons the attempt and rejects with
    * the signal's reason. The signal bounds only the connecting: once this
@@ -368,6 +373,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
       if (this.#disconnects !== disconnects) throw new NotConnectedError();
     }
     if (this.#status !== ClientStatus.Disconnected) throw new AlreadyConnectedError();
+    // Checked before anything changes: an address that can never work leaves
+    // the client as it was, with no attempt to announce the end of.
+    parseConnectAddress(this.#addr);
     this.#stopped = false;
 
     this.#resetForConnect();
