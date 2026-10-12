@@ -1,4 +1,5 @@
 import { ErrorCode } from "./errorcode.js";
+import { asPermissionID, type PermissionID } from "./command/ids.js";
 
 /**
  * The base of every error the SDK throws, so `instanceof TeamspeakError` tells
@@ -25,12 +26,15 @@ export class ServerError extends TeamspeakError {
   /** Detail the server adds to some refusals (`extra_msg`). */
   readonly extraMessage: string | undefined;
   /** The permission a refused permission check failed on, when the server names one (`failed_permid`). */
-  readonly failedPermissionId: number | undefined;
+  readonly failedPermissionID: PermissionID | undefined;
 
   constructor(
     code: number,
     serverMessage: string,
-    details: { extraMessage?: string | undefined; failedPermissionId?: number | undefined } = {},
+    details: {
+      extraMessage?: string | undefined;
+      failedPermissionID?: PermissionID | undefined;
+    } = {},
   ) {
     const extra = details.extraMessage ? ` (${details.extraMessage})` : "";
     super(`TeamSpeak server error: ${serverMessage}${extra} (code ${code})`);
@@ -38,7 +42,7 @@ export class ServerError extends TeamspeakError {
     this.code = code;
     this.serverMessage = serverMessage;
     this.extraMessage = details.extraMessage;
-    this.failedPermissionId = details.failedPermissionId;
+    this.failedPermissionID = details.failedPermissionID;
   }
 }
 
@@ -97,8 +101,10 @@ export function parseServerError(params: Record<string, string>): {
     const failedPermid = params["failed_permid"];
     err = new ServerError(code, params["msg"] ?? "", {
       extraMessage: params["extra_msg"] || undefined,
-      failedPermissionId:
-        failedPermid !== undefined && /^\d+$/.test(failedPermid) ? Number(failedPermid) : undefined,
+      failedPermissionID:
+        failedPermid !== undefined && /^\d+$/.test(failedPermid)
+          ? asPermissionID(Number(failedPermid))
+          : undefined,
     });
   }
 

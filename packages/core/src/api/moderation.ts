@@ -22,8 +22,8 @@ import {
 } from "./command.js";
 import type { Params, WireNames } from "./command.js";
 import type { CommandExecutor, CommandOptions, ParamValue } from "../command/request.js";
-import type { ClientDBID, ClientID, UID } from "../command/ids.js";
-import { asClientDBID, asUID } from "../command/ids.js";
+import type { BanID, ClientDBID, ClientID, MessageID, UID } from "../command/ids.js";
+import { asBanID, asClientDBID, asMessageID, asUID } from "../command/ids.js";
 import { TextMessageTarget } from "../enums.js";
 import type { LogLevel } from "../enums.js";
 
@@ -32,7 +32,7 @@ import type { LogLevel } from "../enums.js";
 /** A ban, as `banlist` reports it. */
 export interface BanEntry {
   /** The ban's id. */
-  readonly id: bigint;
+  readonly id: BanID;
   /** The address pattern the ban matches, or "". */
   readonly ip: string;
   /** The nickname pattern the ban matches, or "". */
@@ -61,7 +61,7 @@ export interface BanEntry {
 }
 
 const parseBan = (row: Record<string, string>): BanEntry => ({
-  id: big(row, "banid"),
+  id: asBanID(big(row, "banid")),
   ip: str(row, "ip"),
   name: str(row, "name"),
   uid: asUID(str(row, "uid")),
@@ -142,12 +142,12 @@ export async function addBan(
   client: CommandExecutor,
   ban: BanOptions,
   options?: CommandOptions,
-): Promise<bigint | undefined> {
+): Promise<BanID | undefined> {
   if (!ban.ip && !ban.name && !ban.uid) {
     throw new TypeError("a ban needs an ip, a name or a uid to match");
   }
   const rows = await query(client, "banadd", encodeFields(ban, banNames), options);
-  return rows[0]?.["banid"] === undefined ? undefined : big(rows[0], "banid");
+  return rows[0]?.["banid"] === undefined ? undefined : asBanID(big(rows[0], "banid"));
 }
 
 /**
@@ -158,20 +158,20 @@ export async function banClient(
   client: CommandExecutor,
   clid: ClientID,
   options: BanClientOptions = {},
-): Promise<bigint | undefined> {
+): Promise<BanID | undefined> {
   const rows = await query(
     client,
     "banclient",
     [["clid", clid], ...encodeFields(options, banClientNames)],
     options,
   );
-  return rows[0]?.["banid"] === undefined ? undefined : big(rows[0], "banid");
+  return rows[0]?.["banid"] === undefined ? undefined : asBanID(big(rows[0], "banid"));
 }
 
 /** Remove a ban. */
 export async function deleteBan(
   client: CommandExecutor,
-  banID: bigint,
+  banID: BanID,
   options?: CommandOptions,
 ): Promise<void> {
   await exec(client, "bandel", [["banid", banID]], options);
@@ -277,7 +277,7 @@ export async function deleteAllComplaints(
 /** A message left for a client while they were away. */
 export interface OfflineMessage {
   /** The message's id. */
-  readonly id: bigint;
+  readonly id: MessageID;
   /** The sender's unique identifier. */
   readonly uid: UID;
   /** The subject. */
@@ -291,7 +291,7 @@ export interface OfflineMessage {
 }
 
 const parseMessage = (row: Record<string, string>): OfflineMessage => ({
-  id: big(row, "msgid"),
+  id: asMessageID(big(row, "msgid")),
   uid: asUID(str(row, "cluid")),
   subject: str(row, "subject"),
   message: str(row, "message"),
@@ -310,7 +310,7 @@ export async function listMessages(
 /** One offline message, with its text. */
 export async function getMessage(
   client: CommandExecutor,
-  messageID: bigint,
+  messageID: MessageID,
   options?: CommandOptions,
 ): Promise<OfflineMessage> {
   const rows = await query(client, "messageget", [["msgid", messageID]], options);
@@ -320,7 +320,7 @@ export async function getMessage(
 /** Delete an offline message. */
 export async function deleteMessage(
   client: CommandExecutor,
-  messageID: bigint,
+  messageID: MessageID,
   options?: CommandOptions,
 ): Promise<void> {
   await exec(client, "messagedel", [["msgid", messageID]], options);
@@ -329,7 +329,7 @@ export async function deleteMessage(
 /** Mark a message read or unread. */
 export async function updateMessageFlag(
   client: CommandExecutor,
-  messageID: bigint,
+  messageID: MessageID,
   read: boolean,
   options?: CommandOptions,
 ): Promise<void> {

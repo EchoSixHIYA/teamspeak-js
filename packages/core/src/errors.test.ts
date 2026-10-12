@@ -13,7 +13,7 @@ describe("parseServerError", () => {
     });
     expect(err).toBeInstanceOf(ServerError);
     expect(err?.code).toBe(ErrorCode.PermissionsClientInsufficient);
-    expect(err?.failedPermissionId).toBe(236);
+    expect(err?.failedPermissionID).toBe(236);
     expect(err?.extraMessage).toBe("detail");
     expect(rc).toBe(7);
   });

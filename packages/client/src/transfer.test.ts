@@ -1,3 +1,4 @@
+import { asClientFileTransferID, asServerFileTransferID } from "@honeybbq/teamspeak-core";
 import { describe, it, expect } from "vitest";
 import { createServer, type Server } from "node:net";
 import { Duplex, PassThrough, Readable, Writable } from "node:stream";
@@ -67,8 +68,8 @@ describe("upload and download", () => {
   const info = {
     port: 0,
     fileTransferKey: "key",
-    clientFileTransferID: 1,
-    serverFileTransferID: 1,
+    clientFileTransferID: asClientFileTransferID(1),
+    serverFileTransferID: asServerFileTransferID(1),
   };
 
   it("sends the key, then the data", async () => {

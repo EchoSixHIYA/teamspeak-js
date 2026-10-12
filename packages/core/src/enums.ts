@@ -82,15 +82,15 @@ export type Codec = (typeof Codec)[keyof typeof Codec];
 
 /** What a permission is set on, as `permfind` and `permoverview` report it (`t`). */
 export const PermissionTarget = {
-  /** A server group; `id1` is the group. */
+  /** A server group. */
   ServerGroup: 0,
-  /** A client, server-wide; `id1` is the client's database id. */
+  /** A client, server-wide. */
   Client: 1,
-  /** A channel; `id1` is the channel. */
+  /** A channel. */
   Channel: 2,
-  /** A channel group; `id2` is the group. */
+  /** A channel group, in one channel. */
   ChannelGroup: 3,
-  /** A client within one channel; `id1` is the channel and `id2` the client's database id. */
+  /** A client within one channel. */
   ChannelClient: 4,
 } as const;
 

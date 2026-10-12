@@ -25,8 +25,13 @@ import {
 } from "./command.js";
 import type { WireNames } from "./command.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
-import type { ChannelID, ClientID } from "../command/ids.js";
-import { asClientID } from "../command/ids.js";
+import type {
+  ChannelID,
+  ClientFileTransferID,
+  ClientID,
+  ServerFileTransferID,
+} from "../command/ids.js";
+import { asClientFileTransferID, asClientID, asServerFileTransferID } from "../command/ids.js";
 import type { FileDownloadInfo, FileUploadInfo } from "../types.js";
 
 const asPath = (path: string): string => (path.startsWith("/") ? path : `/${path}`);
@@ -203,7 +208,7 @@ export interface FileTransferStopOptions extends CommandOptions {
 /** Cancel a running transfer. */
 export async function stopFileTransfer(
   client: CommandExecutor,
-  serverFileTransferID: number,
+  serverFileTransferID: ServerFileTransferID,
   options: FileTransferStopOptions = {},
 ): Promise<void> {
   await exec(
@@ -230,12 +235,15 @@ export interface ActiveTransfer {
   /** How many bytes have been transferred. */
   readonly sizeDone: bigint;
   /** The client's id for the transfer. */
-  readonly clientFileTransferID: number;
+  readonly clientFileTransferID: ClientFileTransferID;
   /** The server's id for the transfer, which {@link stopFileTransfer} takes. */
-  readonly serverFileTransferID: number;
+  readonly serverFileTransferID: ServerFileTransferID;
   /** Which side sends the data, as the server reports it (`sender`). */
   readonly sender: string;
-  /** The transfer's state. */
+  /**
+   * The transfer's state, as the server reports it. A plain number: no table
+   * of its values is published, tsdeclarations included.
+   */
   readonly status: number;
   /** The current speed, in bytes per second. */
   readonly currentSpeed: number;
@@ -260,8 +268,8 @@ export async function listActiveTransfers(
     name: str(row, "name"),
     size: big(row, "size"),
     sizeDone: big(row, "sizedone"),
-    clientFileTransferID: num(row, "clientftfid"),
-    serverFileTransferID: num(row, "serverftfid"),
+    clientFileTransferID: asClientFileTransferID(num(row, "clientftfid")),
+    serverFileTransferID: asServerFileTransferID(num(row, "serverftfid")),
     sender: str(row, "sender"),
     status: num(row, "status"),
     currentSpeed: num(row, "current_speed"),
@@ -278,9 +286,9 @@ export async function listActiveTransfers(
  * so two transfers negotiated at once must not share one.
  */
 let lastClientFileTransferID = 0;
-function nextClientFileTransferID(): number {
+function nextClientFileTransferID(): ClientFileTransferID {
   lastClientFileTransferID = (lastClientFileTransferID % 65535) + 1;
-  return lastClientFileTransferID;
+  return asClientFileTransferID(lastClientFileTransferID);
 }
 
 /** How {@link initFileUpload} negotiates an upload. */
@@ -331,8 +339,8 @@ export async function initFileUpload(
     fileTransferKey: str(row, "ftkey"),
     port: num(row, "port"),
     seekPosition: big(row, "seekpos"),
-    clientFileTransferID: num(row, "clientftfid"),
-    serverFileTransferID: num(row, "serverftfid"),
+    clientFileTransferID: asClientFileTransferID(num(row, "clientftfid")),
+    serverFileTransferID: asServerFileTransferID(num(row, "serverftfid")),
   };
 }
 
@@ -375,7 +383,7 @@ export async function initFileDownload(
     fileTransferKey: str(row, "ftkey"),
     port: num(row, "port"),
     size: big(row, "size"),
-    clientFileTransferID: num(row, "clientftfid"),
-    serverFileTransferID: num(row, "serverftfid"),
+    clientFileTransferID: asClientFileTransferID(num(row, "clientftfid")),
+    serverFileTransferID: asServerFileTransferID(num(row, "serverftfid")),
   };
 }

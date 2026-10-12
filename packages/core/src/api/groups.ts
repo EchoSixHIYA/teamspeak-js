@@ -35,7 +35,7 @@ import {
   asPermissionID,
   asServerGroupID,
 } from "../command/ids.js";
-import { TokenType } from "../enums.js";
+import { PermissionTarget, TokenType } from "../enums.js";
 import type { GroupType } from "../enums.js";
 import type { Permission } from "../permission.js";
 
@@ -51,8 +51,8 @@ export interface ChannelGroup {
   readonly iconID: IconID | undefined;
   /** Whether membership is stored, rather than lost when the server restarts. */
   readonly savedInDatabase: boolean;
-  /** Where the group sorts among the others. */
-  readonly sortID: bigint;
+  /** Where the group sorts among the others; a 32-bit value. */
+  readonly sortID: number;
   /** Where the group's name shows beside a member's nickname, one of {@link GroupNameMode}. */
   readonly nameMode: number;
   /** The power needed to modify the group. */
@@ -69,7 +69,7 @@ const parseChannelGroup = (row: Record<string, string>): ChannelGroup => ({
   type: num(row, "type"),
   iconID: icon(row, "iconid"),
   savedInDatabase: bool(row, "savedb"),
-  sortID: big(row, "sortid"),
+  sortID: num(row, "sortid"),
   nameMode: num(row, "namemode"),
   modifyPower: num(row, "n_modifyp"),
   memberAddPower: num(row, "n_member_addp"),
@@ -318,20 +318,90 @@ export async function getPermissionIDByName(
 }
 
 /**
- * One place a permission is set, as `permfind` reports it.
- *
- * What `id1` and `id2` name depends on `target` — see {@link PermissionTarget}
- * — which is why they stay raw numbers rather than typed ids.
+ * What a permission is set on, as `permfind` and `permoverview` report it:
+ * discriminated on `target`, so each kind carries its own typed ids. The wire
+ * sends them as `t`, `id1` and `id2`, whose meaning depends on `t`; a row with
+ * a target this table does not name is left out of the results.
  */
-export interface PermissionLocation {
-  /** What the permission is set on, one of {@link PermissionTarget} (`t`). */
-  readonly target: number;
-  /** The first id naming where (`id1`). */
-  readonly id1: bigint;
-  /** The second id naming where, or 0 (`id2`). */
-  readonly id2: bigint;
-  /** The permission (`p`). */
-  readonly permission: PermissionID;
+export type PermissionLocation =
+  | {
+      /** Set on a server group. */
+      readonly target: typeof PermissionTarget.ServerGroup;
+      /** The group (`id1`). */
+      readonly serverGroupID: ServerGroupID;
+      /** The permission (`p`). */
+      readonly permission: PermissionID;
+    }
+  | {
+      /** Set on a client, server-wide. */
+      readonly target: typeof PermissionTarget.Client;
+      /** The client (`id1`). */
+      readonly databaseID: ClientDBID;
+      /** The permission (`p`). */
+      readonly permission: PermissionID;
+    }
+  | {
+      /** Set on a channel. */
+      readonly target: typeof PermissionTarget.Channel;
+      /** The channel (`id1`). */
+      readonly channelID: ChannelID;
+      /** The permission (`p`). */
+      readonly permission: PermissionID;
+    }
+  | {
+      /** Set on a channel group, in one channel. */
+      readonly target: typeof PermissionTarget.ChannelGroup;
+      /** The channel (`id1`). */
+      readonly channelID: ChannelID;
+      /** The group (`id2`). */
+      readonly channelGroupID: ChannelGroupID;
+      /** The permission (`p`). */
+      readonly permission: PermissionID;
+    }
+  | {
+      /** Set on a client within one channel. */
+      readonly target: typeof PermissionTarget.ChannelClient;
+      /** The channel (`id1`). */
+      readonly channelID: ChannelID;
+      /** The client (`id2`). */
+      readonly databaseID: ClientDBID;
+      /** The permission (`p`). */
+      readonly permission: PermissionID;
+    };
+
+/** Read a location from a `permfind` or `permoverview` row; undefined for an unknown target. */
+function parseLocation(row: Record<string, string>): PermissionLocation | undefined {
+  const permission = asPermissionID(num(row, "p"));
+  const id1 = big(row, "id1");
+  const id2 = big(row, "id2");
+  switch (num(row, "t")) {
+    case PermissionTarget.ServerGroup:
+      return {
+        target: PermissionTarget.ServerGroup,
+        serverGroupID: asServerGroupID(id1),
+        permission,
+      };
+    case PermissionTarget.Client:
+      return { target: PermissionTarget.Client, databaseID: asClientDBID(id1), permission };
+    case PermissionTarget.Channel:
+      return { target: PermissionTarget.Channel, channelID: asChannelID(id1), permission };
+    case PermissionTarget.ChannelGroup:
+      return {
+        target: PermissionTarget.ChannelGroup,
+        channelID: asChannelID(id1),
+        channelGroupID: asChannelGroupID(id2),
+        permission,
+      };
+    case PermissionTarget.ChannelClient:
+      return {
+        target: PermissionTarget.ChannelClient,
+        channelID: asChannelID(id1),
+        databaseID: asClientDBID(id2),
+        permission,
+      };
+    default:
+      return undefined;
+  }
 }
 
 /** Every place a permission is set. */
@@ -341,16 +411,11 @@ export async function findPermission(
   options?: CommandOptions,
 ): Promise<PermissionLocation[]> {
   const rows = await list(client, "permfind", [permissionParam(permission)], options);
-  return rows.map((row) => ({
-    target: num(row, "t"),
-    id1: big(row, "id1"),
-    id2: big(row, "id2"),
-    permission: asPermissionID(num(row, "p")),
-  }));
+  return rows.flatMap((row) => parseLocation(row) ?? []);
 }
 
-/** One permission applying to a client in a channel, as `permoverview` reports it. */
-export interface PermissionOverviewEntry extends PermissionLocation {
+/** How a permission applies, in a {@link PermissionOverviewEntry}. */
+export interface PermissionOverviewValue {
   /** The permission's value there (`v`). */
   readonly value: number;
   /** Whether the value is negated (`n`). */
@@ -358,6 +423,9 @@ export interface PermissionOverviewEntry extends PermissionLocation {
   /** Whether it skips channel and client overrides (`s`). */
   readonly skip: boolean;
 }
+
+/** One permission applying to a client in a channel, as `permoverview` reports it. */
+export type PermissionOverviewEntry = PermissionLocation & PermissionOverviewValue;
 
 /**
  * Every permission that applies to a client in a channel, from every source,
@@ -383,15 +451,11 @@ export async function getPermissionOverview(
     ],
     options,
   );
-  return rows.map((row) => ({
-    target: num(row, "t"),
-    id1: big(row, "id1"),
-    id2: big(row, "id2"),
-    permission: asPermissionID(num(row, "p")),
-    value: num(row, "v"),
-    negated: bool(row, "n"),
-    skip: bool(row, "s"),
-  }));
+  return rows.flatMap((row) => {
+    const location = parseLocation(row);
+    if (location === undefined) return [];
+    return [{ ...location, value: num(row, "v"), negated: bool(row, "n"), skip: bool(row, "s") }];
+  });
 }
 
 /**

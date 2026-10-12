@@ -33,9 +33,17 @@ import type {
   ClientID,
   IconID,
   ServerGroupID,
+  ServerID,
   UID,
 } from "../command/ids.js";
-import { asChannelID, asClientDBID, asClientID, asServerGroupID, asUID } from "../command/ids.js";
+import {
+  asChannelID,
+  asClientDBID,
+  asClientID,
+  asServerGroupID,
+  asServerID,
+  asUID,
+} from "../command/ids.js";
 import type { GroupType } from "../enums.js";
 import type { GroupDeleteOptions } from "./groups.js";
 import type { Permission } from "../permission.js";
@@ -52,8 +60,8 @@ export interface ServerGroup {
   readonly iconID: IconID | undefined;
   /** Whether membership is stored, rather than lost when the server restarts. */
   readonly savedInDatabase: boolean;
-  /** Where the group sorts among the others. */
-  readonly sortID: bigint;
+  /** Where the group sorts among the others; a 32-bit value. */
+  readonly sortID: number;
   /** Where the group's name shows beside a member's nickname, one of {@link GroupNameMode}. */
   readonly nameMode: number;
   /** The power needed to modify the group. */
@@ -70,7 +78,7 @@ const parseServerGroup = (row: Record<string, string>): ServerGroup => ({
   type: num(row, "type"),
   iconID: icon(row, "iconid"),
   savedInDatabase: bool(row, "savedb"),
-  sortID: big(row, "sortid"),
+  sortID: num(row, "sortid"),
   nameMode: num(row, "namemode"),
   modifyPower: num(row, "n_modifyp"),
   memberAddPower: num(row, "n_member_addp"),
@@ -220,8 +228,8 @@ export async function getVersion(
 export interface WhoAmI {
   /** The virtual server's state, such as "online" (`virtualserver_status`). */
   readonly serverStatus: string;
-  /** The virtual server's numeric id, 0 when none is selected (`virtualserver_id`). */
-  readonly serverID: bigint;
+  /** The virtual server's id, 0 when none is selected (`virtualserver_id`). */
+  readonly serverID: ServerID;
   /** The virtual server's unique identifier (`virtualserver_unique_identifier`). */
   readonly serverUID: string;
   /** The virtual server's voice port (`virtualserver_port`). */
@@ -249,7 +257,7 @@ export async function whoAmI(client: CommandExecutor, options?: CommandOptions):
   const row = (await query(client, "whoami", [], options))[0] ?? {};
   return {
     serverStatus: str(row, "virtualserver_status"),
-    serverID: big(row, "virtualserver_id"),
+    serverID: asServerID(big(row, "virtualserver_id")),
     serverUID: str(row, "virtualserver_unique_identifier"),
     serverPort: num(row, "virtualserver_port"),
     clientID: asClientID(num(row, "client_id")),
@@ -341,9 +349,9 @@ export async function getServerIDByPort(
   client: CommandExecutor,
   port: number,
   options?: CommandOptions,
-): Promise<bigint> {
+): Promise<ServerID> {
   const rows = await query(client, "serveridgetbyport", [["virtualserver_port", port]], options);
-  return big(rows[0] ?? {}, "server_id");
+  return asServerID(big(rows[0] ?? {}, "server_id"));
 }
 
 // ---- Server groups ----------------------------------------------------------

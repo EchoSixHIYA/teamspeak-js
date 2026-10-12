@@ -34,6 +34,30 @@ export type PermissionID = number & { readonly __brand: "PermissionID" };
  */
 export type IconID = number & { readonly __brand: "IconID" };
 
+/** A ban (`banid`). */
+export type BanID = bigint & { readonly __brand: "BanID" };
+/** An offline message (`msgid`). */
+export type MessageID = bigint & { readonly __brand: "MessageID" };
+/** A virtual server on an instance (`sid`, `virtualserver_id`). */
+export type ServerID = bigint & { readonly __brand: "ServerID" };
+/** The client's id for a file transfer (`clientftfid`), a 16-bit value it chooses. */
+export type ClientFileTransferID = number & { readonly __brand: "ClientFileTransferID" };
+/** The server's id for a file transfer (`serverftfid`), a 16-bit value. */
+export type ServerFileTransferID = number & { readonly __brand: "ServerFileTransferID" };
+
+/** Brand a ban id, from a number or a bigint. */
+export const asBanID = (v: bigint | number): BanID => BigInt(v) as BanID;
+/** Brand an offline message id, from a number or a bigint. */
+export const asMessageID = (v: bigint | number): MessageID => BigInt(v) as MessageID;
+/** Brand a virtual server id, from a number or a bigint. */
+export const asServerID = (v: bigint | number): ServerID => BigInt(v) as ServerID;
+/** Brand the client's id for a file transfer. */
+export const asClientFileTransferID = (v: number): ClientFileTransferID =>
+  v as ClientFileTransferID;
+/** Brand the server's id for a file transfer. */
+export const asServerFileTransferID = (v: number): ServerFileTransferID =>
+  v as ServerFileTransferID;
+
 /** Brand a channel id, from a number or a bigint. */
 export const asChannelID = (v: bigint | number): ChannelID => BigInt(v) as ChannelID;
 /** Brand a client id. */

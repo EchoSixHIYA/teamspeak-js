@@ -107,6 +107,24 @@ take them in the options object:
 | `listBindings(c, subsystem)`                                                                      | `listBindings(c, { subsystem })`                               |
 | `banClient`, `viewLog`, `listClientDatabase`, `listServerGroupClients`, `listChannelGroupClients` | their options and `{ signal, timeout }` merged into one object |
 
+Ids the server hands back are branded like the rest: a ban is a `BanID`
+(`BanEntry.id`, `addBan`, `banClient`, `deleteBan`), an offline message a
+`MessageID`, a virtual server a `ServerID` (`WhoAmI.serverID`,
+`getServerIDByPort`), and a transfer has a `ClientFileTransferID` and a
+`ServerFileTransferID` (`stopFileTransfer` takes the latter). Brand one with
+`asBanID(…)` and the like. `ServerGroup.sortID` and `ChannelGroup.sortID` are
+numbers. `PermissionLocation`, which `findPermission` and
+`getPermissionOverview` return, is discriminated on `target` and names its ids
+— `serverGroupID`, `databaseID`, `channelID`, `channelGroupID` — instead of
+`id1` and `id2`:
+
+```ts
+for (const where of await findPermission(client, permissionByName("i_client_talk_power"))) {
+  if (where.target === PermissionTarget.ChannelGroup)
+    console.log(where.channelID, where.channelGroupID);
+}
+```
+
 About a hundred more commands are new: channels, groups, permissions, bans,
 files, tokens and the server. An id comes from a result, an event, or a
 constructor: `asChannelID(5)`, `asClientID(3)`.
@@ -124,7 +142,8 @@ if (err instanceof ServerError && err.id === "2568") { … }
 if (err instanceof ServerError && err.code === ErrorCode.PermissionsClientInsufficient) { … }
 ```
 
-`code` is a number; `ErrorCode` names every code. A wrong server or channel
+`code` is a number; `ErrorCode` names every code. `failedPermissionID` is a
+`PermissionID`. A wrong server or channel
 password is no longer retried by the reconnect loop.
 
 ## Events

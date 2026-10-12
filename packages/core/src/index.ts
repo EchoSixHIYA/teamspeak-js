@@ -22,7 +22,12 @@ export type {
 
 // Branded ids: a ChannelID cannot be passed where a ClientID is meant.
 export {
+  asBanID,
   asChannelID,
+  asClientFileTransferID,
+  asMessageID,
+  asServerFileTransferID,
+  asServerID,
   asChannelGroupID,
   asClientDBID,
   asClientID,
@@ -32,6 +37,11 @@ export {
   asUID,
 } from "./command/ids.js";
 export type {
+  BanID,
+  ClientFileTransferID,
+  MessageID,
+  ServerFileTransferID,
+  ServerID,
   ChannelGroupID,
   ChannelID,
   ClientDBID,

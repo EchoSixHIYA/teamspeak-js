@@ -1,3 +1,4 @@
+import type { ClientFileTransferID, ServerFileTransferID } from "./command/ids.js";
 import type { CommandExecutor } from "./command/request.js";
 
 /** A TS3-escaped string. Obtained only via escape(). */
@@ -58,9 +59,9 @@ export interface FileUploadInfo {
   /** Where to resume from, in bytes; 0 for a fresh upload. */
   readonly seekPosition: bigint;
   /** The client's id for the transfer. */
-  readonly clientFileTransferID: number;
+  readonly clientFileTransferID: ClientFileTransferID;
   /** The server's id for the transfer. */
-  readonly serverFileTransferID: number;
+  readonly serverFileTransferID: ServerFileTransferID;
   /** The file transfer port to dial. */
   readonly port: number;
 }
@@ -72,9 +73,9 @@ export interface FileDownloadInfo {
   /** How many bytes the server will send. */
   readonly size: bigint;
   /** The client's id for the transfer. */
-  readonly clientFileTransferID: number;
+  readonly clientFileTransferID: ClientFileTransferID;
   /** The server's id for the transfer. */
-  readonly serverFileTransferID: number;
+  readonly serverFileTransferID: ServerFileTransferID;
   /** The file transfer port to dial. */
   readonly port: number;
 }

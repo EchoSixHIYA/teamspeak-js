@@ -22,7 +22,12 @@ import {
 } from "./command.js";
 import type { WireNames } from "./command.js";
 import { deleteFile, getFileInfo, initFileUpload, listFiles } from "./files.js";
-import { addPrivilegeKey, getPermissionOverview, listPrivilegeKeys } from "./groups.js";
+import {
+  addPrivilegeKey,
+  findPermission,
+  getPermissionOverview,
+  listPrivilegeKeys,
+} from "./groups.js";
 import type { PrivilegeKeyOptions } from "./groups.js";
 import { addBan, banClient, listBans, sendChannelMessage, viewLog } from "./moderation.js";
 import { addTempPassword, listServerGroups } from "./server.js";
@@ -339,6 +344,18 @@ describe("Permission", () => {
     ]);
   });
 
+  it("types each location by its target, and skips a target it cannot name", async () => {
+    const { client } = recordingClient([
+      { t: "3", id1: "4", id2: "9", p: "1" },
+      { t: "4", id1: "4", id2: "7", p: "1" },
+      { t: "99", id1: "1", id2: "1", p: "1" },
+    ]);
+    expect(await findPermission(client, permissionByID(asPermissionID(1)))).toEqual([
+      { target: 3, channelID: 4n, channelGroupID: 9n, permission: 1 },
+      { target: 4, channelID: 4n, databaseID: 7n, permission: 1 },
+    ]);
+  });
+
   it("asks permoverview for every permission, since it needs one", async () => {
     const { client, sent } = recordingClient([
       { t: "0", id1: "8", id2: "0", p: "25", v: "1", n: "0", s: "0" },
@@ -348,8 +365,7 @@ describe("Permission", () => {
     expect(sent[0]).toBe("permoverview cid=1 cldbid=3 permid=0");
     expect(entry).toEqual({
       target: 0,
-      id1: 8n,
-      id2: 0n,
+      serverGroupID: 8n,
       permission: 25,
       value: 1,
       negated: false,
