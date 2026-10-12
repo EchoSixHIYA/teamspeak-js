@@ -239,6 +239,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * start competing loops.
    */
   #reconnecting = false;
+  /**
+   * Why the last established session dropped: a reconnect loop whose own
+   * attempt connected and then dropped before the loop resumed retries for it.
+   */
+  #lastDrop: Error | undefined;
   /** Set by an explicit disconnect(), which must never be undone by a retry. */
   #stopped = false;
   /**
@@ -1123,6 +1128,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#status = ClientStatus.Disconnected;
     // Never undefined for a drop: undefined means disconnect() only.
     const cause = err ?? new TeamspeakError("connection closed");
+    this.#lastDrop = cause;
 
     // Announced first, then retried: a caller watching `disconnected` should
     // hear about the drop even when a reconnect is already on its way, because
@@ -1139,7 +1145,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * Never runs after an explicit disconnect, and never more than one at a time:
    * two failures in quick succession would otherwise start competing loops, and
    * a loop shorter than the server's antiflood window bans the IP rather than
-   * reconnecting it.
+   * reconnecting it. A drop while the loop runs is the loop's to retry: it
+   * ends only once its attempt is still connected when it resumes.
    */
   async #scheduleReconnect(err: Error): Promise<void> {
     const options = this.#reconnectOptions;
@@ -1176,8 +1183,14 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
         try {
           await this.connect({ signal: AbortSignal.timeout(RECONNECT_ATTEMPT_TIMEOUT_MS) });
-          this.#logger.info("reconnected", { attempt });
-          return;
+          if (this.#status === ClientStatus.Connected) {
+            this.#logger.info("reconnected", { attempt });
+            return;
+          }
+          // The new session dropped before this loop resumed — initserver and
+          // the server's goodbye in one datagram, say. That drop found this
+          // loop running and left the retrying to it.
+          err = this.#lastDrop ?? new TeamspeakError("connection closed");
         } catch (retryErr) {
           err = retryErr instanceof Error ? retryErr : new TeamspeakError(String(retryErr));
         }
