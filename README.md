@@ -12,6 +12,9 @@ Install the client you need; it re-exports the core. A ServerQuery client,
 not yet published. The Go counterpart is
 [teamspeak-go](https://github.com/honeybbq/teamspeak-go).
 
+Upgrading from 0.x? [docs/migrating-to-1.0.md](docs/migrating-to-1.0.md) walks
+through every change.
+
 ## Development
 
 ```sh

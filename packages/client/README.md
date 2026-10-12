@@ -13,6 +13,8 @@ Compatible with TeamSpeak 3, 5 & 6. No proprietary SDK. No copy-pasted code.
 
 </div>
 
+Upgrading from 0.x? See the [migration guide](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/migrating-to-1.0.md).
+
 ## Features
 
 - **Full protocol handshake** — ECDH key exchange, RSA puzzle, EAX-encrypted transport
