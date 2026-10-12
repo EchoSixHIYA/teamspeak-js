@@ -16,7 +16,10 @@
     "directory": "packages/core"
   },
   "files": [
-    "dist"
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "LICENSE"
   ],
   "type": "module",
   "sideEffects": false,

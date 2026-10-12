@@ -13,6 +13,8 @@ export default defineConfig({
     },
     target: "node20",
     sourcemap: true,
+    // Readable output: class names stay in stack traces and inspect().
+    minify: false,
   },
   test: {
     name: "@honeybbq/teamspeak-core",
