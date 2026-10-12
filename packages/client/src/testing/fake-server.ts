@@ -109,9 +109,10 @@ export function sessionPacket(
   flags: number,
   id: number,
   payload: Uint8Array,
+  generation = 0,
 ): Uint8Array {
   const header = s2cHeader(id, type | flags);
-  const [key, nonce] = crypt.getKeyNonce(true, id, 0, type, false);
+  const [key, nonce] = crypt.getKeyNonce(true, id, generation, type, false);
   const [ciphertext, tag] = new EAX(key).encrypt(nonce, header, payload);
   return datagram(tag, header, ciphertext);
 }

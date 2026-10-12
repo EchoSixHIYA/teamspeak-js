@@ -344,6 +344,27 @@ describe("the receive path", () => {
   });
 });
 
+describe("generations", () => {
+  // The receive window places every id in its generation. A packet that
+  // decrypts only under another one is not for this place in the stream: under
+  // the one before, it is an old packet replayed after the 16-bit id wrapped.
+  it("decrypts a packet under the generation the window gives it, and no other", async () => {
+    const { client, socket } = await connectedClient();
+    const crypt = clientInternals(client).crypt;
+    const messages: string[] = [];
+    client.on("textMessage", (m) => messages.push(m.message));
+    const text = (msg: string): Uint8Array =>
+      new TextEncoder().encode(`notifytextmessage targetmode=1 msg=${msg} invokerid=2`);
+
+    socket.deliver(sessionPacket(crypt, 2, 0x20, 1, text("next-generation"), 1));
+    socket.deliver(sessionPacket(crypt, 2, 0x20, 1, text("real"), 0));
+    await settle();
+
+    expect(messages).toEqual(["real"]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});
+
 describe("unencrypted packets once connected", () => {
   const text = (msg: string): Uint8Array =>
     new TextEncoder().encode(`notifytextmessage targetmode=1 msg=${msg} invokerid=2`);

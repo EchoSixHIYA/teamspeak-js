@@ -526,29 +526,13 @@ export class PacketHandler {
       );
       return { plaintext, dummyUsed };
     } catch {
-      // Before crypto init only the dummy key exists: there is no session key
-      // to try, at this generation or any other.
+      // Before crypto init only the dummy key exists: there is no other key
+      // to try.
       if (dummy) return null;
-      // Try adjacent generations
-      for (const offset of [-1, 1]) {
-        const guessGen = gen + offset;
-        if (guessGen < 0) continue;
-        try {
-          const plaintext = this.#crypt.decrypt(
-            pType,
-            p.id,
-            guessGen,
-            header,
-            ciphertext,
-            tag,
-            false,
-            false,
-          );
-          return { plaintext, dummyUsed: false };
-        } catch {
-          // continue
-        }
-      }
+      // No other generation is tried: the receive window already places the
+      // id in its generation, and a packet that decrypts only under the one
+      // before is an old packet replayed after the 16-bit id wrapped. Neither
+      // TS3 nor TS6 ever needed a guess at the next one.
 
       // The acknowledgement of a command sent under the dummy key may itself
       // use the dummy key, and is the one packet that may once crypto init has
