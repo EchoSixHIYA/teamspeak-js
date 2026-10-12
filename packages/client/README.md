@@ -249,6 +249,9 @@ const info = await initFileUpload(client, cid, "/notes.txt", BigInt(data.length)
 await client.uploadFileData(host, info, Readable.from([data]));
 ```
 
+An upload does not replace a file already at the path unless passed
+`{ overwrite: true }`.
+
 | Function                                                | Description                       |
 | ------------------------------------------------------- | --------------------------------- |
 | `initFileUpload(client, ...)`                           | Negotiate an upload               |

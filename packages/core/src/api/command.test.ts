@@ -209,6 +209,19 @@ describe("file transfer negotiation", () => {
     expect(ids[0]).not.toBe(ids[1]);
   });
 
+  // An upload used to replace a file already at the path unless told not to.
+  it("does not overwrite unless asked to", async () => {
+    const { client, execCommandWithResponse } = fakeClient();
+    execCommandWithResponse.mockResolvedValue([{ ftkey: "k", port: "30033" }]);
+    await initFileUpload(client, asChannelID(1n), "/a", 3n);
+    await initFileUpload(client, asChannelID(1n), "/a", 3n, { overwrite: true });
+
+    const flags = execCommandWithResponse.mock.calls.map(
+      ([cmd]) => /overwrite=(\d)/.exec(String(cmd))?.[1],
+    );
+    expect(flags).toEqual(["0", "1"]);
+  });
+
   it("returns what the upload answer carries", async () => {
     const { client, execCommandWithResponse } = fakeClient();
     execCommandWithResponse.mockResolvedValue([

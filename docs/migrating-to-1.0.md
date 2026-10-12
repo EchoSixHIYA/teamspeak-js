@@ -107,6 +107,9 @@ take them in the options object:
 | `listBindings(c, subsystem)`                                                                      | `listBindings(c, { subsystem })`                               |
 | `banClient`, `viewLog`, `listClientDatabase`, `listServerGroupClients`, `listChannelGroupClients` | their options and `{ signal, timeout }` merged into one object |
 
+`initFileUpload` no longer replaces a file already at the path unless passed
+`overwrite: true`; it used to by default.
+
 The options types are named `…Options` like the rest: `listClientDatabase`
 takes a `ClientDatabasePageOptions`, `listChannelGroupClients` a
 `ChannelGroupClientListOptions`, and `pages` a `PagingOptions`.

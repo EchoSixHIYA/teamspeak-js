@@ -297,7 +297,10 @@ function nextClientFileTransferID(): ClientFileTransferID {
 export interface FileUploadOptions extends CommandOptions {
   /** The channel's password, in cleartext; "" by default (`cpw`). */
   readonly password?: string | undefined;
-  /** Replace an existing file; true by default (`overwrite`). */
+  /**
+   * Replace a file already at the path; false by default, so an upload never
+   * destroys a file unless asked to (`overwrite`, always sent).
+   */
   readonly overwrite?: boolean | undefined;
   /** Continue a partial upload; false by default (`resume`). */
   readonly resume?: boolean | undefined;
@@ -327,7 +330,7 @@ export async function initFileUpload(
       ["cid", cid],
       ["cpw", options.password ?? ""],
       ["size", size],
-      ["overwrite", options.overwrite ?? true],
+      ["overwrite", options.overwrite ?? false],
       ["resume", options.resume ?? false],
       // proto is required: omitting it fails the whole call with 1539
       // (parameter not found) rather than defaulting.
