@@ -116,6 +116,10 @@ export class Crypt {
         ((a !== undefined ? a : 0) ^ (b !== undefined ? b : 0)) & 0xff;
     }
 
+    // Keys derive from the IV: any cached before it changed belong to another
+    // IV, the empty one before crypto init in particular, which is public.
+    this.#cachedKeys.clear();
+
     const digest = createHash("sha1").update(this.#ivStruct).digest();
     this.#fakeSignature = new Uint8Array(digest.buffer, digest.byteOffset, FAKE_SIGNATURE_SIZE);
     this.#cryptoInitComplete = true;
@@ -130,6 +134,11 @@ export class Crypt {
   ): [key: Uint8Array, nonce: Uint8Array] {
     if (dummy) {
       return [Uint8Array.from(DUMMY_KEY), Uint8Array.from(DUMMY_NONCE)];
+    }
+    // Before crypto init there is no IV, and a key derived from the empty one
+    // is a key anyone can compute.
+    if (!this.#cryptoInitComplete) {
+      throw new CryptoInitError("no session key before crypto init completes");
     }
 
     const cacheKey = makeCacheKey(fromServer, packetType, generationID);

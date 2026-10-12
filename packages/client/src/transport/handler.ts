@@ -518,6 +518,9 @@ export class PacketHandler {
       );
       return { plaintext, dummyUsed };
     } catch {
+      // Before crypto init only the dummy key exists: there is no session key
+      // to try, at this generation or any other.
+      if (dummy) return null;
       // Try adjacent generations
       for (const offset of [-1, 1]) {
         const guessGen = gen + offset;

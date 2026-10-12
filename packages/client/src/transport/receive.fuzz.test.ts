@@ -13,12 +13,15 @@ import { Client } from "../client.js";
 import { CryptoInitError } from "../errors.js";
 import { generateIdentitySync } from "../crypto/identity.js";
 import { MAX_DECOMPRESSED_SIZE, Qlz, QuickLZError } from "./quicklz.js";
+import { Crypt } from "../crypto/crypt.js";
 import {
   FakeSocket,
+  datagram,
   dummyPacket,
   init1Packet,
   plainPacket,
   prng,
+  s2cHeader,
   sessionPacket,
 } from "../testing/fake-server.js";
 
@@ -363,6 +366,40 @@ describe("unencrypted packets once connected", () => {
       sessionPacket(crypt, 2, 0x20, 1, new TextEncoder().encode("error id=0 msg=ok return_code=1")),
     );
     await expect(answer).resolves.toEqual([]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});
+
+describe("garbage before the handshake", () => {
+  it("leaves no key behind for the session to use", async () => {
+    const { client, socket } = await startedClient();
+    for (const [type, id] of [
+      [2, 5],
+      [3, 5],
+      [6, 5],
+      [7, 5],
+      [2, 65535],
+      [6, 65535],
+    ] as const) {
+      socket.deliver(datagram(randomBytes(8), s2cHeader(id, type), randomBytes(20)));
+    }
+    const alpha = randomBytes(10);
+    const beta = randomBytes(54);
+    const secret = randomBytes(20);
+    const crypt = clientInternals(client).crypt;
+    crypt.setSharedSecret(alpha, beta, secret);
+
+    // The keys are those of the session's IV, as a crypt that never saw the
+    // garbage derives them.
+    const reference = new Crypt(identity);
+    reference.setSharedSecret(alpha, beta, secret);
+    for (const type of [2, 3, 6, 7]) {
+      for (const gen of [0, 1]) {
+        expect(crypt.getKeyNonce(true, 9, gen, type, false)).toEqual(
+          reference.getKeyNonce(true, 9, gen, type, false),
+        );
+      }
+    }
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 });
