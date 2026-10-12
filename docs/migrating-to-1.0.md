@@ -116,7 +116,11 @@ Ids the server hands back are branded like the rest: a ban is a `BanID`
 `MessageID`, a virtual server a `ServerID` (`WhoAmI.serverID`,
 `getServerIDByPort`), and a transfer has a `ClientFileTransferID` and a
 `ServerFileTransferID` (`stopFileTransfer` takes the latter). Brand one with
-`asBanID(…)` and the like. `ServerGroup.sortID` and `ChannelGroup.sortID` are
+`asBanID(…)` and the like. `banClient` resolves to every ban it made — the
+server bans a client by address, uid and, on TS6, myTeamSpeak id, and over
+ServerQuery reports each — as a `BanID[]`, which is empty over the voice
+protocol; `addBan` resolves to its one id, or `undefined` over the voice
+protocol, which reports none. `ServerGroup.sortID` and `ChannelGroup.sortID` are
 numbers. `PermissionLocation`, which `findPermission` and
 `getPermissionOverview` return, is discriminated on `target` and names its ids
 — `serverGroupID`, `databaseID`, `channelID`, `channelGroupID` — instead of

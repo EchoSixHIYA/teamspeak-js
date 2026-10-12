@@ -449,10 +449,18 @@ describe("bans", () => {
   });
 
   // The voice protocol reports no ban id.
-  it("returns undefined when the server reports no id", async () => {
+  it("returns undefined from addBan when the server reports no id", async () => {
     const { client } = recordingClient([], [{ banid: "11" }]);
-    expect(await banClient(client, asClientID(5))).toBeUndefined();
-    expect(await banClient(client, asClientID(5))).toBe(11n);
+    expect(await addBan(client, { uid: asUID("x") })).toBeUndefined();
+    expect(await addBan(client, { uid: asUID("x") })).toBe(11n);
+  });
+
+  // The server bans a client by address, uid and myTeamSpeak id, one ban each;
+  // only the first id used to be returned.
+  it("returns every ban banClient made, and none when the server reports none", async () => {
+    const { client } = recordingClient([], [{ banid: "11" }, { banid: "12" }, { banid: "13" }]);
+    expect(await banClient(client, asClientID(5))).toEqual([]);
+    expect(await banClient(client, asClientID(5))).toEqual([11n, 12n, 13n]);
   });
 });
 

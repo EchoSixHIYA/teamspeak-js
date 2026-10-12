@@ -152,21 +152,25 @@ export async function addBan(
 }
 
 /**
- * Ban a connected client by clid, and return the ban's id — over ServerQuery.
- * The voice protocol reports no id, so there this resolves to undefined.
+ * Ban a connected client by clid, and return the id of every ban that made.
+ *
+ * The server bans the client on several counts at once — its address, its
+ * uid, and on TS6 its myTeamSpeak id — and over ServerQuery answers one
+ * `banid` row for each; returning the first left the others to be found by
+ * hand. The voice protocol reports no ids, so there this resolves to `[]`.
  */
 export async function banClient(
   client: CommandExecutor,
   clid: ClientID,
   options: BanClientOptions = {},
-): Promise<BanID | undefined> {
+): Promise<BanID[]> {
   const rows = await query(
     client,
     "banclient",
     [["clid", clid], ...encodeFields(options, banClientNames)],
     options,
   );
-  return rows[0]?.["banid"] === undefined ? undefined : asBanID(big(rows[0], "banid"));
+  return rows.flatMap((row) => (str(row, "banid") === "" ? [] : [asBanID(big(row, "banid"))]));
 }
 
 /** Remove a ban. */
