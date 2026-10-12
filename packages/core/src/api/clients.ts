@@ -77,7 +77,7 @@ export interface ClientEntry {
  * more per client; turn them off for a narrower response when watching a busy
  * server.
  */
-export interface ClientListOptions {
+export interface ClientListOptions extends CommandOptions {
   /** The unique identifier (`-uid`). On unless set to false: almost every caller needs it. */
   readonly uid?: boolean | undefined;
   /** Away state and message (`-away`). */
@@ -113,10 +113,9 @@ const listFlags: WireNames<ClientListOptions> = {
 /** Every client currently connected. */
 export async function listClients(
   client: CommandExecutor,
-  include: ClientListOptions = {},
-  options?: CommandOptions,
+  options: ClientListOptions = {},
 ): Promise<ClientEntry[]> {
-  const flags = encodeFields({ ...include, uid: include.uid !== false }, listFlags);
+  const flags = encodeFields({ ...options, uid: options.uid !== false }, listFlags);
   return (await query(client, "clientlist", flags, options)).map(parseClient);
 }
 
@@ -139,18 +138,21 @@ export async function getClientInfo(
   return row;
 }
 
-/**
- * Move a client to another channel.
- *
- * `password` is the channel's, in cleartext; the voice client hashes it on the
- * wire. Unset sends none.
- */
+/** How {@link moveClient} enters the channel. */
+export interface ClientMoveOptions extends CommandOptions {
+  /**
+   * The channel's password, in cleartext; the voice client hashes it on the
+   * wire. Unset sends none (`cpw`).
+   */
+  readonly password?: string | undefined;
+}
+
+/** Move a client to another channel. */
 export async function moveClient(
   client: CommandExecutor,
   clid: ClientID,
   channelID: ChannelID,
-  password?: string,
-  options?: CommandOptions,
+  options: ClientMoveOptions = {},
 ): Promise<void> {
   await exec(
     client,
@@ -158,7 +160,7 @@ export async function moveClient(
     [
       ["clid", clid],
       ["cid", channelID],
-      ["cpw", password],
+      ["cpw", options.password],
     ],
     options,
     ["cpw"],
@@ -168,19 +170,22 @@ export async function moveClient(
 /** The reasons a client can be kicked for. */
 export type KickReason = typeof Reason.KickChannel | typeof Reason.KickServer;
 
+/** What {@link kickClient} tells the kicked client. */
+export interface ClientKickOptions extends CommandOptions {
+  /** Shown to the client; unset or `""` sends none (`reasonmsg`). */
+  readonly reasonMessage?: string | undefined;
+}
+
 /**
  * Kick a client from its channel (`Reason.KickChannel`), which moves it to the
  * default channel, or from the server (`Reason.KickServer`), which disconnects
  * it. Any other reason is refused before anything is sent.
- *
- * `reasonMessage` is shown to the client; unset or `""` sends none.
  */
 export async function kickClient(
   client: CommandExecutor,
   clid: ClientID,
   reason: KickReason,
-  reasonMessage?: string,
-  options?: CommandOptions,
+  options: ClientKickOptions = {},
 ): Promise<void> {
   if (reason !== Reason.KickChannel && reason !== Reason.KickServer) {
     throw new RangeError(
@@ -193,7 +198,7 @@ export async function kickClient(
     [
       ["clid", clid],
       ["reasonid", reason],
-      ["reasonmsg", nonEmpty(reasonMessage ?? "")],
+      ["reasonmsg", nonEmpty(options.reasonMessage ?? "")],
     ],
     options,
   );
@@ -450,7 +455,7 @@ const parseDatabaseEntry = (row: Record<string, string>): ClientDatabaseEntry =>
 });
 
 /** Which slice of the client database {@link listClientDatabase} reads. */
-export interface ClientDatabasePage {
+export interface ClientDatabasePage extends CommandOptions {
   /** The offset of the first record, 0 by default (`start`). */
   readonly start?: number | undefined;
   /** How many records to read at most; the server caps it (`duration`). */
@@ -467,10 +472,9 @@ const pageNames: WireNames<ClientDatabasePage> = { start: "start", limit: "durat
  */
 export async function listClientDatabase(
   client: CommandExecutor,
-  page: ClientDatabasePage = {},
-  options?: CommandOptions,
+  options: ClientDatabasePage = {},
 ): Promise<ClientDatabaseEntry[]> {
-  return (await list(client, "clientdblist", encodeFields(page, pageNames), options)).map(
+  return (await list(client, "clientdblist", encodeFields(options, pageNames), options)).map(
     parseDatabaseEntry,
   );
 }
@@ -576,23 +580,33 @@ export async function listClientPermissions(
   return (await list(client, "clientpermlist", [["cldbid", cldbid]], options)).map(parsePermission);
 }
 
-/**
- * Set a permission on a client, server-wide.
- *
- * `skip` is required by the server here, unlike the channel equivalent.
- */
+/** How {@link addClientPermission} sets the permission. */
+export interface ClientPermissionOptions extends CommandOptions {
+  /**
+   * Whether it skips channel and client overrides; false by default. Always
+   * sent: the server requires it here, unlike the channel equivalent
+   * (`permskip`).
+   */
+  readonly skip?: boolean | undefined;
+}
+
+/** Set a permission on a client, server-wide. */
 export async function addClientPermission(
   client: CommandExecutor,
   cldbid: ClientDBID,
   permission: Permission,
   value: number,
-  skip: boolean,
-  options?: CommandOptions,
+  options: ClientPermissionOptions = {},
 ): Promise<void> {
   await exec(
     client,
     "clientaddperm",
-    [["cldbid", cldbid], permissionParam(permission), ["permvalue", value], ["permskip", skip]],
+    [
+      ["cldbid", cldbid],
+      permissionParam(permission),
+      ["permvalue", value],
+      ["permskip", options.skip ?? false],
+    ],
     options,
   );
 }

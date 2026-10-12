@@ -70,7 +70,7 @@ async function main(): Promise<void> {
 
   // List clients
   try {
-    const clients = await listClients(client, { times: true }, { timeout: 5_000 });
+    const clients = await listClients(client, { times: true, timeout: 5_000 });
     console.log(`\n[example] ${clients.length} client(s) online:`);
     for (const cl of clients) {
       const marker = cl.id === client.clientID ? " ← (me)" : "";

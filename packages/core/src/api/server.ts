@@ -37,6 +37,7 @@ import type {
 } from "../command/ids.js";
 import { asChannelID, asClientDBID, asClientID, asServerGroupID, asUID } from "../command/ids.js";
 import type { GroupType } from "../enums.js";
+import type { GroupDeleteOptions } from "./groups.js";
 import type { Permission } from "../permission.js";
 
 /** A server group as `servergrouplist` reports it. */
@@ -171,6 +172,12 @@ export interface Binding {
   readonly port: number;
 }
 
+/** Which bindings {@link listBindings} reports. */
+export interface BindingListOptions extends CommandOptions {
+  /** Only this subsystem's: `voice`, `query` or `filetransfer`; unset for all (`subsystem`). */
+  readonly subsystem?: string | undefined;
+}
+
 /**
  * Active IP bindings, when the instance is multi-homed.
  *
@@ -180,10 +187,9 @@ export interface Binding {
  */
 export async function listBindings(
   client: CommandExecutor,
-  subsystem?: string,
-  options?: CommandOptions,
+  options: BindingListOptions = {},
 ): Promise<Binding[]> {
-  const rows = await query(client, "bindinglist", [["subsystem", subsystem]], options);
+  const rows = await query(client, "bindinglist", [["subsystem", options.subsystem]], options);
   return rows.map((row) => ({
     subsystem: str(row, "subsystem"),
     ip: str(row, "ip"),
@@ -367,19 +373,18 @@ export async function createServerGroup(
   return asServerGroupID(createdGroupID(rows, "sgid", name));
 }
 
-/** Delete a server group; `force` deletes it even while it has members. */
+/** Delete a server group. */
 export async function deleteServerGroup(
   client: CommandExecutor,
   sgid: ServerGroupID,
-  force: boolean,
-  options?: CommandOptions,
+  options: GroupDeleteOptions = {},
 ): Promise<void> {
   await exec(
     client,
     "servergroupdel",
     [
       ["sgid", sgid],
-      ["force", force],
+      ["force", options.force ?? false],
     ],
     options,
   );
@@ -468,7 +473,7 @@ export async function removeClientFromServerGroup(
 }
 
 /** Which optional fields `servergroupclientlist` should include. */
-export interface ServerGroupClientListOptions {
+export interface ServerGroupClientListOptions extends CommandOptions {
   /** Each member's nickname (`-names`). */
   readonly names?: boolean | undefined;
   /** Each member's unique identifier (`-uid`). */
@@ -491,13 +496,12 @@ export interface ServerGroupMember {
 export async function listServerGroupClients(
   client: CommandExecutor,
   sgid: ServerGroupID,
-  include: ServerGroupClientListOptions = {},
-  options?: CommandOptions,
+  options: ServerGroupClientListOptions = {},
 ): Promise<ServerGroupMember[]> {
   const rows = await list(
     client,
     "servergroupclientlist",
-    [["sgid", sgid], ...encodeFields(include, memberFlags)],
+    [["sgid", sgid], ...encodeFields(options, memberFlags)],
     options,
   );
   return rows.map((row) => ({

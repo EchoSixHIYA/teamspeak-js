@@ -5,10 +5,10 @@
  * negotiate an upload or download. The actual bytes travel over a separate TCP
  * connection to the file transfer port, which `transfer.ts` handles.
  *
- * Every command here takes a channel password, in cleartext: the voice client
- * sends it as `base64(sha1(password))`, the same encoding `clientmove` uses,
- * and ServerQuery as it is. Passing `""` is correct and common for a channel
- * with no password.
+ * Every command here takes a channel password as its `password` option, in
+ * cleartext: the voice client sends it as `base64(sha1(password))`, the same
+ * encoding `clientmove` uses, and ServerQuery as it is. Unset, it is sent
+ * empty, which is right for a channel with no password.
  */
 
 import {
@@ -50,6 +50,12 @@ export interface FileEntry {
   readonly isDirectory: boolean;
 }
 
+/** The channel password a file command needs. */
+export interface FileOptions extends CommandOptions {
+  /** The channel's password, in cleartext; "" by default (`cpw`). */
+  readonly password?: string | undefined;
+}
+
 const parseFileEntry = (row: Record<string, string>): FileEntry => ({
   name: str(row, "name"),
   size: big(row, "size"),
@@ -61,9 +67,8 @@ const parseFileEntry = (row: Record<string, string>): FileEntry => ({
 export async function listFiles(
   client: CommandExecutor,
   cid: ChannelID,
-  path = "/",
-  password = "",
-  options?: CommandOptions,
+  path: string,
+  options: FileOptions = {},
 ): Promise<FileEntry[]> {
   const rows = await query(
     client,
@@ -71,7 +76,7 @@ export async function listFiles(
     [
       ["cid", cid],
       ["path", asPath(path)],
-      ["cpw", password],
+      ["cpw", options.password ?? ""],
     ],
     options,
     ["cpw"],
@@ -84,8 +89,7 @@ export async function getFileInfo(
   client: CommandExecutor,
   cid: ChannelID,
   path: string,
-  password = "",
-  options?: CommandOptions,
+  options: FileOptions = {},
 ): Promise<FileEntry> {
   const rows = await query(
     client,
@@ -93,7 +97,7 @@ export async function getFileInfo(
     [
       ["cid", cid],
       ["name", asPath(path)],
-      ["cpw", password],
+      ["cpw", options.password ?? ""],
     ],
     options,
     ["cpw"],
@@ -111,8 +115,7 @@ export async function deleteFile(
   client: CommandExecutor,
   cid: ChannelID,
   paths: string | readonly string[],
-  password = "",
-  options?: CommandOptions,
+  options: FileOptions = {},
 ): Promise<void> {
   const names = (typeof paths === "string" ? [paths] : paths).map(asPath);
   if (names.length === 0) return;
@@ -123,7 +126,7 @@ export async function deleteFile(
     [
       ["cid", cid],
       ["name", names.join("|")],
-      ["cpw", password],
+      ["cpw", options.password ?? ""],
     ],
     options,
     ["cpw"],
@@ -135,8 +138,7 @@ export async function createDirectory(
   client: CommandExecutor,
   cid: ChannelID,
   dirname: string,
-  password = "",
-  options?: CommandOptions,
+  options: FileOptions = {},
 ): Promise<void> {
   await exec(
     client,
@@ -144,7 +146,7 @@ export async function createDirectory(
     [
       ["cid", cid],
       ["dirname", asPath(dirname)],
-      ["cpw", password],
+      ["cpw", options.password ?? ""],
     ],
     options,
     ["cpw"],
@@ -152,7 +154,7 @@ export async function createDirectory(
 }
 
 /** Where {@link renameFile} moves a file, and the passwords it needs. Unset fields are omitted. */
-export interface FileRenameOptions {
+export interface FileRenameOptions extends CommandOptions {
   /** The source channel's password, in cleartext (`cpw`). */
   readonly password?: string | undefined;
   /** Move the file into this channel's file area; unset keeps it in the same channel (`tcid`). */
@@ -173,8 +175,7 @@ export async function renameFile(
   cid: ChannelID,
   oldName: string,
   newName: string,
-  rename: FileRenameOptions = {},
-  options?: CommandOptions,
+  options: FileRenameOptions = {},
 ): Promise<void> {
   await exec(
     client,
@@ -183,31 +184,34 @@ export async function renameFile(
       ["cid", cid],
       ["oldname", asPath(oldName)],
       ["newname", asPath(newName)],
-      ...encodeFields(rename, renameNames),
+      ...encodeFields(options, renameNames),
     ],
     options,
     ["cpw", "tcpw"],
   );
 }
 
-/**
- * Cancel a running transfer.
- *
- * `removePartialFile` removes the partial file as well, which is usually what
- * you want after a failed upload.
- */
+/** How {@link stopFileTransfer} cancels. */
+export interface FileTransferStopOptions extends CommandOptions {
+  /**
+   * Remove the partial file as well, which is usually what you want after a
+   * failed upload; false by default (`delete`, always sent).
+   */
+  readonly removePartialFile?: boolean | undefined;
+}
+
+/** Cancel a running transfer. */
 export async function stopFileTransfer(
   client: CommandExecutor,
   serverFileTransferID: number,
-  removePartialFile: boolean,
-  options?: CommandOptions,
+  options: FileTransferStopOptions = {},
 ): Promise<void> {
   await exec(
     client,
     "ftstop",
     [
       ["serverftfid", serverFileTransferID],
-      ["delete", removePartialFile],
+      ["delete", options.removePartialFile ?? false],
     ],
     options,
   );
@@ -280,7 +284,7 @@ function nextClientFileTransferID(): number {
 }
 
 /** How {@link initFileUpload} negotiates an upload. */
-export interface FileUploadOptions {
+export interface FileUploadOptions extends CommandOptions {
   /** The channel's password, in cleartext; "" by default (`cpw`). */
   readonly password?: string | undefined;
   /** Replace an existing file; true by default (`overwrite`). */
@@ -302,8 +306,7 @@ export async function initFileUpload(
   cid: ChannelID,
   path: string,
   size: bigint,
-  upload: FileUploadOptions = {},
-  options?: CommandOptions,
+  options: FileUploadOptions = {},
 ): Promise<FileUploadInfo> {
   const rows = await query(
     client,
@@ -312,10 +315,10 @@ export async function initFileUpload(
       ["clientftfid", nextClientFileTransferID()],
       ["name", asPath(path)],
       ["cid", cid],
-      ["cpw", upload.password ?? ""],
+      ["cpw", options.password ?? ""],
       ["size", size],
-      ["overwrite", upload.overwrite ?? true],
-      ["resume", upload.resume ?? false],
+      ["overwrite", options.overwrite ?? true],
+      ["resume", options.resume ?? false],
       // proto is required: omitting it fails the whole call with 1539
       // (parameter not found) rather than defaulting.
       ["proto", 0],
@@ -334,7 +337,7 @@ export async function initFileUpload(
 }
 
 /** How {@link initFileDownload} negotiates a download. */
-export interface FileDownloadOptions {
+export interface FileDownloadOptions extends CommandOptions {
   /** The channel's password, in cleartext; "" by default (`cpw`). */
   readonly password?: string | undefined;
   /** The byte offset to start from, to resume; 0 by default (`seekpos`). */
@@ -351,8 +354,7 @@ export async function initFileDownload(
   client: CommandExecutor,
   cid: ChannelID,
   path: string,
-  download: FileDownloadOptions = {},
-  options?: CommandOptions,
+  options: FileDownloadOptions = {},
 ): Promise<FileDownloadInfo> {
   const rows = await query(
     client,
@@ -361,8 +363,8 @@ export async function initFileDownload(
       ["clientftfid", nextClientFileTransferID()],
       ["name", asPath(path)],
       ["cid", cid],
-      ["cpw", download.password ?? ""],
-      ["seekpos", download.seekPosition ?? 0n],
+      ["cpw", options.password ?? ""],
+      ["seekpos", options.seekPosition ?? 0n],
       ["proto", 0],
     ],
     options,

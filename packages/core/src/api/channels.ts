@@ -173,24 +173,28 @@ export async function editChannel(
   ]);
 }
 
-/**
- * Delete a channel.
- *
- * `force` is required by the server, not just conventional: deleting a channel
- * that still holds clients fails without it.
- */
+/** How {@link deleteChannel} deletes. */
+export interface ChannelDeleteOptions extends CommandOptions {
+  /**
+   * Delete the channel even while clients are in it, moving them out; false
+   * by default, which the server then refuses for an occupied channel
+   * (`force`, always sent).
+   */
+  readonly force?: boolean | undefined;
+}
+
+/** Delete a channel. */
 export async function deleteChannel(
   client: CommandExecutor,
   cid: ChannelID,
-  force: boolean,
-  options?: CommandOptions,
+  options: ChannelDeleteOptions = {},
 ): Promise<void> {
   await exec(
     client,
     "channeldelete",
     [
       ["cid", cid],
-      ["force", force],
+      ["force", options.force ?? false],
     ],
     options,
   );
@@ -238,16 +242,18 @@ export async function findChannels(
   return rows.map((row) => ({ id: asChannelID(big(row, "cid")), name: str(row, "channel_name") }));
 }
 
-/**
- * Move a channel under a new parent, optionally sorted after `order`, the
- * sibling to follow (0 for first).
- */
+/** Where {@link moveChannel} sorts the channel among its new siblings. */
+export interface ChannelMoveOptions extends CommandOptions {
+  /** The sibling to sort after, 0 for first; unset leaves it to the server (`order`). */
+  readonly order?: ChannelID | undefined;
+}
+
+/** Move a channel under a new parent. */
 export async function moveChannel(
   client: CommandExecutor,
   cid: ChannelID,
   parentID: ChannelID,
-  order?: ChannelID,
-  options?: CommandOptions,
+  options: ChannelMoveOptions = {},
 ): Promise<void> {
   await exec(
     client,
@@ -255,7 +261,7 @@ export async function moveChannel(
     [
       ["cid", cid],
       ["cpid", parentID],
-      ["order", order],
+      ["order", options.order],
     ],
     options,
   );

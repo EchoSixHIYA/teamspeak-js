@@ -69,13 +69,14 @@ and `honeybbq:teamspeak:packet` diagnostics channels instead.
 ## Commands
 
 The helpers 0.x had are typed functions taking the client first and branded
-ids, with a last, optional `{ signal, timeout }`:
+ids. Required arguments are positional; everything optional is in one last
+options object, which also carries `{ signal, timeout }`:
 
 | 0.x                                                        | 1.0                                                                                                                      |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `listChannels(client)`                                     | `listChannels(client)`                                                                                                   |
-| `listClients(client)`                                      | `listClients(client, { uid, away, ... })`                                                                                |
-| `clientMove(client, clid, cid, password)`                  | `moveClient(client, clid, cid, password)`                                                                                |
+| `listClients(client)`                                      | `listClients(client, { away, ..., signal })`                                                                             |
+| `clientMove(client, clid, cid, password)`                  | `moveClient(client, clid, cid, { password })`                                                                            |
 | `poke(client, clid, message)`                              | `pokeClient(client, clid, message)`                                                                                      |
 | `sendTextMessage(client, mode, target, message)`           | `sendPrivateMessage(client, clid, message)`, `sendChannelMessage(client, message)`, `sendServerMessage(client, message)` |
 | `fileTransferDeleteFile(client, cid, paths)`               | `deleteFile(client, cid, paths)`                                                                                         |
@@ -84,6 +85,27 @@ ids, with a last, optional `{ signal, timeout }`:
 | `client.execCommandWithResponse(line, ms)`                 | `client.exec(line, { timeout: ms })`                                                                                     |
 | `client.execCommand(line, ms)`                             | `client.exec(line, { timeout: ms })`                                                                                     |
 | `client.sendCommandNoWait(line)`                           | `client.execNoWait(line)`                                                                                                |
+
+If you used a 1.0 prerelease, these took positional optional arguments and now
+take them in the options object:
+
+| Before                                                                                            | Now                                                            |
+| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `listClients(c, include, options)`                                                                | `listClients(c, { ...include, ...options })`                   |
+| `moveClient(c, clid, cid, password)`                                                              | `moveClient(c, clid, cid, { password })`                       |
+| `kickClient(c, clid, reason, message)`                                                            | `kickClient(c, clid, reason, { reasonMessage })`               |
+| `moveChannel(c, cid, parent, order)`                                                              | `moveChannel(c, cid, parent, { order })`                       |
+| `deleteChannel(c, cid, force)`                                                                    | `deleteChannel(c, cid, { force })`                             |
+| `deleteServerGroup` / `deleteChannelGroup(c, id, force)`                                          | `(c, id, { force })`                                           |
+| `addClientPermission(c, dbid, perm, value, skip)`                                                 | `addClientPermission(c, dbid, perm, value, { skip })`          |
+| `listFiles(c, cid, path?, password?)`                                                             | `listFiles(c, cid, path, { password })`                        |
+| `getFileInfo`, `deleteFile`, `createDirectory(…, password)`                                       | `(…, { password })`                                            |
+| `renameFile(c, cid, old, new, rename, options)`                                                   | `renameFile(c, cid, old, new, { ...rename, ...options })`      |
+| `initFileUpload` / `initFileDownload(…, upload, options)`                                         | `(…, { password, ..., signal })`                               |
+| `stopFileTransfer(c, id, removePartialFile)`                                                      | `stopFileTransfer(c, id, { removePartialFile })`               |
+| `listComplaints(c, dbid)`                                                                         | `listComplaints(c, { targetDatabaseID })`                      |
+| `listBindings(c, subsystem)`                                                                      | `listBindings(c, { subsystem })`                               |
+| `banClient`, `viewLog`, `listClientDatabase`, `listServerGroupClients`, `listChannelGroupClients` | their options and `{ signal, timeout }` merged into one object |
 
 About a hundred more commands are new: channels, groups, permissions, bans,
 files, tokens and the server. An id comes from a result, an event, or a

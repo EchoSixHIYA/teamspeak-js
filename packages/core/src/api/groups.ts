@@ -109,19 +109,24 @@ export async function createChannelGroup(
   return asChannelGroupID(createdGroupID(rows, "cgid", name));
 }
 
-/** Delete a channel group; `force` deletes it even while it has members. */
+/** How a group is deleted. */
+export interface GroupDeleteOptions extends CommandOptions {
+  /** Delete the group even while it has members; false by default (`force`, always sent). */
+  readonly force?: boolean | undefined;
+}
+
+/** Delete a channel group. */
 export async function deleteChannelGroup(
   client: CommandExecutor,
   cgid: ChannelGroupID,
-  force: boolean,
-  options?: CommandOptions,
+  options: GroupDeleteOptions = {},
 ): Promise<void> {
   await exec(
     client,
     "channelgroupdel",
     [
       ["cgid", cgid],
-      ["force", force],
+      ["force", options.force ?? false],
     ],
     options,
   );
@@ -177,7 +182,7 @@ export async function copyChannelGroup(
  * Which channel group memberships {@link listChannelGroupClients} reports.
  * Unset fields do not narrow the list.
  */
-export interface ChannelGroupClientFilter {
+export interface ChannelGroupClientFilter extends CommandOptions {
   /** Only memberships in this channel (`cid`). */
   readonly channelID?: ChannelID | undefined;
   /** Only this client's memberships (`cldbid`). */
@@ -210,13 +215,12 @@ export interface ChannelGroupMembership {
  */
 export async function listChannelGroupClients(
   client: CommandExecutor,
-  filter: ChannelGroupClientFilter = {},
-  options?: CommandOptions,
+  options: ChannelGroupClientFilter = {},
 ): Promise<ChannelGroupMembership[]> {
   const rows = await list(
     client,
     "channelgroupclientlist",
-    encodeFields(filter, membershipFilterNames),
+    encodeFields(options, membershipFilterNames),
     options,
   );
   return rows.map((row) => ({

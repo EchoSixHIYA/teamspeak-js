@@ -133,8 +133,9 @@ does not model.
 
 Every command the voice protocol answers is a typed function, grouped by area.
 Each is addressed by branded ids, so a `ChannelID` cannot be passed where a
-`ClientID` is meant, and each takes a last, optional `{ signal?, timeout? }`
-to abandon it or bound how long it waits.
+`ClientID` is meant. Required arguments are positional; everything optional
+goes in one options object, always the last argument, which also carries
+`signal` and `timeout` to abandon the command or bound how long it waits.
 
 ```typescript
 import {
@@ -160,9 +161,9 @@ const cid = await createChannel(client, {
   isPermanent: true,
 });
 
-await moveClient(client, client.clientID, cid, "channel-password");
+await moveClient(client, client.clientID, cid, { password: "channel-password" });
 await sendChannelMessage(client, "hello");
-await kickClient(client, someone, Reason.KickChannel, "take a break");
+await kickClient(client, someone, Reason.KickChannel, { reasonMessage: "take a break" });
 
 await addServerGroupPermission(client, sgid, {
   permission: permissionByName("i_client_talk_power"),

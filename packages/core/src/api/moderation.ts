@@ -20,7 +20,7 @@ import {
   durationMs,
   SECOND,
 } from "./command.js";
-import type { WireNames } from "./command.js";
+import type { Params, WireNames } from "./command.js";
 import type { CommandExecutor, CommandOptions, ParamValue } from "../command/request.js";
 import type { ClientDBID, ClientID, UID } from "../command/ids.js";
 import { asClientDBID, asUID } from "../command/ids.js";
@@ -94,7 +94,7 @@ const banTime = (ms: number): ParamValue => (ms === 0 ? undefined : toWireDurati
  * How long a ban lasts and why. Unset fields are omitted; so is an empty
  * `reason`.
  */
-export interface BanClientOptions {
+export interface BanClientOptions extends CommandOptions {
   /**
    * How long the ban lasts, in milliseconds (`time`); unset or 0 is permanent.
    * Sent in whole seconds, and a positive duration under a second is sent as
@@ -157,13 +157,12 @@ export async function addBan(
 export async function banClient(
   client: CommandExecutor,
   clid: ClientID,
-  ban: BanClientOptions = {},
-  options?: CommandOptions,
+  options: BanClientOptions = {},
 ): Promise<bigint | undefined> {
   const rows = await query(
     client,
     "banclient",
-    [["clid", clid], ...encodeFields(ban, banClientNames)],
+    [["clid", clid], ...encodeFields(options, banClientNames)],
     options,
   );
   return rows[0]?.["banid"] === undefined ? undefined : big(rows[0], "banid");
@@ -213,15 +212,19 @@ const parseComplaint = (row: Record<string, string>): Complaint => ({
   createdAt: date(row, "timestamp"),
 });
 
+/** Which complaints {@link listComplaints} reports. */
+export interface ComplaintListOptions extends CommandOptions {
+  /** Only those against this client; unset for all (`tcldbid`). */
+  readonly targetDatabaseID?: ClientDBID | undefined;
+}
+
 /** Complaints, optionally only those against one client. */
 export async function listComplaints(
   client: CommandExecutor,
-  targetDatabaseID?: ClientDBID,
-  options?: CommandOptions,
+  options: ComplaintListOptions = {},
 ): Promise<Complaint[]> {
-  return (await list(client, "complainlist", [["tcldbid", targetDatabaseID]], options)).map(
-    parseComplaint,
-  );
+  const params: Params = [["tcldbid", options.targetDatabaseID]];
+  return (await list(client, "complainlist", params, options)).map(parseComplaint);
 }
 
 /** File a complaint against a client. */
@@ -433,7 +436,7 @@ export interface LogPage {
  * database: read a page, then pass its `lastPosition` as the next read's
  * `beginPosition`.
  */
-export interface LogViewOptions {
+export interface LogViewOptions extends CommandOptions {
   /** How many lines to read, at most 100 (`lines`). */
   readonly lines?: number | undefined;
   /** Read backwards from `beginPosition`, newest line first (`reverse`). */
@@ -454,10 +457,9 @@ const logViewNames: WireNames<LogViewOptions> = {
 /** Read a page of the server log. */
 export async function viewLog(
   client: CommandExecutor,
-  view: LogViewOptions = {},
-  options?: CommandOptions,
+  options: LogViewOptions = {},
 ): Promise<LogPage> {
-  const rows = await query(client, "logview", encodeFields(view, logViewNames), options);
+  const rows = await query(client, "logview", encodeFields(options, logViewNames), options);
   const first = rows[0] ?? {};
   // One line per row, under the key `l`. This used to read only a `log` field
   // from the first row, which the server does not send; it is still read,

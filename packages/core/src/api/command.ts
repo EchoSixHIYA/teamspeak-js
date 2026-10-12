@@ -41,7 +41,17 @@ async function exec(
   options?: CommandOptions,
   passwords: readonly string[] = [],
 ): Promise<void> {
-  await client.send({ command, params, passwords }, options);
+  await client.send({ command, params, passwords }, commandOptions(options));
+}
+
+/**
+ * The signal and timeout of a command's options, alone: a command's own
+ * options extend CommandOptions, and the executor, and any middleware on it,
+ * should see only what is theirs.
+ */
+function commandOptions(options: CommandOptions | undefined): CommandOptions | undefined {
+  if (options === undefined) return undefined;
+  return { signal: options.signal, timeout: options.timeout };
 }
 
 /** Send a command and return its response rows. */
@@ -52,7 +62,7 @@ async function query(
   options?: CommandOptions,
   passwords: readonly string[] = [],
 ): Promise<Record<string, string>[]> {
-  return client.send({ command, params, passwords }, options);
+  return client.send({ command, params, passwords }, commandOptions(options));
 }
 
 /** Whether an error is the server's "database empty result set" (1281). */
@@ -170,12 +180,16 @@ export type WireField<V> = string | readonly [name: string, encode: (value: V) =
  * A wire name for every field of an options type.
  *
  * Every key is required, so a field added to the options interface without a
- * wire name is a compile error rather than a field silently never sent. A
+ * wire name is a compile error rather than a field silently never sent; the
+ * signal and timeout every command's options carry are not parameters. A
  * field whose type is not already a parameter value — a duration in
  * milliseconds sent in seconds, say — must have an encoder.
  */
 export type WireNames<T> = {
-  readonly [K in keyof T]-?: Exclude<T[K], undefined> extends ParamValue
+  readonly [K in Exclude<keyof T, keyof CommandOptions>]-?: Exclude<
+    T[K],
+    undefined
+  > extends ParamValue
     ? WireField<Exclude<T[K], undefined>>
     : readonly [name: string, encode: (value: Exclude<T[K], undefined>) => ParamValue];
 };
@@ -194,7 +208,7 @@ export function encodeFields<T extends object>(fields: T, names: WireNames<T>): 
   for (const key of Object.keys(names) as Array<keyof T & string>) {
     const value = fields[key] as unknown;
     if (value === undefined || value === null) continue;
-    const field = names[key] as WireField<unknown>;
+    const field = (names as Record<string, WireField<unknown>>)[key]!;
     if (typeof field === "string") out.push([field, value as ParamValue]);
     else out.push([field[0], field[1](value)]);
   }

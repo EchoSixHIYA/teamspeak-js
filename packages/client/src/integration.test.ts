@@ -390,7 +390,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     await sharedClient.uploadFileData(host, upload, Readable.from([payload]));
 
     try {
-      const files = await listFiles(sharedClient, cid);
+      const files = await listFiles(sharedClient, cid, "/");
       expect(files.map((f) => `/${f.name}`)).toContain(path);
 
       // TS3 sends the times in seconds; TS6 sends a listing's in milliseconds
@@ -440,7 +440,9 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     const target = channels.find((c) => c.name === PASSWORD_CHANNEL);
     expect(target).toBeDefined();
 
-    await moveClient(sharedClient, sharedClient.clientID, target!.id, PASSWORD_CHANNEL_PASSWORD);
+    await moveClient(sharedClient, sharedClient.clientID, target!.id, {
+      password: PASSWORD_CHANNEL_PASSWORD,
+    });
   }, 20_000);
 
   it("reconnects after a dropped connection", async () => {

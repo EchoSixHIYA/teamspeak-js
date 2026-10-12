@@ -72,7 +72,7 @@ describe("password handling", () => {
   // password is rejected with 781.
   it("hashes the channel password in clientmove", async () => {
     const { client, execCommand } = fakeClient();
-    await moveClient(client, asClientID(7), asChannelID(42n), "7274");
+    await moveClient(client, asClientID(7), asChannelID(42n), { password: "7274" });
 
     const digest = createHash("sha1").update("7274").digest("base64");
     expect(execCommand).toHaveBeenCalledWith(
@@ -91,7 +91,7 @@ describe("password handling", () => {
 
   it("hashes the password in the file transfer commands too", async () => {
     const { client, execCommandWithResponse } = fakeClient();
-    await listFiles(client, asChannelID(1), "/", "secret");
+    await listFiles(client, asChannelID(1), "/", { password: "secret" });
 
     const digest = createHash("sha1").update("secret").digest("base64");
     expect(execCommandWithResponse).toHaveBeenCalledWith(
@@ -115,10 +115,10 @@ describe("parameter encoding", () => {
   it("encodes booleans as 0 and 1", async () => {
     const { client, execCommand } = fakeClient();
     const { deleteChannel } = await import("./channels.js");
-    await deleteChannel(client, asChannelID(5), true);
+    await deleteChannel(client, asChannelID(5), { force: true });
     expect(execCommand).toHaveBeenCalledWith("channeldelete cid=5 force=1", 10_000);
 
-    await deleteChannel(client, asChannelID(5), false);
+    await deleteChannel(client, asChannelID(5));
     expect(execCommand).toHaveBeenCalledWith("channeldelete cid=5 force=0", 10_000);
   });
 
@@ -438,8 +438,8 @@ describe("bans", () => {
 describe("kicks", () => {
   it("sends the reason, and no message for an empty one", async () => {
     const { client, sent } = recordingClient();
-    await kickClient(client, asClientID(4), Reason.KickServer, "bye");
-    await kickClient(client, asClientID(4), Reason.KickChannel, "");
+    await kickClient(client, asClientID(4), Reason.KickServer, { reasonMessage: "bye" });
+    await kickClient(client, asClientID(4), Reason.KickChannel, { reasonMessage: "" });
 
     expect(sent).toEqual([
       "clientkick clid=4 reasonid=5 reasonmsg=bye",
@@ -542,7 +542,7 @@ describe("other fixes", () => {
       ],
       [{ name: "/a.txt", size: "3", datetime: "1791768571000000000" }],
     );
-    const [dir, file] = await listFiles(client, asChannelID(1));
+    const [dir, file] = await listFiles(client, asChannelID(1), "/");
     const info = await getFileInfo(client, asChannelID(1), "/a.txt");
 
     expect(dir?.isDirectory).toBe(true);
@@ -639,18 +639,18 @@ describe("iterateClientDatabase", () => {
 });
 
 describe("CommandOptions", () => {
-  it("reaches send unchanged", async () => {
+  it("reaches send as its signal and timeout", async () => {
     const { signal } = new AbortController();
     const commandOptions = { signal, timeout: 500 };
     const { client, options } = recordingClient();
 
     await listChannels(client, commandOptions);
-    await moveClient(client, asClientID(1), asChannelID(2), undefined, commandOptions);
+    await moveClient(client, asClientID(1), asChannelID(2), { password: "pw", ...commandOptions });
     await createChannel(client, { name: "x" }, commandOptions);
-    await listFiles(client, asChannelID(1), "/", "", commandOptions);
+    await listFiles(client, asChannelID(1), "/", { password: "", ...commandOptions });
 
+    // The executor sees the signal and timeout, never a command's own options.
     expect(options).toEqual([commandOptions, commandOptions, commandOptions, commandOptions]);
-    expect(options.every((o) => o === commandOptions)).toBe(true);
   });
 
   it("is undefined when the caller passes none", async () => {
