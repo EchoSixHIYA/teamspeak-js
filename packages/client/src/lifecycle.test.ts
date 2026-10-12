@@ -309,6 +309,43 @@ describe("voice delivery", () => {
     expect(warnings.filter((w) => w.startsWith("voice dropped"))).toHaveLength(1);
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
+
+  it("reports the drops since the last warning, not since the start", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const counts: unknown[] = [];
+      const logger: Logger = {
+        debug() {},
+        info() {},
+        warn: (msg, fields) => {
+          if (msg.startsWith("voice dropped"))
+            counts.push((fields as { dropped?: number } | undefined)?.dropped);
+        },
+        error() {},
+      };
+      const { client } = await connected({ logger });
+      let heard = 0;
+      client.on("voiceData", () => heard++);
+      const frame = Uint8Array.of(0, 1, 0, 9, Codec.OpusVoice, 1, 2, 3);
+      const burst = async (): Promise<void> => {
+        for (let i = 0; i < 1000; i++)
+          clientInternals(client).handler.onPacket?.(packet(PacketType.Voice, frame));
+        await settle();
+      };
+
+      await burst();
+      const firstDropped = 1000 - heard;
+      vi.advanceTimersByTime(11_000);
+      await burst();
+
+      // The first report comes with the first drop; the second counts the rest
+      // of that burst and the first drop of the next.
+      expect(counts).toEqual([1, firstDropped]);
+      await client.disconnect({ signal: AbortSignal.timeout(1) });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("reconnecting", () => {

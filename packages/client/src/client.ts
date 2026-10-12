@@ -1122,15 +1122,20 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#handler.close();
   }
 
-  /** Count a dropped voice delivery, and report the drops now and then. */
+  /**
+   * Count a dropped voice delivery, and report the drops now and then: at most
+   * once every ten seconds, with how many were dropped since the last report.
+   */
   #dropVoice(): void {
     this.#voiceDropped++;
     const now = Date.now();
     if (now - this.#voiceDropWarnedAt < VOICE_DROP_WARN_INTERVAL_MS) return;
     this.#voiceDropWarnedAt = now;
+    // The count since the last warning, so each one says how bad it is now.
     this.#logger.warn("voice dropped: listeners are not keeping up", {
       dropped: this.#voiceDropped,
     });
+    this.#voiceDropped = 0;
   }
 
   /** Queue a server event, through the event middleware. */
