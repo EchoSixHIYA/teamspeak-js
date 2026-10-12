@@ -41,6 +41,24 @@ const RESEND_LOOP_INTERVAL_MS = 100;
  */
 const MAX_REASSEMBLED_SIZE = 1 << 20;
 
+/**
+ * The packet types the server may send unencrypted: voice, which TeamSpeak
+ * never encrypts, ping and pong, and acknowledgements — TS3 3.13 and TS6 6.0
+ * both acknowledge commands with plaintext Acks once crypto init has
+ * completed. An Ack carries nothing but the id it acknowledges, so a forged
+ * one can at worst stop a resend, which dropping the packet would do too.
+ * Init1 is handled before decryption.
+ */
+const UNENCRYPTED_TYPES: ReadonlySet<number> = new Set<number>([
+  PacketType.Voice,
+  PacketType.VoiceWhisper,
+  PacketType.Ping,
+  PacketType.Pong,
+  PacketType.Ack,
+  PacketType.AckLow,
+  PacketType.Init1,
+]);
+
 interface ResendPacket {
   packet: Packet;
   firstSend: number;
@@ -474,6 +492,18 @@ export class PacketHandler {
     let dummyUsed = dummy;
     const pType = packetType(p);
     const gen = p.generationID;
+
+    // An unencrypted packet is checked against the fake signature only, and
+    // that signature is no secret: every plaintext ping, pong and voice packet
+    // carries it. A command must therefore never be taken unencrypted, or
+    // anyone on the path could forge text messages, kicks and command answers.
+    if (unencrypted && !UNENCRYPTED_TYPES.has(pType)) {
+      this.#logger.debug("dropped an unencrypted packet of a type that must be encrypted", {
+        type: pType,
+        id: p.id,
+      });
+      return null;
+    }
 
     try {
       const plaintext = this.#crypt.decrypt(

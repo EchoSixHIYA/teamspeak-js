@@ -249,7 +249,9 @@ describe("the receive path", () => {
             packet = init1Packet(init1(g));
             break;
           case 2:
-            packet = plainPacket(crypt.fakeSignature, g.pick([0, 1, 4]), 0, g.int(10), g.bytes(80));
+            // Every type, so that the ones which must be encrypted are seen
+            // arriving without it too.
+            packet = plainPacket(crypt.fakeSignature, g.int(9), 0, g.int(10), g.bytes(80));
             break;
           case 3: {
             const { payload, flags } = g.commandPayload();
@@ -305,6 +307,62 @@ describe("the receive path", () => {
     expect(client.status).toBe("connected");
     // The real command is acknowledged; the Init1 and the forgery are not answered.
     expect(socket.sent.length - before).toBe(1);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});
+
+describe("unencrypted packets once connected", () => {
+  const text = (msg: string): Uint8Array =>
+    new TextEncoder().encode(`notifytextmessage targetmode=1 msg=${msg} invokerid=2`);
+
+  it("drops commands that carry the fake signature instead of a MAC", async () => {
+    const { client, socket } = await connectedClient();
+    const crypt = clientInternals(client).crypt;
+    const messages: string[] = [];
+    client.on("textMessage", (m) => messages.push(m.message));
+
+    // The fake signature is no secret: the client's own pong carries it.
+    socket.deliver(plainPacket(crypt.fakeSignature, 4, 0, 1, Uint8Array.of(0, 0)));
+    const pong = socket.sent.at(-1)!;
+    const signature = pong.subarray(0, 8);
+    expect(Buffer.from(signature).equals(Buffer.from(crypt.fakeSignature))).toBe(true);
+
+    const before = socket.sent.length;
+    socket.deliver(plainPacket(signature, 2, 0x20, 1, text("injected")));
+    socket.deliver(plainPacket(signature, 3, 0x20, 0, text("injected-low")));
+    socket.deliver(
+      plainPacket(
+        signature,
+        2,
+        0x20,
+        2,
+        new TextEncoder().encode("notifyclientleftview clid=7 reasonid=5"),
+      ),
+    );
+    await settle();
+    expect(messages).toEqual([]);
+    expect(client.status).toBe("connected");
+    // Not even acknowledged.
+    expect(socket.sent.length).toBe(before);
+
+    socket.deliver(sessionPacket(crypt, 2, 0x20, 1, text("real")));
+    await settle();
+    expect(messages).toEqual(["real"]);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("still takes plaintext acknowledgements, as TS3 and TS6 send them", async () => {
+    const { client, socket } = await connectedClient();
+    const crypt = clientInternals(client).crypt;
+    const answer = client.exec("whoami", { timeout: 2_000 });
+    await settle();
+    const sent = socket.sent.at(-1)!;
+    const id = (sent[8]! << 8) | sent[9]!;
+    socket.deliver(plainPacket(crypt.fakeSignature, 6, 0, 1, Uint8Array.of(id >> 8, id & 0xff)));
+    socket.deliver(
+      sessionPacket(crypt, 2, 0x20, 1, new TextEncoder().encode("error id=0 msg=ok return_code=1")),
+    );
+    await expect(answer).resolves.toEqual([]);
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 });
