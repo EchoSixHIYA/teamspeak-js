@@ -25,10 +25,12 @@
     "version-packages": "changeset version && pnpm install --lockfile-only"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@changesets/cli": "^3.0.3",
     "@types/node": "^26.1.1",
     "oxfmt": "^0.71.0",
     "oxlint": "^1.59.0",
+    "publint": "^0.3.25",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",
     "vite": "^8.0.8",

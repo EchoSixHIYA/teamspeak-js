@@ -74,10 +74,6 @@ export class Identity {
     return this.toString();
   }
 
-  [Symbol.for("nodejs.util.inspect.custom")](): string {
-    return `Identity <${this.toString()}>`;
-  }
-
   securityLevel(): number {
     const h = createHash("sha1");
     h.update(this.publicKeyBase64());
@@ -110,6 +106,15 @@ export class Identity {
     }
   }
 }
+
+// Defined outside the class body: a computed key there would have to be
+// inferred, which isolatedDeclarations rules out. By its registered name, so
+// this module needs no node:util.
+Object.defineProperty(Identity.prototype, Symbol.for("nodejs.util.inspect.custom"), {
+  value(this: Identity): string {
+    return `Identity <${this.toString()}>`;
+  },
+});
 
 /** Read an identity from the form `Identity.export()` writes. */
 export function parseIdentity(s: string): Identity {

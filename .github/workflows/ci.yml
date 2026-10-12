@@ -67,6 +67,16 @@ jobs:
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # Lint what npm would receive, not the workspace: the published
+      # package.json is rewritten by publishConfig, and workspace:* by pack.
+      - name: Check the packed packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/packs"
+          pnpm -r --filter "./packages/*" exec pnpm pack --pack-destination "$RUNNER_TEMP/packs"
+          for tarball in "$RUNNER_TEMP"/packs/*.tgz; do
+            pnpm exec publint --strict "$tarball"
+            pnpm exec attw --profile esm-only "$tarball"
+          done
 
   # Both supported server generations, because they differ in ways that only
   # show up live: TS6 hashes client uids with SHA-256 where TS3 uses SHA-1.
