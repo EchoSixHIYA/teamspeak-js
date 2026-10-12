@@ -32,18 +32,30 @@ export const consoleLogger: Logger = {
   error: console.error.bind(console),
 };
 
+/** A negotiated upload, as `initFileUpload` returns it: what to dial and send. */
 export interface FileUploadInfo {
-  fileTransferKey: string;
-  seekPosition: bigint;
-  clientFileTransferID: number;
-  serverFileTransferID: number;
-  port: number;
+  /** The key that identifies the transfer on the file transfer connection. */
+  readonly fileTransferKey: string;
+  /** Where to resume from, in bytes; 0 for a fresh upload. */
+  readonly seekPosition: bigint;
+  /** The client's id for the transfer. */
+  readonly clientFileTransferID: number;
+  /** The server's id for the transfer. */
+  readonly serverFileTransferID: number;
+  /** The file transfer port to dial. */
+  readonly port: number;
 }
 
+/** A negotiated download, as `initFileDownload` returns it: what to dial and receive. */
 export interface FileDownloadInfo {
-  fileTransferKey: string;
-  size: bigint;
-  clientFileTransferID: number;
-  serverFileTransferID: number;
-  port: number;
+  /** The key that identifies the transfer on the file transfer connection. */
+  readonly fileTransferKey: string;
+  /** How many bytes the server will send. */
+  readonly size: bigint;
+  /** The client's id for the transfer. */
+  readonly clientFileTransferID: number;
+  /** The server's id for the transfer. */
+  readonly serverFileTransferID: number;
+  /** The file transfer port to dial. */
+  readonly port: number;
 }

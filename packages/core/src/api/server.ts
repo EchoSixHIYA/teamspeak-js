@@ -7,33 +7,67 @@
  * easy to mix up.
  */
 
-import { exec, query, parsePermission, createdGroupID, str, big, num, bool } from "./command.js";
-import type { ParamValue } from "./command.js";
-import type { CommandExecutor } from "../command/request.js";
-import type { ChannelID, ClientDBID, PermissionID, ServerGroupID } from "../command/ids.js";
-import type { PermissionEntry } from "./command.js";
-import { asServerGroupID } from "../command/ids.js";
+import {
+  exec,
+  query,
+  list,
+  encodeFields,
+  inSeconds,
+  parsePermission,
+  permissionParam,
+  createdGroupID,
+  str,
+  big,
+  num,
+  bool,
+  icon,
+  date,
+  durationMs,
+  SECOND,
+} from "./command.js";
+import type { Params, PermissionEntry, WireNames } from "./command.js";
+import type { CommandExecutor, CommandOptions } from "../command/request.js";
+import type {
+  ChannelID,
+  ClientDBID,
+  ClientID,
+  IconID,
+  ServerGroupID,
+  UID,
+} from "../command/ids.js";
+import { asChannelID, asClientDBID, asClientID, asServerGroupID, asUID } from "../command/ids.js";
+import type { GroupType } from "../enums.js";
+import type { Permission } from "../permission.js";
 
 /** A server group as `servergrouplist` reports it. */
 export interface ServerGroup {
-  id: ServerGroupID;
-  name: string;
-  /** 0 = regular group, 1 = query group, 2 = query group (template). */
-  type: number;
-  iconID: bigint;
-  savedInDatabase: boolean;
-  sortID: bigint;
-  nameMode: number;
-  modifyPower: number;
-  memberAddPower: number;
-  memberRemovePower: number;
+  /** The group's id. */
+  readonly id: ServerGroupID;
+  /** The group's name. */
+  readonly name: string;
+  /** What kind of group this is, one of {@link GroupType}. */
+  readonly type: number;
+  /** The group's icon, or undefined for none. */
+  readonly iconID: IconID | undefined;
+  /** Whether membership is stored, rather than lost when the server restarts. */
+  readonly savedInDatabase: boolean;
+  /** Where the group sorts among the others. */
+  readonly sortID: bigint;
+  /** Where the group's name shows beside a member's nickname, one of {@link GroupNameMode}. */
+  readonly nameMode: number;
+  /** The power needed to modify the group. */
+  readonly modifyPower: number;
+  /** The power needed to add a member. */
+  readonly memberAddPower: number;
+  /** The power needed to remove a member. */
+  readonly memberRemovePower: number;
 }
 
 const parseServerGroup = (row: Record<string, string>): ServerGroup => ({
   id: asServerGroupID(big(row, "sgid")),
   name: str(row, "name"),
   type: num(row, "type"),
-  iconID: big(row, "iconid"),
+  iconID: icon(row, "iconid"),
   savedInDatabase: bool(row, "savedb"),
   sortID: big(row, "sortid"),
   nameMode: num(row, "namemode"),
@@ -43,58 +77,98 @@ const parseServerGroup = (row: Record<string, string>): ServerGroup => ({
 });
 
 /** Every server group. */
-export async function listServerGroups(client: CommandExecutor): Promise<ServerGroup[]> {
-  return (await query(client, "servergrouplist")).map(parseServerGroup);
-}
-
-/** The server's own settings, as `serverinfo` reports them. */
-export async function getServerInfo(client: CommandExecutor): Promise<Record<string, string>> {
-  return (await query(client, "serverinfo"))[0] ?? {};
+export async function listServerGroups(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<ServerGroup[]> {
+  return (await query(client, "servergrouplist", [], options)).map(parseServerGroup);
 }
 
 /**
- * Change the virtual server's settings. Only the fields you set are sent.
+ * The virtual server's settings, as `serverinfo` reports them.
  *
- * Field names are the `virtualserver_*` ones from `serverinfo`, passed through
- * as given rather than enumerated here: there are well over a hundred, they are
- * version-dependent, and a caller reading them back from `getServerInfo` should
- * be able to write them straight back.
+ * Raw rather than parsed: `serverinfo` carries well over a hundred
+ * `virtualserver_*` fields, which ones appear depends on the server version and
+ * on the caller's permissions, and a typed subset would drop the rest.
+ */
+export async function getServerInfo(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<Readonly<Record<string, string>>> {
+  return (await query(client, "serverinfo", [], options))[0] ?? {};
+}
+
+/** Raw wire properties, sent as given. */
+const rawProperties = (settings: Readonly<Record<string, string>>): Params =>
+  Object.entries(settings).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string",
+  );
+
+/**
+ * Change the virtual server's settings. Only the properties you pass are sent.
+ *
+ * Unlike every other options object, these are the raw `virtualserver_*`
+ * wire properties from `serverinfo`, passed through as given rather than
+ * enumerated: there are well over a hundred, they are version-dependent, and a
+ * value read back from {@link getServerInfo} should be writable straight back.
+ * The values are strings, as `getServerInfo` returns them.
  */
 export async function editServer(
   client: CommandExecutor,
-  settings: Record<string, ParamValue>,
+  settings: Readonly<Record<string, string>>,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "serveredit", Object.entries(settings));
+  await exec(client, "serveredit", rawProperties(settings), options);
 }
 
 /**
- * The host process's settings, as `hostinfo` reports them.
+ * The host process's settings, as `hostinfo` reports them, raw.
  *
  * Needs an instance-level permission (`b_serverinstance_*`), which not even the
  * Server Admin group holds by default — expect error 2568 until it is granted.
  * Granted, it works over the voice protocol like any other query.
  */
-export async function getHostInfo(client: CommandExecutor): Promise<Record<string, string>> {
-  return (await query(client, "hostinfo"))[0] ?? {};
+export async function getHostInfo(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<Readonly<Record<string, string>>> {
+  return (await query(client, "hostinfo", [], options))[0] ?? {};
 }
 
 /**
- * The server instance's settings, as `instanceinfo` reports them.
+ * The server instance's settings, as `instanceinfo` reports them, raw.
  *
  * Needs an instance-level permission (`b_serverinstance_*`), which not even the
  * Server Admin group holds by default — expect error 2568 until it is granted.
  * Granted, it works over the voice protocol like any other query.
  */
-export async function getInstanceInfo(client: CommandExecutor): Promise<Record<string, string>> {
-  return (await query(client, "instanceinfo"))[0] ?? {};
+export async function getInstanceInfo(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<Readonly<Record<string, string>>> {
+  return (await query(client, "instanceinfo", [], options))[0] ?? {};
 }
 
-/** Change the server instance's settings. Passed through as given. */
+/**
+ * Change the server instance's settings: raw `serverinstance_*` properties,
+ * passed through as given, for the same reasons as {@link editServer}.
+ */
 export async function editInstance(
   client: CommandExecutor,
-  settings: Record<string, ParamValue>,
+  settings: Readonly<Record<string, string>>,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "instanceedit", Object.entries(settings));
+  await exec(client, "instanceedit", rawProperties(settings), options);
+}
+
+/** An address the instance listens on. */
+export interface Binding {
+  /** What listens there: `voice`, `query` or `filetransfer`. */
+  readonly subsystem: string;
+  /** The address. */
+  readonly ip: string;
+  /** The port, where the server reports one. */
+  readonly port: number;
 }
 
 /**
@@ -107,8 +181,9 @@ export async function editInstance(
 export async function listBindings(
   client: CommandExecutor,
   subsystem?: string,
-): Promise<Array<{ subsystem: string; ip: string; port: number }>> {
-  const rows = await query(client, "bindinglist", [["subsystem", subsystem]]);
+  options?: CommandOptions,
+): Promise<Binding[]> {
+  const rows = await query(client, "bindinglist", [["subsystem", subsystem]], options);
   return rows.map((row) => ({
     subsystem: str(row, "subsystem"),
     ip: str(row, "ip"),
@@ -116,22 +191,137 @@ export async function listBindings(
   }));
 }
 
+/** The server's build, as `version` reports it. */
+export interface ServerVersion {
+  /** The version, such as "3.13.7". */
+  readonly version: string;
+  /** The build number. */
+  readonly build: number;
+  /** The platform the server runs on, such as "Linux". */
+  readonly platform: string;
+}
+
 /** The server's build version. */
 export async function getVersion(
   client: CommandExecutor,
-): Promise<{ version: string; build: number; platform: string }> {
-  const row = (await query(client, "version"))[0] ?? {};
+  options?: CommandOptions,
+): Promise<ServerVersion> {
+  const row = (await query(client, "version", [], options))[0] ?? {};
   return { version: str(row, "version"), build: num(row, "build"), platform: str(row, "platform") };
 }
 
-/** Which server and client this connection is, as the server sees it. */
-export async function whoAmI(client: CommandExecutor): Promise<Record<string, string>> {
-  return (await query(client, "whoami"))[0] ?? {};
+/** Which server and client a connection is, as `whoami` reports it. */
+export interface WhoAmI {
+  /** The virtual server's state, such as "online" (`virtualserver_status`). */
+  readonly serverStatus: string;
+  /** The virtual server's numeric id, 0 when none is selected (`virtualserver_id`). */
+  readonly serverID: bigint;
+  /** The virtual server's unique identifier (`virtualserver_unique_identifier`). */
+  readonly serverUID: string;
+  /** The virtual server's voice port (`virtualserver_port`). */
+  readonly serverPort: number;
+  /** This connection's client id (`client_id`). */
+  readonly clientID: ClientID;
+  /** The channel this connection is in (`client_channel_id`). */
+  readonly channelID: ChannelID;
+  /** This connection's nickname (`client_nickname`). */
+  readonly nickname: string;
+  /** This connection's database id (`client_database_id`). */
+  readonly databaseID: ClientDBID;
+  /** The ServerQuery login name, "" for a voice client (`client_login_name`). */
+  readonly loginName: string;
+  /**
+   * This connection's unique identifier (`client_unique_identifier`). The voice
+   * protocol sends the field empty; the voice client's `uniqueIdentifier()` has
+   * it.
+   */
+  readonly uid: UID;
 }
 
-/** Connection statistics for our own session. */
-export async function getConnectionInfo(client: CommandExecutor): Promise<Record<string, string>> {
-  return (await query(client, "serverrequestconnectioninfo"))[0] ?? {};
+/** Which server and client this connection is, as the server sees it. */
+export async function whoAmI(client: CommandExecutor, options?: CommandOptions): Promise<WhoAmI> {
+  const row = (await query(client, "whoami", [], options))[0] ?? {};
+  return {
+    serverStatus: str(row, "virtualserver_status"),
+    serverID: big(row, "virtualserver_id"),
+    serverUID: str(row, "virtualserver_unique_identifier"),
+    serverPort: num(row, "virtualserver_port"),
+    clientID: asClientID(num(row, "client_id")),
+    channelID: asChannelID(big(row, "client_channel_id")),
+    nickname: str(row, "client_nickname"),
+    databaseID: asClientDBID(big(row, "client_database_id")),
+    loginName: str(row, "client_login_name"),
+    uid: asUID(str(row, "client_unique_identifier")),
+  };
+}
+
+/**
+ * The virtual server's traffic, as `serverrequestconnectioninfo` reports it.
+ * Byte counts are bytes; bandwidths are bytes per second.
+ */
+export interface ServerConnectionInfo {
+  /** File transfer bandwidth out (`connection_filetransfer_bandwidth_sent`). */
+  readonly fileTransferBandwidthSent: number;
+  /** File transfer bandwidth in (`connection_filetransfer_bandwidth_received`). */
+  readonly fileTransferBandwidthReceived: number;
+  /** File transfer bytes sent (`connection_filetransfer_bytes_sent_total`). */
+  readonly fileTransferBytesSent: number;
+  /** File transfer bytes received (`connection_filetransfer_bytes_received_total`). */
+  readonly fileTransferBytesReceived: number;
+  /** Packets sent (`connection_packets_sent_total`). */
+  readonly packetsSent: number;
+  /** Bytes sent (`connection_bytes_sent_total`). */
+  readonly bytesSent: number;
+  /** Packets received (`connection_packets_received_total`). */
+  readonly packetsReceived: number;
+  /** Bytes received (`connection_bytes_received_total`). */
+  readonly bytesReceived: number;
+  /** Bandwidth out over the last second (`connection_bandwidth_sent_last_second_total`). */
+  readonly bandwidthSentLastSecond: number;
+  /** Bandwidth out over the last minute (`connection_bandwidth_sent_last_minute_total`). */
+  readonly bandwidthSentLastMinute: number;
+  /** Bandwidth in over the last second (`connection_bandwidth_received_last_second_total`). */
+  readonly bandwidthReceivedLastSecond: number;
+  /** Bandwidth in over the last minute (`connection_bandwidth_received_last_minute_total`). */
+  readonly bandwidthReceivedLastMinute: number;
+  /**
+   * How long the virtual server has been running, in milliseconds
+   * (`connection_connected_time`). Sent in seconds here — unlike the field of
+   * the same name in `clientinfo`, which is in milliseconds.
+   */
+  readonly connectedTimeMs: number;
+  /** The share of packets lost, 0 to 1 (`connection_packetloss_total`). */
+  readonly packetLoss: number;
+  /** The average ping, in milliseconds (`connection_ping`). */
+  readonly pingMs: number;
+}
+
+/**
+ * The virtual server's traffic statistics — not this connection's, as the
+ * command's name suggests.
+ */
+export async function getConnectionInfo(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<ServerConnectionInfo> {
+  const row = (await query(client, "serverrequestconnectioninfo", [], options))[0] ?? {};
+  return {
+    fileTransferBandwidthSent: num(row, "connection_filetransfer_bandwidth_sent"),
+    fileTransferBandwidthReceived: num(row, "connection_filetransfer_bandwidth_received"),
+    fileTransferBytesSent: num(row, "connection_filetransfer_bytes_sent_total"),
+    fileTransferBytesReceived: num(row, "connection_filetransfer_bytes_received_total"),
+    packetsSent: num(row, "connection_packets_sent_total"),
+    bytesSent: num(row, "connection_bytes_sent_total"),
+    packetsReceived: num(row, "connection_packets_received_total"),
+    bytesReceived: num(row, "connection_bytes_received_total"),
+    bandwidthSentLastSecond: num(row, "connection_bandwidth_sent_last_second_total"),
+    bandwidthSentLastMinute: num(row, "connection_bandwidth_sent_last_minute_total"),
+    bandwidthReceivedLastSecond: num(row, "connection_bandwidth_received_last_second_total"),
+    bandwidthReceivedLastMinute: num(row, "connection_bandwidth_received_last_minute_total"),
+    connectedTimeMs: durationMs(row, "connection_connected_time", SECOND),
+    packetLoss: num(row, "connection_packetloss_total"),
+    pingMs: num(row, "connection_ping"),
+  };
 }
 
 /**
@@ -141,62 +331,101 @@ export async function getConnectionInfo(client: CommandExecutor): Promise<Record
  * Server Admin group holds by default — expect error 2568 until it is granted.
  * Granted, it works over the voice protocol like any other query.
  */
-export async function getServerIDByPort(client: CommandExecutor, port: number): Promise<bigint> {
-  const rows = await query(client, "serveridgetbyport", [["virtualserver_port", port]]);
+export async function getServerIDByPort(
+  client: CommandExecutor,
+  port: number,
+  options?: CommandOptions,
+): Promise<bigint> {
+  const rows = await query(client, "serveridgetbyport", [["virtualserver_port", port]], options);
   return big(rows[0] ?? {}, "server_id");
 }
 
 // ---- Server groups ----------------------------------------------------------
 
-/** Create a server group. */
+/**
+ * Create a server group.
+ *
+ * `type` is required, and always sent: the server's own default is
+ * `GroupType.Regular`, while the type's first value is `Template`, so leaving
+ * it to a default on either side is a trap.
+ */
 export async function createServerGroup(
   client: CommandExecutor,
   name: string,
-  type?: number,
+  type: GroupType,
+  options?: CommandOptions,
 ): Promise<ServerGroupID> {
-  const rows = await query(client, "servergroupadd", [
-    ["name", name],
-    ["type", type],
-  ]);
+  const rows = await query(
+    client,
+    "servergroupadd",
+    [
+      ["name", name],
+      ["type", type],
+    ],
+    options,
+  );
   return asServerGroupID(createdGroupID(rows, "sgid", name));
 }
 
+/** Delete a server group; `force` deletes it even while it has members. */
 export async function deleteServerGroup(
   client: CommandExecutor,
   sgid: ServerGroupID,
   force: boolean,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "servergroupdel", [
-    ["sgid", sgid],
-    ["force", force],
-  ]);
+  await exec(
+    client,
+    "servergroupdel",
+    [
+      ["sgid", sgid],
+      ["force", force],
+    ],
+    options,
+  );
 }
 
+/** Rename a server group. */
 export async function renameServerGroup(
   client: CommandExecutor,
   sgid: ServerGroupID,
   name: string,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "servergrouprename", [
-    ["sgid", sgid],
-    ["name", name],
-  ]);
+  await exec(
+    client,
+    "servergrouprename",
+    [
+      ["sgid", sgid],
+      ["name", name],
+    ],
+    options,
+  );
 }
 
-/** Copy a server group; `tsgid` of 0 makes the server allocate a new id. */
+/**
+ * Copy a server group's permissions onto another; a `targetGroupID` of 0 makes
+ * the server create a new group named `name`, of `type`.
+ */
 export async function copyServerGroup(
   client: CommandExecutor,
   sourceGroupID: ServerGroupID,
   targetGroupID: ServerGroupID,
   name: string,
-  type: number,
+  type: GroupType,
+  options?: CommandOptions,
 ): Promise<ServerGroupID> {
-  const rows = await query(client, "servergroupcopy", [
-    ["ssgid", sourceGroupID],
-    ["tsgid", targetGroupID],
-    ["name", name],
-    ["type", type],
-  ]);
+  const rows = await query(
+    client,
+    "servergroupcopy",
+    [
+      ["ssgid", sourceGroupID],
+      ["tsgid", targetGroupID],
+      ["name", name],
+      ["type", type],
+    ],
+    options,
+  );
   // Copying onto an existing group keeps that group's id.
   if (targetGroupID !== 0n) return targetGroupID;
   return asServerGroupID(createdGroupID(rows, "sgid", name));
@@ -207,48 +436,92 @@ export async function addClientToServerGroup(
   client: CommandExecutor,
   sgid: ServerGroupID,
   cldbid: ClientDBID,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "servergroupaddclient", [
-    ["sgid", sgid],
-    ["cldbid", cldbid],
-  ]);
+  await exec(
+    client,
+    "servergroupaddclient",
+    [
+      ["sgid", sgid],
+      ["cldbid", cldbid],
+    ],
+    options,
+  );
 }
 
+/** Remove a client from a server group. */
 export async function removeClientFromServerGroup(
   client: CommandExecutor,
   sgid: ServerGroupID,
   cldbid: ClientDBID,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "servergroupdelclient", [
-    ["sgid", sgid],
-    ["cldbid", cldbid],
-  ]);
+  await exec(
+    client,
+    "servergroupdelclient",
+    [
+      ["sgid", sgid],
+      ["cldbid", cldbid],
+    ],
+    options,
+  );
+}
+
+/** Which optional fields `servergroupclientlist` should include. */
+export interface ServerGroupClientListOptions {
+  /** Each member's nickname (`-names`). */
+  readonly names?: boolean | undefined;
+  /** Each member's unique identifier (`-uid`). */
+  readonly uids?: boolean | undefined;
+}
+
+const memberFlags: WireNames<ServerGroupClientListOptions> = { names: "-names", uids: "-uid" };
+
+/** A member of a server group. */
+export interface ServerGroupMember {
+  /** The member's database id. */
+  readonly databaseID: ClientDBID;
+  /** The member's nickname, with `names`; "" otherwise. */
+  readonly nickname: string;
+  /** The member's unique identifier, with `uids`; "" otherwise. */
+  readonly uid: UID;
 }
 
 /** Members of a server group, optionally with their nicknames and uids. */
 export async function listServerGroupClients(
   client: CommandExecutor,
   sgid: ServerGroupID,
-  options: { names?: boolean; uids?: boolean } = {},
-): Promise<Array<{ databaseID: ClientDBID; nickname: string; uid: string }>> {
-  const params: Array<readonly [string, ParamValue]> = [["sgid", sgid]];
-  if (options.names) params.push(["-names", true]);
-  if (options.uids) params.push(["-uid", true]);
-
-  const rows = await query(client, "servergroupclientlist", params);
+  include: ServerGroupClientListOptions = {},
+  options?: CommandOptions,
+): Promise<ServerGroupMember[]> {
+  const rows = await list(
+    client,
+    "servergroupclientlist",
+    [["sgid", sgid], ...encodeFields(include, memberFlags)],
+    options,
+  );
   return rows.map((row) => ({
-    databaseID: big(row, "cldbid") as ClientDBID,
+    databaseID: asClientDBID(big(row, "cldbid")),
     nickname: str(row, "client_nickname"),
-    uid: str(row, "client_unique_identifier"),
+    uid: asUID(str(row, "client_unique_identifier")),
   }));
+}
+
+/** A server group a client belongs to. */
+export interface ServerGroupRef {
+  /** The group's id. */
+  readonly id: ServerGroupID;
+  /** The group's name. */
+  readonly name: string;
 }
 
 /** Server groups a client belongs to. */
 export async function getServerGroupsByClient(
   client: CommandExecutor,
   cldbid: ClientDBID,
-): Promise<Array<{ id: ServerGroupID; name: string }>> {
-  const rows = await query(client, "servergroupsbyclientid", [["cldbid", cldbid]]);
+  options?: CommandOptions,
+): Promise<ServerGroupRef[]> {
+  const rows = await query(client, "servergroupsbyclientid", [["cldbid", cldbid]], options);
   return rows.map((row) => ({ id: asServerGroupID(big(row, "sgid")), name: str(row, "name") }));
 }
 
@@ -256,85 +529,150 @@ export async function getServerGroupsByClient(
 export async function listServerGroupPermissions(
   client: CommandExecutor,
   sgid: ServerGroupID,
+  options?: CommandOptions,
 ): Promise<PermissionEntry[]> {
-  return (await query(client, "servergrouppermlist", [["sgid", sgid]])).map(parsePermission);
+  return (await list(client, "servergrouppermlist", [["sgid", sgid]], options)).map(
+    parsePermission,
+  );
 }
 
+/** One permission to set on a server group. */
+export interface ServerGroupPermission {
+  /** The permission. */
+  readonly permission: Permission;
+  /** Its value (`permvalue`). */
+  readonly value: number;
+  /** Whether the value is negated, so the lowest wins; false by default (`permnegated`). */
+  readonly negated?: boolean | undefined;
+  /** Whether it skips channel and client overrides; false by default (`permskip`). */
+  readonly skip?: boolean | undefined;
+}
+
+/** Set a permission on a server group. */
 export async function addServerGroupPermission(
   client: CommandExecutor,
   sgid: ServerGroupID,
-  options: {
-    permvalue: number;
-    permnegated: boolean;
-    permskip: boolean;
-    permid?: PermissionID;
-    permsid?: string;
-  },
+  grant: ServerGroupPermission,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "servergroupaddperm", [
-    ["sgid", sgid],
-    ["permvalue", options.permvalue],
-    ["permnegated", options.permnegated],
-    ["permskip", options.permskip],
-    ["permid", options.permid],
-    ["permsid", options.permsid],
-  ]);
+  await exec(
+    client,
+    "servergroupaddperm",
+    [
+      ["sgid", sgid],
+      permissionParam(grant.permission),
+      ["permvalue", grant.value],
+      ["permnegated", grant.negated ?? false],
+      ["permskip", grant.skip ?? false],
+    ],
+    options,
+  );
 }
 
+/** Remove a permission from a server group. */
 export async function deleteServerGroupPermission(
   client: CommandExecutor,
   sgid: ServerGroupID,
-  options: { permid?: PermissionID; permsid?: string },
+  permission: Permission,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "servergroupdelperm", [
-    ["sgid", sgid],
-    ["permid", options.permid],
-    ["permsid", options.permsid],
-  ]);
+  await exec(client, "servergroupdelperm", [["sgid", sgid], permissionParam(permission)], options);
 }
 
 // ---- Temporary passwords ----------------------------------------------------
 
+/** A temporary server password. */
 export interface TempPassword {
-  password: string;
-  description: string;
-  start: number;
-  end: number;
-  targetChannelID: ChannelID;
+  /** The password itself (`pw_clear`). */
+  readonly password: string;
+  /** What it is for (`desc`). */
+  readonly description: string;
+  /** Who created it (`nickname`). */
+  readonly creatorNickname: string;
+  /** The creator's unique identifier (`uid`). */
+  readonly creatorUID: UID;
+  /** When it became valid (`start`). */
+  readonly startsAt: Date | undefined;
+  /** When it stops being valid (`end`). */
+  readonly endsAt: Date | undefined;
+  /** The channel a client joining with it lands in, or 0 for the default channel. */
+  readonly targetChannelID: ChannelID;
 }
 
-export async function listTempPasswords(client: CommandExecutor): Promise<TempPassword[]> {
-  const rows = await query(client, "servertemppasswordlist");
+/** The server's temporary passwords. */
+export async function listTempPasswords(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<TempPassword[]> {
+  const rows = await list(client, "servertemppasswordlist", [], options);
   return rows.map((row) => ({
     password: str(row, "pw_clear"),
     description: str(row, "desc"),
-    start: num(row, "start"),
-    end: num(row, "end"),
-    targetChannelID: big(row, "tcid") as ChannelID,
+    creatorNickname: str(row, "nickname"),
+    creatorUID: asUID(str(row, "uid")),
+    startsAt: date(row, "start"),
+    endsAt: date(row, "end"),
+    targetChannelID: asChannelID(big(row, "tcid")),
   }));
 }
 
-/** Create a temporary password, and return it as the server generated it. */
-export async function addTempPassword(
-  client: CommandExecutor,
-  options: {
-    description: string;
-    /** Validity in seconds. */
-    duration: number;
-    targetChannelID: ChannelID;
-    targetChannelPassword?: string;
-  },
-): Promise<string> {
-  const rows = await query(client, "servertemppasswordadd", [
-    ["pw", ""],
-    ["desc", options.description],
-    ["duration", options.duration],
-    ["tcid", options.targetChannelID],
-    ["tcpw", options.targetChannelPassword],
-  ]);
-  return str(rows[0] ?? {}, "pw_clear");
+/** A temporary password to create. */
+export interface TempPasswordOptions {
+  /**
+   * The password (`pw`). The caller chooses it; the server does not generate
+   * one, and an empty one is refused here rather than created.
+   */
+  readonly password: string;
+  /** What it is for, shown in the list (`desc`). */
+  readonly description: string;
+  /**
+   * How long it stays valid, in milliseconds (`duration`). Sent in whole
+   * seconds; a positive duration under a second is sent as one.
+   */
+  readonly durationMs: number;
+  /** The channel a client joining with it lands in; unset or 0 is the default channel (`tcid`). */
+  readonly targetChannelID?: ChannelID | undefined;
+  /** That channel's password, in cleartext; unset or "" for none (`tcpw`). */
+  readonly targetChannelPassword?: string | undefined;
 }
 
-export async function deleteTempPassword(client: CommandExecutor, password: string): Promise<void> {
-  await exec(client, "servertemppassworddel", [["pw", password]]);
+const tempPasswordNames: WireNames<TempPasswordOptions> = {
+  password: "pw",
+  description: "desc",
+  durationMs: ["duration", inSeconds],
+  targetChannelID: "tcid",
+  targetChannelPassword: "tcpw",
+};
+
+/**
+ * Create a temporary server password.
+ *
+ * The server reports nothing back — the password is the one passed in.
+ */
+export async function addTempPassword(
+  client: CommandExecutor,
+  temp: TempPasswordOptions,
+  options?: CommandOptions,
+): Promise<void> {
+  if (typeof temp.password !== "string" || temp.password === "") {
+    throw new TypeError("a temporary password cannot be empty");
+  }
+  // tcid and tcpw are required on the wire, even for the default channel.
+  const fields: TempPasswordOptions = {
+    ...temp,
+    targetChannelID: temp.targetChannelID ?? asChannelID(0),
+    targetChannelPassword: temp.targetChannelPassword ?? "",
+  };
+  await exec(client, "servertemppasswordadd", encodeFields(fields, tempPasswordNames), options, [
+    "tcpw",
+  ]);
+}
+
+/** Delete a temporary password. */
+export async function deleteTempPassword(
+  client: CommandExecutor,
+  password: string,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(client, "servertemppassworddel", [["pw", password]], options);
 }

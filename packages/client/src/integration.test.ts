@@ -26,8 +26,14 @@ import {
   getClientNameByDBID,
   getClientIDs,
 } from "@honeybbq/teamspeak-core";
-import { deleteFile, initFileDownload, initFileUpload, listFiles } from "@honeybbq/teamspeak-core";
-import { sendTextMessage, TextMessageTarget } from "@honeybbq/teamspeak-core";
+import {
+  deleteFile,
+  getFileInfo,
+  initFileDownload,
+  initFileUpload,
+  listFiles,
+} from "@honeybbq/teamspeak-core";
+import { sendPrivateMessage, whoAmI } from "@honeybbq/teamspeak-core";
 import { ErrorCode, getServerInfo, listServerGroups } from "@honeybbq/teamspeak-core";
 import { asChannelID, asClientDBID, asClientID, asUID } from "@honeybbq/teamspeak-core";
 import type { ClientInfo } from "./types.js";
@@ -213,6 +219,35 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     await fresh.disconnect();
   }, 45_000);
 
+  it("a command honours its signal and leaves the connection usable", async () => {
+    const reason = new Error("caller gave up");
+    await expect(listChannels(sharedClient, { signal: AbortSignal.abort(reason) })).rejects.toBe(
+      reason,
+    );
+    expect((await listChannels(sharedClient, { timeout: 10_000 })).length).toBeGreaterThan(0);
+  }, 15_000);
+
+  it("whoAmI — names this connection", async () => {
+    const [raw] = await sharedClient.exec("whoami");
+    console.log(
+      `whoami fields: ${Object.keys(raw ?? {})
+        .sort()
+        .join(", ")}`,
+    );
+    const me = await whoAmI(sharedClient);
+    console.log(`whoami: clid=${me.clientID} cid=${me.channelID} uid=${me.uid}`);
+    expect(me.clientID).toBe(sharedClient.clientID());
+    expect(me.channelID).toBe(sharedClient.channelID());
+  }, 15_000);
+
+  it("listClients — reports idle time in milliseconds", async () => {
+    const clients = await listClients(sharedClient, { times: true });
+    const self = clients.find((c) => c.id === sharedClient.clientID());
+    console.log(`times: idle=${self?.idleTimeMs}ms created=${self?.createdAt?.toISOString()}`);
+    expect(self?.idleTimeMs).toBeGreaterThanOrEqual(0);
+    expect(self?.idleTimeMs).toBeLessThan(10 * 60_000);
+  }, 15_000);
+
   it("listChannels — at least one channel exists", async () => {
     const channels = await listChannels(sharedClient);
 
@@ -320,7 +355,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   it("createChannel — returns the new channel's id", async () => {
     const before = sharedClient.channelID();
     const name = `ts-js-${Date.now().toString(36)}`;
-    const cid = await createChannel(sharedClient, { channel_name: name });
+    const cid = await createChannel(sharedClient, { name });
     try {
       expect(cid).not.toBe(0n);
       expect((await getChannelInfo(sharedClient, cid)).name).toBe(name);
@@ -347,6 +382,19 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     try {
       const files = await listFiles(sharedClient, cid);
       expect(files.map((f) => `/${f.name}`)).toContain(path);
+
+      // TS3 sends the times in seconds; TS6 sends a listing's in milliseconds
+      // and a single file's in nanoseconds. All three must read as now, not as
+      // 1970 or the far future.
+      const listed = files.find((f) => `/${f.name}` === path)!;
+      const info = await getFileInfo(sharedClient, cid, path);
+      console.log(
+        `file times: listed=${listed.modifiedAt?.toISOString()} info=${info.modifiedAt?.toISOString()}`,
+      );
+      for (const modifiedAt of [listed.modifiedAt, info.modifiedAt]) {
+        expect(Math.abs(modifiedAt!.getTime() - Date.now())).toBeLessThan(86_400_000);
+      }
+      expect(listed.isDirectory).toBe(false);
 
       const download = await initFileDownload(sharedClient, cid, path);
       expect(download.size).toBe(BigInt(payload.length));
@@ -480,12 +528,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     });
 
     const ownID = sharedClient.clientID();
-    await sendTextMessage(
-      sharedClient,
-      TextMessageTarget.Client,
-      "hello from ts-js-integ",
-      asClientID(ownID),
-    );
+    await sendPrivateMessage(sharedClient, asClientID(ownID), "hello from ts-js-integ");
 
     const msg = await Promise.race([
       received,

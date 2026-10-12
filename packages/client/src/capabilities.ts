@@ -13,7 +13,8 @@
  * round trip.
  */
 
-import { asIconID, type IconID } from "@honeybbq/teamspeak-core";
+import type { IconID } from "@honeybbq/teamspeak-core";
+import { parseIconID } from "@honeybbq/teamspeak-core/internal";
 import { uidAlgorithmForVersion, type UidAlgorithm } from "./crypto/identity.js";
 
 /** The server generation a version string belongs to. */
@@ -74,15 +75,6 @@ export function parseServerCapabilities(
     hostBannerImageURL: params["virtualserver_hostbanner_gfx_url"]?.trim() || undefined,
     welcomeMessage: params["virtualserver_welcomemessage"] ?? "",
   };
-}
-
-/** An icon id, signed or not, as its unsigned CRC32; 0 and garbage mean none. */
-function parseIconID(raw: string | undefined): IconID | undefined {
-  if (raw === undefined || !/^-?\d+$/.test(raw.trim())) return undefined;
-  const value = BigInt(raw.trim());
-  if (value < -(2n ** 31n) || value >= 2n ** 32n) return undefined;
-  const unsigned = BigInt.asUintN(32, value);
-  return unsigned === 0n ? undefined : asIconID(unsigned);
 }
 
 /**

@@ -5,33 +5,56 @@
  * negotiate an upload or download. The actual bytes travel over a separate TCP
  * connection to the file transfer port, which `transfer.ts` handles.
  *
- * Every command here takes a channel password, and the server expects it as
- * `base64(sha1(password))` rather than cleartext — the same encoding `clientmove`
- * uses. Passing `""` is correct and common for a channel with no password.
+ * Every command here takes a channel password, in cleartext: the voice client
+ * sends it as `base64(sha1(password))`, the same encoding `clientmove` uses,
+ * and ServerQuery as it is. Passing `""` is correct and common for a channel
+ * with no password.
  */
 
-import { exec, query, str, big, num } from "./command.js";
-import type { CommandExecutor } from "../command/request.js";
-import type { ChannelID } from "../command/ids.js";
+import {
+  exec,
+  query,
+  list,
+  encodeFields,
+  str,
+  big,
+  num,
+  date,
+  durationMs,
+  SECOND,
+} from "./command.js";
+import type { WireNames } from "./command.js";
+import type { CommandExecutor, CommandOptions } from "../command/request.js";
+import type { ChannelID, ClientID } from "../command/ids.js";
+import { asClientID } from "../command/ids.js";
 import type { FileDownloadInfo, FileUploadInfo } from "../types.js";
 
 const asPath = (path: string): string => (path.startsWith("/") ? path : `/${path}`);
 
-/** One entry of a directory listing. */
+/** One entry of a directory listing, or one file's details. */
 export interface FileEntry {
-  name: string;
-  size: bigint;
-  /** Seconds since the epoch. */
-  modifiedAt: number;
-  /** 0 = file, 1 = directory. */
-  type: number;
+  /** The file or directory name. */
+  readonly name: string;
+  /** The size in bytes; 0 for a directory. */
+  readonly size: bigint;
+  /**
+   * When it was last modified. TS3 sends seconds, TS6 milliseconds in a
+   * listing and nanoseconds in `getFileInfo`; all are read as the same time.
+   */
+  readonly modifiedAt: Date | undefined;
+  /**
+   * Whether this is a directory. The listing sends `type=0` for a directory
+   * and `type=1` for a file; `getFileInfo`'s answer carries no type, so there
+   * it is always false.
+   */
+  readonly isDirectory: boolean;
 }
 
 const parseFileEntry = (row: Record<string, string>): FileEntry => ({
   name: str(row, "name"),
   size: big(row, "size"),
-  modifiedAt: num(row, "datetime"),
-  type: num(row, "type"),
+  modifiedAt: date(row, "datetime"),
+  isDirectory: row["type"] === "0",
 });
 
 /** Directory listing for one path in a channel's file area. */
@@ -40,6 +63,7 @@ export async function listFiles(
   cid: ChannelID,
   path = "/",
   password = "",
+  options?: CommandOptions,
 ): Promise<FileEntry[]> {
   const rows = await query(
     client,
@@ -49,6 +73,7 @@ export async function listFiles(
       ["path", asPath(path)],
       ["cpw", password],
     ],
+    options,
     ["cpw"],
   );
   return rows.map(parseFileEntry);
@@ -60,6 +85,7 @@ export async function getFileInfo(
   cid: ChannelID,
   path: string,
   password = "",
+  options?: CommandOptions,
 ): Promise<FileEntry> {
   const rows = await query(
     client,
@@ -69,6 +95,7 @@ export async function getFileInfo(
       ["name", asPath(path)],
       ["cpw", password],
     ],
+    options,
     ["cpw"],
   );
   return parseFileEntry(rows[0] ?? {});
@@ -83,10 +110,11 @@ export async function getFileInfo(
 export async function deleteFile(
   client: CommandExecutor,
   cid: ChannelID,
-  paths: string | string[],
+  paths: string | readonly string[],
   password = "",
+  options?: CommandOptions,
 ): Promise<void> {
-  const names = (Array.isArray(paths) ? paths : [paths]).map(asPath);
+  const names = (typeof paths === "string" ? [paths] : paths).map(asPath);
   if (names.length === 0) return;
 
   await exec(
@@ -97,6 +125,7 @@ export async function deleteFile(
       ["name", names.join("|")],
       ["cpw", password],
     ],
+    options,
     ["cpw"],
   );
 }
@@ -107,6 +136,7 @@ export async function createDirectory(
   cid: ChannelID,
   dirname: string,
   password = "",
+  options?: CommandOptions,
 ): Promise<void> {
   await exec(
     client,
@@ -116,9 +146,26 @@ export async function createDirectory(
       ["dirname", asPath(dirname)],
       ["cpw", password],
     ],
+    options,
     ["cpw"],
   );
 }
+
+/** Where {@link renameFile} moves a file, and the passwords it needs. Unset fields are omitted. */
+export interface FileRenameOptions {
+  /** The source channel's password, in cleartext (`cpw`). */
+  readonly password?: string | undefined;
+  /** Move the file into this channel's file area; unset keeps it in the same channel (`tcid`). */
+  readonly targetChannelID?: ChannelID | undefined;
+  /** The target channel's password, in cleartext (`tcpw`). */
+  readonly targetChannelPassword?: string | undefined;
+}
+
+const renameNames: WireNames<FileRenameOptions> = {
+  password: "cpw",
+  targetChannelID: "tcid",
+  targetChannelPassword: "tcpw",
+};
 
 /** Rename or move a file, optionally into another channel. */
 export async function renameFile(
@@ -126,7 +173,8 @@ export async function renameFile(
   cid: ChannelID,
   oldName: string,
   newName: string,
-  options: { targetChannelID?: ChannelID; targetChannelPassword?: string; password?: string } = {},
+  rename: FileRenameOptions = {},
+  options?: CommandOptions,
 ): Promise<void> {
   await exec(
     client,
@@ -135,10 +183,9 @@ export async function renameFile(
       ["cid", cid],
       ["oldname", asPath(oldName)],
       ["newname", asPath(newName)],
-      ["cpw", options.password],
-      ["tcid", options.targetChannelID],
-      ["tcpw", options.targetChannelPassword],
+      ...encodeFields(rename, renameNames),
     ],
+    options,
     ["cpw", "tcpw"],
   );
 }
@@ -146,41 +193,65 @@ export async function renameFile(
 /**
  * Cancel a running transfer.
  *
- * `delete` removes the partial file as well, which is usually what you want
- * after a failed upload.
+ * `removePartialFile` removes the partial file as well, which is usually what
+ * you want after a failed upload.
  */
 export async function stopFileTransfer(
   client: CommandExecutor,
   serverFileTransferID: number,
   removePartialFile: boolean,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "ftstop", [
-    ["serverftfid", serverFileTransferID],
-    ["delete", removePartialFile],
-  ]);
+  await exec(
+    client,
+    "ftstop",
+    [
+      ["serverftfid", serverFileTransferID],
+      ["delete", removePartialFile],
+    ],
+    options,
+  );
 }
 
 /** A running transfer, as `ftlist` reports it. */
 export interface ActiveTransfer {
-  clientID: number;
-  path: string;
-  name: string;
-  size: bigint;
-  sizeDone: bigint;
-  clientFileTransferID: number;
-  serverFileTransferID: number;
-  sender: string;
-  status: number;
-  currentSpeed: number;
-  averageSpeed: number;
-  runtime: number;
+  /** The client transferring. */
+  readonly clientID: ClientID;
+  /** The directory in the channel's file area. */
+  readonly path: string;
+  /** The file name. */
+  readonly name: string;
+  /** The file's size in bytes. */
+  readonly size: bigint;
+  /** How many bytes have been transferred. */
+  readonly sizeDone: bigint;
+  /** The client's id for the transfer. */
+  readonly clientFileTransferID: number;
+  /** The server's id for the transfer, which {@link stopFileTransfer} takes. */
+  readonly serverFileTransferID: number;
+  /** Which side sends the data, as the server reports it (`sender`). */
+  readonly sender: string;
+  /** The transfer's state. */
+  readonly status: number;
+  /** The current speed, in bytes per second. */
+  readonly currentSpeed: number;
+  /** The average speed, in bytes per second. */
+  readonly averageSpeed: number;
+  /** How long the transfer has been running, in milliseconds. The server reports seconds. */
+  readonly runtimeMs: number;
 }
 
-/** File transfers in progress. Requires the file-transfer-info permission. */
-export async function listActiveTransfers(client: CommandExecutor): Promise<ActiveTransfer[]> {
-  const rows = await query(client, "ftlist");
+/**
+ * File transfers in progress. Requires the file-transfer-info permission. None
+ * is an empty list.
+ */
+export async function listActiveTransfers(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<ActiveTransfer[]> {
+  const rows = await list(client, "ftlist", [], options);
   return rows.map((row) => ({
-    clientID: num(row, "clid"),
+    clientID: asClientID(num(row, "clid")),
     path: str(row, "path"),
     name: str(row, "name"),
     size: big(row, "size"),
@@ -191,7 +262,7 @@ export async function listActiveTransfers(client: CommandExecutor): Promise<Acti
     status: num(row, "status"),
     currentSpeed: num(row, "current_speed"),
     averageSpeed: num(row, "average_speed"),
-    runtime: num(row, "runtime"),
+    runtimeMs: durationMs(row, "runtime", SECOND),
   }));
 }
 
@@ -208,20 +279,31 @@ function nextClientFileTransferID(): number {
   return lastClientFileTransferID;
 }
 
+/** How {@link initFileUpload} negotiates an upload. */
+export interface FileUploadOptions {
+  /** The channel's password, in cleartext; "" by default (`cpw`). */
+  readonly password?: string | undefined;
+  /** Replace an existing file; true by default (`overwrite`). */
+  readonly overwrite?: boolean | undefined;
+  /** Continue a partial upload; false by default (`resume`). */
+  readonly resume?: boolean | undefined;
+}
+
 /**
  * Negotiate an upload, returning the key and port to dial over TCP.
  *
- * Pass the result to {@link uploadFileData} to send the data; it does not go
- * through this client. A refusal — no permission to upload, say — is thrown as
- * a ServerError, even though the voice protocol reports it in a separate
- * notification after the command itself has succeeded.
+ * Pass the result to the client's `uploadFileData` to send the data; it does
+ * not go through this command. A refusal — no permission to upload, say — is
+ * thrown as a ServerError, even though the voice protocol reports it in a
+ * separate notification after the command itself has succeeded.
  */
 export async function initFileUpload(
   client: CommandExecutor,
   cid: ChannelID,
   path: string,
   size: bigint,
-  options: { password?: string; overwrite?: boolean; resume?: boolean } = {},
+  upload: FileUploadOptions = {},
+  options?: CommandOptions,
 ): Promise<FileUploadInfo> {
   const rows = await query(
     client,
@@ -230,14 +312,15 @@ export async function initFileUpload(
       ["clientftfid", nextClientFileTransferID()],
       ["name", asPath(path)],
       ["cid", cid],
-      ["cpw", options.password ?? ""],
+      ["cpw", upload.password ?? ""],
       ["size", size],
-      ["overwrite", options.overwrite ?? true],
-      ["resume", options.resume ?? false],
+      ["overwrite", upload.overwrite ?? true],
+      ["resume", upload.resume ?? false],
       // proto is required: omitting it fails the whole call with 1539
       // (parameter not found) rather than defaulting.
       ["proto", 0],
     ],
+    options,
     ["cpw"],
   );
   const row = rows[0] ?? {};
@@ -250,17 +333,26 @@ export async function initFileUpload(
   };
 }
 
+/** How {@link initFileDownload} negotiates a download. */
+export interface FileDownloadOptions {
+  /** The channel's password, in cleartext; "" by default (`cpw`). */
+  readonly password?: string | undefined;
+  /** The byte offset to start from, to resume; 0 by default (`seekpos`). */
+  readonly seekPosition?: bigint | undefined;
+}
+
 /**
  * Negotiate a download, returning the key, port and size to dial over TCP.
  *
- * Pass the result to {@link downloadFileData}. Refusals are thrown as for
- * {@link initFileUpload}.
+ * Pass the result to the client's `downloadFileData`. Refusals are thrown as
+ * for {@link initFileUpload}.
  */
 export async function initFileDownload(
   client: CommandExecutor,
   cid: ChannelID,
   path: string,
-  options: { password?: string; seekPosition?: bigint } = {},
+  download: FileDownloadOptions = {},
+  options?: CommandOptions,
 ): Promise<FileDownloadInfo> {
   const rows = await query(
     client,
@@ -269,10 +361,11 @@ export async function initFileDownload(
       ["clientftfid", nextClientFileTransferID()],
       ["name", asPath(path)],
       ["cid", cid],
-      ["cpw", options.password ?? ""],
-      ["seekpos", options.seekPosition ?? 0n],
+      ["cpw", download.password ?? ""],
+      ["seekpos", download.seekPosition ?? 0n],
       ["proto", 0],
     ],
+    options,
     ["cpw"],
   );
   const row = rows[0] ?? {};

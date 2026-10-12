@@ -24,11 +24,11 @@ Compatible with TeamSpeak 3, 5 & 6. No proprietary SDK. No copy-pasted code.
 - **Middleware** — Pluggable command and event middleware chains
 - **Built-in rate limiter** — Token-bucket throttling to prevent server-side flood kicks
 - **Identity management** — Generate, import/export, and upgrade security level of identities
-- **Full command set** — 113 typed functions covering every command the voice protocol answers
+- **Full command set** — 115 typed functions covering every command the voice protocol answers
 - **Reconnection** — Opt-in retry with backoff, tuned for TeamSpeak's antiflood ban
 - **Server capabilities** — Reports the server version and the uid hash it uses (SHA-1 on TS3, SHA-256 on TS6)
 - **Custom transports** — Supply your own socket, for proxies, tunnels or tests
-- **Dual format** — Ships ESM and CJS with full TypeScript declarations
+- **ESM with types** — Ships ES modules with full TypeScript declarations
 - **Zero native deps** — Pure TypeScript, no native addons required
 
 ## Installation
@@ -104,6 +104,7 @@ process.on("SIGINT", async () => {
 | `on("clientMoved", handler)`  | Fires when a client moves channels |
 | `on("kicked", handler)`       | Fires when the bot is kicked       |
 | `on("poked", handler)`        | Fires when poked by a client       |
+| `on("voiceData", handler)`    | Fires on incoming voice data       |
 
 `on()` and `once()` return a function that removes the listener, which is also
 a `Disposable` (`using listener = client.on(...)`). Listeners run one at a
@@ -112,45 +113,65 @@ await an answer. `disconnected` delivers `undefined` after `disconnect()`, and
 the cause otherwise — a `TimedOutError`, or a `RemovedError` for a kick, a ban
 or a server stopping. `await using client = new Client(...)` disconnects when
 the scope ends.
-| `on("voice", handler)` | Fires on incoming voice data |
 
 ### Commands
 
 Every command the voice protocol answers is a typed function, grouped by area.
-Each takes a single options object and is addressed by branded ids, so a
-`ChannelID` cannot be passed where a `ClientID` is meant.
+Each is addressed by branded ids, so a `ChannelID` cannot be passed where a
+`ClientID` is meant, and each takes a last, optional `{ signal?, timeout? }`
+to abandon it or bound how long it waits.
 
 ```typescript
 import {
   listChannels,
   createChannel,
-  editChannel,
-  deleteChannel,
-  listClients,
   moveClient,
   kickClient,
-  updateClient,
-  getServerInfo,
-  listServerGroups,
+  sendChannelMessage,
   addServerGroupPermission,
-  listFiles,
-  deleteFile,
-  addBan,
-  sendTextMessage,
-  TextMessageTarget,
+  iterateClientDatabase,
+  permissionByName,
+  asClientID,
+  Codec,
+  Reason,
 } from "@honeybbq/teamspeak-client";
 
-const channels = await listChannels(client);
+const channels = await listChannels(client, { signal: AbortSignal.timeout(5_000) });
 
 const cid = await createChannel(client, {
-  channel_name: "Lounge",
-  channel_topic: "the quiet one",
-  channel_flag_permanent: true,
+  name: "Lounge",
+  topic: "the quiet one",
+  codec: Codec.OpusVoice,
+  isPermanent: true,
 });
 
 await moveClient(client, asClientID(client.clientID()), cid, "channel-password");
-await sendTextMessage(client, TextMessageTarget.Channel, "hello", cid);
+await sendChannelMessage(client, "hello");
+await kickClient(client, someone, Reason.KickChannel, "take a break");
+
+await addServerGroupPermission(client, sgid, {
+  permission: permissionByName("i_client_talk_power"),
+  value: 50,
+});
+
+for await (const entry of iterateClientDatabase(client)) {
+  console.log(entry.nickname, entry.lastConnectedAt);
+}
 ```
+
+Options objects use camelCase names (`maxClients` for `channel_maxclients`),
+and only the fields you set are sent: an unset field leaves the setting alone,
+while `""` sends it empty — `editChannel(client, cid, { password: "" })` clears
+a password. A key an options type does not name is never sent. The exceptions
+are `editServer` and `editInstance`, which take the raw `virtualserver_*` and
+`serverinstance_*` properties as `getServerInfo` reports them.
+
+Results are camelCase too. Timestamps are `Date`s (`undefined` where the server
+sends 0 for "never"), durations are milliseconds with an `Ms` suffix
+(`idleTimeMs`, `durationMs`), and a permission is a `Permission`, built with
+`permissionByID` or `permissionByName`. Small enumerations — `GroupType`,
+`Codec`, `TokenType`, `LogLevel` and the rest — are objects of named values with
+a type of the same name.
 
 | Module       | Covers                                                         |
 | ------------ | -------------------------------------------------------------- |

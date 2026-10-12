@@ -4,7 +4,10 @@ import {
   ErrorCode,
   NotConnectedError,
   ServerError,
+  asClientDBID,
   createChannel,
+  iterateClientDatabase,
+  listBans,
   listChannels,
 } from "./index.js";
 import { QueryClient } from "./client.js";
@@ -57,12 +60,50 @@ describe("QueryClient", () => {
     const transport = new FakeTransport();
     const client = new QueryClient(transport);
 
-    const created = createChannel(client, { channel_name: "Room", channel_password: "hunter2" });
+    const created = createChannel(client, { name: "Room", password: "hunter2" });
     await transport.sentCount(1);
     transport.receive("cid=7", "error id=0 msg=ok");
     await created;
 
     expect(transport.sent[0]).toContain("channel_password=hunter2");
+  });
+
+  it("walks a paged command until the server reports the end", async () => {
+    const transport = new FakeTransport();
+    const client = new QueryClient(transport);
+
+    const seen: bigint[] = [];
+    const walk = (async () => {
+      for await (const entry of iterateClientDatabase(client, { pageSize: 2 })) {
+        seen.push(entry.databaseID);
+      }
+    })();
+    await transport.sentCount(1);
+    transport.receive("cldbid=1 client_nickname=a|cldbid=2 client_nickname=b", "error id=0 msg=ok");
+    await transport.sentCount(2);
+    transport.receive("cldbid=3 client_nickname=c|cldbid=4 client_nickname=d", "error id=0 msg=ok");
+    await transport.sentCount(3);
+    transport.receive("error id=1281 msg=database\\sempty\\sresult\\sset");
+    await walk;
+
+    expect(seen).toEqual([1n, 2n, 3n, 4n].map(asClientDBID));
+    expect(transport.sent).toEqual([
+      "clientdblist start=0 duration=2",
+      "clientdblist start=2 duration=2",
+      "clientdblist start=4 duration=2",
+    ]);
+  });
+
+  // The server answers an empty list with 1281 rather than with no rows.
+  it("reads an empty list as empty, not as a refusal", async () => {
+    const transport = new FakeTransport();
+    const client = new QueryClient(transport);
+
+    const bans = listBans(client);
+    await transport.sentCount(1);
+    transport.receive("error id=1281 msg=database\\sempty\\sresult\\sset");
+
+    expect(await bans).toEqual([]);
   });
 
   it("rejects with the server's error", async () => {

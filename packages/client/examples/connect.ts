@@ -57,7 +57,8 @@ async function main(): Promise<void> {
 
   // List channels
   try {
-    const channels = await listChannels(client);
+    // Every typed command takes { signal?, timeout? } as its last argument.
+    const channels = await listChannels(client, { timeout: 5_000 });
     console.log(`\n[example] ${channels.length} channel(s):`);
     for (const ch of channels) {
       const indent = ch.parentID === 0n ? "  " : "    ";
@@ -69,11 +70,12 @@ async function main(): Promise<void> {
 
   // List clients
   try {
-    const clients = await listClients(client);
+    const clients = await listClients(client, { times: true }, { timeout: 5_000 });
     console.log(`\n[example] ${clients.length} client(s) online:`);
     for (const cl of clients) {
       const marker = cl.id === client.clientID() ? " ← (me)" : "";
-      console.log(`  [clid=${cl.id}] ${cl.nickname}${marker}`);
+      const idle = cl.idleTimeMs === undefined ? "" : ` idle ${Math.round(cl.idleTimeMs / 1000)}s`;
+      console.log(`  [clid=${cl.id}] ${cl.nickname}${idle}${marker}`);
     }
   } catch (err) {
     console.warn("[example] clientlist error (permission?):", (err as Error).message);

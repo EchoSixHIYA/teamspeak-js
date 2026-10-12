@@ -1,192 +1,326 @@
 /**
- * Bans, complaints, offline messages and the server log.
+ * Bans, complaints, offline messages, text messages and the server log.
  *
- * All four are administrative: expect a permission error, not an empty list,
- * when the client lacks the rights.
+ * All administrative: expect a permission error, not an empty list, when the
+ * client lacks the rights.
  */
 
-import { exec, query, str, big, num, bool } from "./command.js";
-import type { CommandExecutor } from "../command/request.js";
-import type { ChannelID, ClientDBID, ClientID } from "../command/ids.js";
+import {
+  exec,
+  query,
+  list,
+  encodeFields,
+  nonEmpty,
+  toWireDuration,
+  str,
+  big,
+  num,
+  bool,
+  date,
+  durationMs,
+  SECOND,
+} from "./command.js";
+import type { WireNames } from "./command.js";
+import type { CommandExecutor, CommandOptions, ParamValue } from "../command/request.js";
+import type { ClientDBID, ClientID, UID } from "../command/ids.js";
+import { asClientDBID, asUID } from "../command/ids.js";
+import { TextMessageTarget } from "../enums.js";
+import type { LogLevel } from "../enums.js";
 
 // ---- Bans -------------------------------------------------------------------
 
-/** A ban entry, as `banlist` reports it. */
+/** A ban, as `banlist` reports it. */
 export interface BanEntry {
-  id: bigint;
-  ip: string;
-  name: string;
-  uid: string;
-  lastNickname: string;
-  created: number;
-  duration: number;
-  invokerDatabaseID: ClientDBID;
-  invokerName: string;
-  invokerUID: string;
-  reason: string;
+  /** The ban's id. */
+  readonly id: bigint;
+  /** The address pattern the ban matches, or "". */
+  readonly ip: string;
+  /** The nickname pattern the ban matches, or "". */
+  readonly name: string;
+  /** The unique identifier the ban matches, or "". */
+  readonly uid: UID;
+  /** The nickname of the last client the ban caught. */
+  readonly lastNickname: string;
+  /** When the ban was made. */
+  readonly createdAt: Date | undefined;
+  /**
+   * How long the ban lasts from `createdAt`, in milliseconds; 0 is a
+   * permanent ban. The server reports it in seconds.
+   */
+  readonly durationMs: number;
+  /** Who made the ban. */
+  readonly invokerDatabaseID: ClientDBID;
+  /** Their nickname. */
+  readonly invokerName: string;
+  /** Their unique identifier. */
+  readonly invokerUID: UID;
+  /** The reason given. */
+  readonly reason: string;
+  /** How many times the ban has turned a client away. */
+  readonly enforcements: number;
 }
 
 const parseBan = (row: Record<string, string>): BanEntry => ({
   id: big(row, "banid"),
   ip: str(row, "ip"),
   name: str(row, "name"),
-  uid: str(row, "uid"),
+  uid: asUID(str(row, "uid")),
   lastNickname: str(row, "lastnickname"),
-  created: num(row, "created"),
-  duration: num(row, "duration"),
-  invokerDatabaseID: big(row, "invokercldbid") as ClientDBID,
+  createdAt: date(row, "created"),
+  durationMs: durationMs(row, "duration", SECOND),
+  invokerDatabaseID: asClientDBID(big(row, "invokercldbid")),
   invokerName: str(row, "invokername"),
-  invokerUID: str(row, "invokeruid"),
+  invokerUID: asUID(str(row, "invokeruid")),
   reason: str(row, "reason"),
+  enforcements: num(row, "enforcements"),
 });
 
-/** Every active ban. */
-export async function listBans(client: CommandExecutor): Promise<BanEntry[]> {
-  return (await query(client, "banlist")).map(parseBan);
+/** Every active ban. A server with none answers an empty list. */
+export async function listBans(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<BanEntry[]> {
+  return (await list(client, "banlist", [], options)).map(parseBan);
 }
 
 /**
- * Add a ban. At least one of `ip`, `name` or `uid` must be given, otherwise the
- * server rejects the call.
+ * A ban's duration on the wire. A permanent ban (0) omits it: the server's
+ * default is permanent, which is also what `time=0` means. A positive duration
+ * never rounds down to 0, which would make it permanent.
+ */
+const banTime = (ms: number): ParamValue => (ms === 0 ? undefined : toWireDuration(ms, SECOND));
+
+/**
+ * How long a ban lasts and why. Unset fields are omitted; so is an empty
+ * `reason`.
+ */
+export interface BanClientOptions {
+  /**
+   * How long the ban lasts, in milliseconds (`time`); unset or 0 is permanent.
+   * Sent in whole seconds, and a positive duration under a second is sent as
+   * one rather than rounded down to forever.
+   */
+  readonly durationMs?: number | undefined;
+  /** The reason, shown to the banned client (`banreason`). */
+  readonly reason?: string | undefined;
+}
+
+const banClientNames: WireNames<BanClientOptions> = {
+  durationMs: ["time", banTime],
+  reason: ["banreason", nonEmpty],
+};
+
+/**
+ * A ban to add. `ip` and `name` are regular expressions matched against a
+ * client's address and nickname. At least one of `ip`, `name` or `uid` must be
+ * set; a ban matching nothing is refused before anything is sent.
+ *
+ * An empty string is treated as unset in every field here, never sent: an
+ * empty pattern would match every client.
+ */
+export interface BanOptions extends BanClientOptions {
+  /** The address pattern to ban (`ip`). */
+  readonly ip?: string | undefined;
+  /** The nickname pattern to ban (`name`). */
+  readonly name?: string | undefined;
+  /** The unique identifier to ban (`uid`). */
+  readonly uid?: UID | undefined;
+}
+
+const banNames: WireNames<BanOptions> = {
+  ip: ["ip", nonEmpty],
+  name: ["name", nonEmpty],
+  uid: ["uid", nonEmpty],
+  ...banClientNames,
+};
+
+/**
+ * Add a ban and return its id — over ServerQuery. The voice protocol reports
+ * no id, so there this resolves to undefined.
  */
 export async function addBan(
   client: CommandExecutor,
-  options: {
-    ip?: string;
-    name?: string;
-    uid?: string;
-    /** Seconds; 0 means permanent. */
-    duration?: number;
-    reason?: string;
-  },
-): Promise<bigint> {
-  const rows = await query(client, "banadd", [
-    ["ip", options.ip],
-    ["name", options.name],
-    ["uid", options.uid],
-    ["time", options.duration],
-    ["banreason", options.reason],
-  ]);
-  return big(rows[0] ?? {}, "banid");
+  ban: BanOptions,
+  options?: CommandOptions,
+): Promise<bigint | undefined> {
+  if (!ban.ip && !ban.name && !ban.uid) {
+    throw new TypeError("a ban needs an ip, a name or a uid to match");
+  }
+  const rows = await query(client, "banadd", encodeFields(ban, banNames), options);
+  return rows[0]?.["banid"] === undefined ? undefined : big(rows[0], "banid");
 }
 
-/** Ban a connected client by clid. */
+/**
+ * Ban a connected client by clid, and return the ban's id — over ServerQuery.
+ * The voice protocol reports no id, so there this resolves to undefined.
+ */
 export async function banClient(
   client: CommandExecutor,
   clid: ClientID,
-  options: { duration?: number; reason?: string } = {},
-): Promise<bigint> {
-  const rows = await query(client, "banclient", [
-    ["clid", clid],
-    ["time", options.duration],
-    ["banreason", options.reason],
-  ]);
-  return big(rows[0] ?? {}, "banid");
+  ban: BanClientOptions = {},
+  options?: CommandOptions,
+): Promise<bigint | undefined> {
+  const rows = await query(
+    client,
+    "banclient",
+    [["clid", clid], ...encodeFields(ban, banClientNames)],
+    options,
+  );
+  return rows[0]?.["banid"] === undefined ? undefined : big(rows[0], "banid");
 }
 
-export async function deleteBan(client: CommandExecutor, banID: bigint): Promise<void> {
-  await exec(client, "bandel", [["banid", banID]]);
+/** Remove a ban. */
+export async function deleteBan(
+  client: CommandExecutor,
+  banID: bigint,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(client, "bandel", [["banid", banID]], options);
 }
 
-export async function deleteAllBans(client: CommandExecutor): Promise<void> {
-  await exec(client, "bandelall");
+/** Remove every ban. */
+export async function deleteAllBans(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(client, "bandelall", [], options);
 }
 
 // ---- Complaints -------------------------------------------------------------
 
 /** A complaint one client filed against another. */
 export interface Complaint {
-  targetDatabaseID: ClientDBID;
-  targetName: string;
-  fromDatabaseID: ClientDBID;
-  fromName: string;
-  message: string;
-  timestamp: number;
+  /** Who the complaint is about. */
+  readonly targetDatabaseID: ClientDBID;
+  /** Their nickname. */
+  readonly targetName: string;
+  /** Who filed it. */
+  readonly fromDatabaseID: ClientDBID;
+  /** Their nickname. */
+  readonly fromName: string;
+  /** The complaint. */
+  readonly message: string;
+  /** When it was filed. */
+  readonly createdAt: Date | undefined;
 }
 
 const parseComplaint = (row: Record<string, string>): Complaint => ({
-  targetDatabaseID: big(row, "tcldbid") as ClientDBID,
+  targetDatabaseID: asClientDBID(big(row, "tcldbid")),
   targetName: str(row, "tname"),
-  fromDatabaseID: big(row, "fcldbid") as ClientDBID,
+  fromDatabaseID: asClientDBID(big(row, "fcldbid")),
   fromName: str(row, "fname"),
   message: str(row, "message"),
-  timestamp: num(row, "timestamp"),
+  createdAt: date(row, "timestamp"),
 });
 
 /** Complaints, optionally only those against one client. */
 export async function listComplaints(
   client: CommandExecutor,
   targetDatabaseID?: ClientDBID,
+  options?: CommandOptions,
 ): Promise<Complaint[]> {
-  return (await query(client, "complainlist", [["tcldbid", targetDatabaseID]])).map(parseComplaint);
+  return (await list(client, "complainlist", [["tcldbid", targetDatabaseID]], options)).map(
+    parseComplaint,
+  );
 }
 
+/** File a complaint against a client. */
 export async function addComplaint(
   client: CommandExecutor,
   targetDatabaseID: ClientDBID,
   message: string,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "complainadd", [
-    ["tcldbid", targetDatabaseID],
-    ["message", message],
-  ]);
+  await exec(
+    client,
+    "complainadd",
+    [
+      ["tcldbid", targetDatabaseID],
+      ["message", message],
+    ],
+    options,
+  );
 }
 
-/** Withdraw a complaint this client filed. */
+/** Withdraw one complaint. */
 export async function deleteComplaint(
   client: CommandExecutor,
   targetDatabaseID: ClientDBID,
   fromDatabaseID: ClientDBID,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "complaindel", [
-    ["tcldbid", targetDatabaseID],
-    ["fcldbid", fromDatabaseID],
-  ]);
+  await exec(
+    client,
+    "complaindel",
+    [
+      ["tcldbid", targetDatabaseID],
+      ["fcldbid", fromDatabaseID],
+    ],
+    options,
+  );
 }
 
 /** Withdraw every complaint against a client. */
 export async function deleteAllComplaints(
   client: CommandExecutor,
   targetDatabaseID: ClientDBID,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "complaindelall", [["tcldbid", targetDatabaseID]]);
+  await exec(client, "complaindelall", [["tcldbid", targetDatabaseID]], options);
 }
 
 // ---- Offline messages -------------------------------------------------------
 
-/** An offline message left for a client. */
+/** A message left for a client while they were away. */
 export interface OfflineMessage {
-  id: bigint;
-  uid: string;
-  subject: string;
-  message: string;
-  timestamp: number;
-  isRead: boolean;
+  /** The message's id. */
+  readonly id: bigint;
+  /** The sender's unique identifier. */
+  readonly uid: UID;
+  /** The subject. */
+  readonly subject: string;
+  /** The message; `messagelist` leaves it out, `getMessage` has it. */
+  readonly message: string;
+  /** When it was sent. */
+  readonly sentAt: Date | undefined;
+  /** Whether it has been read. */
+  readonly isRead: boolean;
 }
 
 const parseMessage = (row: Record<string, string>): OfflineMessage => ({
   id: big(row, "msgid"),
-  uid: str(row, "cluid"),
+  uid: asUID(str(row, "cluid")),
   subject: str(row, "subject"),
   message: str(row, "message"),
-  timestamp: num(row, "timestamp"),
+  sentAt: date(row, "timestamp"),
   isRead: bool(row, "flag_read"),
 });
 
-/** Offline messages for this client. */
-export async function listMessages(client: CommandExecutor): Promise<OfflineMessage[]> {
-  return (await query(client, "messagelist")).map(parseMessage);
+/** Offline messages for this client. None is an empty list. */
+export async function listMessages(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<OfflineMessage[]> {
+  return (await list(client, "messagelist", [], options)).map(parseMessage);
 }
 
+/** One offline message, with its text. */
 export async function getMessage(
   client: CommandExecutor,
   messageID: bigint,
+  options?: CommandOptions,
 ): Promise<OfflineMessage> {
-  return parseMessage((await query(client, "messageget", [["msgid", messageID]]))[0] ?? {});
+  const rows = await query(client, "messageget", [["msgid", messageID]], options);
+  return { ...parseMessage(rows[0] ?? {}), id: messageID };
 }
 
-export async function deleteMessage(client: CommandExecutor, messageID: bigint): Promise<void> {
-  await exec(client, "messagedel", [["msgid", messageID]]);
+/** Delete an offline message. */
+export async function deleteMessage(
+  client: CommandExecutor,
+  messageID: bigint,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(client, "messagedel", [["msgid", messageID]], options);
 }
 
 /** Mark a message read or unread. */
@@ -194,95 +328,163 @@ export async function updateMessageFlag(
   client: CommandExecutor,
   messageID: bigint,
   read: boolean,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "messageupdateflag", [
-    ["msgid", messageID],
-    ["flag", read],
-  ]);
+  await exec(
+    client,
+    "messageupdateflag",
+    [
+      ["msgid", messageID],
+      ["flag", read],
+    ],
+    options,
+  );
 }
 
 // ---- Text messages ----------------------------------------------------------
+//
+// Three functions rather than one taking a mode and an id, because the id meant
+// a different thing in each mode — a clid, a cid, or nothing — and an untyped
+// one let a channel id reach an unrelated client.
+//
+// Each waits for the server's answer, so a refusal — no permission to message
+// that target — is thrown rather than lost.
 
-/** Where `sendTextMessage` delivers. */
-export const TextMessageTarget = {
-  /** A private message to one client; `target` is their clid. */
-  Client: 1,
-  /** A message in one channel; `target` is the cid. */
-  Channel: 2,
-  /** A message to everyone on the server. */
-  Server: 3,
-} as const;
+/** Send a text message to one client. */
+export async function sendPrivateMessage(
+  client: CommandExecutor,
+  clid: ClientID,
+  message: string,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(
+    client,
+    "sendtextmessage",
+    [
+      ["targetmode", TextMessageTarget.Client],
+      ["target", clid],
+      ["msg", message],
+    ],
+    options,
+  );
+}
 
 /**
- * Send a text message.
+ * Send a text message to the channel this connection is in.
  *
- * The target is a clid, cid or nothing depending on `targetMode`, which is why
- * the two are separate parameters here rather than one polymorphic id: passing a
- * channel id to a client-mode message reaches an unrelated client.
+ * It takes no channel because the server takes none: measured on TS3 and TS6,
+ * a channel message naming another channel still arrives in the sender's own.
+ * To write to another channel, move there first.
  */
-export async function sendTextMessage(
+export async function sendChannelMessage(
   client: CommandExecutor,
-  targetMode: number,
   message: string,
-  target?: ClientID | ChannelID,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "sendtextmessage", [
-    ["targetmode", targetMode],
-    ["msg", message],
-    ["target", target],
-  ]);
+  await exec(
+    client,
+    "sendtextmessage",
+    [
+      ["targetmode", TextMessageTarget.Channel],
+      ["msg", message],
+    ],
+    options,
+  );
+}
+
+/** Send a text message to everyone on the virtual server. */
+export async function sendServerMessage(
+  client: CommandExecutor,
+  message: string,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(
+    client,
+    "sendtextmessage",
+    [
+      ["targetmode", TextMessageTarget.Server],
+      ["msg", message],
+    ],
+    options,
+  );
 }
 
 // ---- Log --------------------------------------------------------------------
 
-/** One line of the server log. */
-export interface LogEntry {
-  /** The server's line number, for paging with `beginPosition`. */
-  lastPosition: number;
-  fileSize: bigint;
-  lines: string[];
-}
-
-/** Read the server log. */
-export async function viewLog(
-  client: CommandExecutor,
-  options: { lines?: number; reverse?: boolean; instance?: boolean; beginPosition?: bigint } = {},
-): Promise<LogEntry> {
-  const rows = await query(client, "logview", [
-    ["lines", options.lines],
-    ["reverse", options.reverse],
-    ["instance", options.instance],
-    ["begin_pos", options.beginPosition],
-  ]);
-  const row = rows[0] ?? {};
-  return {
-    lastPosition: num(row, "last_pos"),
-    fileSize: big(row, "file_size"),
-    lines: str(row, "log") === "" ? [] : str(row, "log").split("\n"),
-  };
+/** One read of the server log. */
+export interface LogPage {
+  /** The lines read, in the order the server sent them. */
+  readonly lines: readonly string[];
+  /**
+   * The byte offset the read stopped at. Pass it as the next read's
+   * `beginPosition` to continue from there.
+   */
+  readonly lastPosition: number;
+  /** The log file's size in bytes. */
+  readonly fileSize: number;
 }
 
 /**
- * Write an entry to the server log.
+ * Which part of the log {@link viewLog} reads. Unset fields are omitted, and
+ * left to the server.
  *
- * `level` follows the server's own levels: 1 error, 2 warning, 3 debug,
- * 4 info.
+ * The log is paged by byte offset rather than by row, and nothing says when
+ * the walk is done, so there is no iterator as there is for the client
+ * database: read a page, then pass its `lastPosition` as the next read's
+ * `beginPosition`.
  */
-export async function addLog(
-  client: CommandExecutor,
-  level: number,
-  message: string,
-): Promise<void> {
-  await exec(client, "logadd", [
-    ["loglevel", level],
-    ["logmsg", message],
-  ]);
+export interface LogViewOptions {
+  /** How many lines to read, at most 100 (`lines`). */
+  readonly lines?: number | undefined;
+  /** Read backwards from `beginPosition`, newest line first (`reverse`). */
+  readonly reverse?: boolean | undefined;
+  /** Read the instance log rather than the virtual server's (`instance`). */
+  readonly instance?: boolean | undefined;
+  /** The byte offset to read from (`begin_pos`). */
+  readonly beginPosition?: number | undefined;
 }
 
-/** Accepted levels for {@link addLog}, matching the server's log. */
-export const LogLevel = {
-  Error: 1,
-  Warning: 2,
-  Debug: 3,
-  Info: 4,
-} as const;
+const logViewNames: WireNames<LogViewOptions> = {
+  lines: "lines",
+  reverse: "reverse",
+  instance: "instance",
+  beginPosition: "begin_pos",
+};
+
+/** Read a page of the server log. */
+export async function viewLog(
+  client: CommandExecutor,
+  view: LogViewOptions = {},
+  options?: CommandOptions,
+): Promise<LogPage> {
+  const rows = await query(client, "logview", encodeFields(view, logViewNames), options);
+  const first = rows[0] ?? {};
+  // One line per row, under the key `l`. This used to read only a `log` field
+  // from the first row, which the server does not send; it is still read,
+  // should a server send the lines that way.
+  const lines = rows.flatMap((row) => (row["l"] === undefined ? [] : [row["l"]]));
+  const joined = str(first, "log");
+  return {
+    lines: lines.length === 0 && joined !== "" ? joined.split("\n") : lines,
+    lastPosition: num(first, "last_pos"),
+    fileSize: num(first, "file_size"),
+  };
+}
+
+/** Write an entry to the server log. */
+export async function addLog(
+  client: CommandExecutor,
+  level: LogLevel,
+  message: string,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(
+    client,
+    "logadd",
+    [
+      ["loglevel", level],
+      ["logmsg", message],
+    ],
+    options,
+  );
+}

@@ -62,7 +62,7 @@ describe("parseServerCapabilities", () => {
     expect(caps.name).toBe("My Server");
     // The server sends the CRC32 as a signed 32-bit number; the icon file is
     // named by the unsigned one.
-    expect(caps.iconID).toBe(2766950830n);
+    expect(caps.iconID).toBe(2766950830);
     expect(caps.hostBannerImageURL).toBe("https://example.com/banner.png");
     expect(caps.welcomeMessage).toBe("Welcome!");
   });
@@ -71,7 +71,7 @@ describe("parseServerCapabilities", () => {
     expect(parseServerCapabilities({ virtualserver_icon_id: "0" }).iconID).toBeUndefined();
     expect(parseServerCapabilities({ virtualserver_icon_id: "x" }).iconID).toBeUndefined();
     expect(parseServerCapabilities({ virtualserver_icon_id: "2766950830" }).iconID).toBe(
-      2766950830n,
+      2766950830,
     );
     expect(
       parseServerCapabilities({ virtualserver_hostbanner_gfx_url: "" }).hostBannerImageURL,

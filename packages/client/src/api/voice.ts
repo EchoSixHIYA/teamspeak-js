@@ -8,11 +8,18 @@
  */
 
 import type { Client } from "../client.js";
-import type { ChannelID } from "@honeybbq/teamspeak-core";
+import type { ChannelID, CommandOptions } from "@honeybbq/teamspeak-core";
 
 /** The channel's description, which `listChannels` omits for bandwidth. */
-export async function getChannelDescription(client: Client, cid: ChannelID): Promise<string> {
-  const rows = await client.send({ command: "channelgetdescription", params: [["cid", cid]] });
+export async function getChannelDescription(
+  client: Client,
+  cid: ChannelID,
+  options?: CommandOptions,
+): Promise<string> {
+  const rows = await client.send(
+    { command: "channelgetdescription", params: [["cid", cid]] },
+    options,
+  );
   return rows[0]?.["channel_description"] ?? "";
 }
 
@@ -20,18 +27,35 @@ export async function getChannelDescription(client: Client, cid: ChannelID): Pro
  * Subscribe to a channel: receive its clients' events and voice without
  * joining it.
  */
-export async function subscribeChannel(client: Client, cid: ChannelID): Promise<void> {
-  await client.send({ command: "channelsubscribe", params: [["cid", cid]] });
+export async function subscribeChannel(
+  client: Client,
+  cid: ChannelID,
+  options?: CommandOptions,
+): Promise<void> {
+  await client.send({ command: "channelsubscribe", params: [["cid", cid]] }, options);
 }
 
-export async function unsubscribeChannel(client: Client, cid: ChannelID): Promise<void> {
-  await client.send({ command: "channelunsubscribe", params: [["cid", cid]] });
+/** Stop receiving a subscribed channel's events and voice. */
+export async function unsubscribeChannel(
+  client: Client,
+  cid: ChannelID,
+  options?: CommandOptions,
+): Promise<void> {
+  await client.send({ command: "channelunsubscribe", params: [["cid", cid]] }, options);
 }
 
-export async function subscribeAllChannels(client: Client): Promise<void> {
-  await client.send({ command: "channelsubscribeall" });
+/** Subscribe to every channel on the server. */
+export async function subscribeAllChannels(
+  client: Client,
+  options?: CommandOptions,
+): Promise<void> {
+  await client.send({ command: "channelsubscribeall" }, options);
 }
 
-export async function unsubscribeAllChannels(client: Client): Promise<void> {
-  await client.send({ command: "channelunsubscribeall" });
+/** Unsubscribe from every channel on the server. */
+export async function unsubscribeAllChannels(
+  client: Client,
+  options?: CommandOptions,
+): Promise<void> {
+  await client.send({ command: "channelunsubscribeall" }, options);
 }

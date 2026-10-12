@@ -46,6 +46,22 @@ export { TeamspeakError, ServerError, CommandTimeoutError, NotConnectedError } f
 export { ErrorCode } from "./errorcode.js";
 export { Reason } from "./reason.js";
 
+// Small-integer enumerations, as named values and types.
+export {
+  ClientType,
+  Codec,
+  GroupNameMode,
+  GroupType,
+  LogLevel,
+  PermissionTarget,
+  TextMessageTarget,
+  TokenType,
+} from "./enums.js";
+
+// Permissions, by id or by name.
+export { permissionByID, permissionByName } from "./permission.js";
+export type { Permission } from "./permission.js";
+
 export { noopLogger, consoleLogger } from "./types.js";
 export type {
   CommandMiddleware,
@@ -62,4 +78,4 @@ export * from "./api/server.js";
 export * from "./api/groups.js";
 export * from "./api/moderation.js";
 export * from "./api/files.js";
-export type { PermissionEntry } from "./api/command.js";
+export type { Channel, PageOptions, PermissionEntry } from "./api/command.js";

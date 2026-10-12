@@ -7,43 +7,83 @@
  * relying on the reader to tell `ClientID` from `ClientDBID`.
  */
 
-import { exec, query, str, big, num, bool } from "./command.js";
-import type { ParamValue } from "./command.js";
-import type { CommandExecutor } from "../command/request.js";
+import {
+  exec,
+  query,
+  list,
+  pages,
+  encodeFields,
+  nonEmpty,
+  parsePermission,
+  permissionParam,
+  str,
+  big,
+  num,
+  bool,
+  date,
+  durationMs,
+  MILLISECOND,
+} from "./command.js";
+import type { PageOptions, PermissionEntry, WireNames } from "./command.js";
+import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type {
   ChannelGroupID,
   ChannelID,
   ClientDBID,
   ClientID,
-  PermissionID,
+  ServerGroupID,
   UID,
 } from "../command/ids.js";
-import { asChannelID, asChannelGroupID, asClientDBID, asClientID, asUID } from "../command/ids.js";
+import {
+  asChannelID,
+  asChannelGroupID,
+  asClientDBID,
+  asClientID,
+  asServerGroupID,
+  asUID,
+} from "../command/ids.js";
+import type { Permission } from "../permission.js";
+import { Reason } from "../reason.js";
 
 /** A connected client, as `clientlist` reports one. */
 export interface ClientEntry {
-  id: ClientID;
-  nickname: string;
-  uid: UID;
-  channelID: ChannelID;
-  /** 0 for a normal client, 1 for a ServerQuery client. */
-  type: number;
-  serverGroups: ServerGroupRef[];
-  isAway: boolean;
-  isRecording: boolean;
-  isTalker: boolean;
-  channelGroupID: ChannelGroupID;
+  /** The client's id for this connection. It changes every time the client connects. */
+  readonly id: ClientID;
+  /** The client's nickname. */
+  readonly nickname: string;
+  /** The client's unique identifier, stable across connections. Empty if `uid` was turned off. */
+  readonly uid: UID;
+  /** The channel the client is in. */
+  readonly channelID: ChannelID;
+  /** What kind of connection this is, one of {@link ClientType}. */
+  readonly type: number;
+  /**
+   * The server groups the client holds, with `groups`. Ids rather than names:
+   * the server sends ids, and resolving them costs a separate call.
+   */
+  readonly serverGroups: readonly ServerGroupID[];
+  /** Whether the client is away, with `away`. */
+  readonly isAway: boolean;
+  /** Whether the client is recording, with `voice`. */
+  readonly isRecording: boolean;
+  /** Whether the client may talk despite the channel's needed talk power, with `voice`. */
+  readonly isTalker: boolean;
+  /** The channel group the client holds in its channel, with `groups`. */
+  readonly channelGroupID: ChannelGroupID;
+  /** When the client first connected to this server, with `times`. */
+  readonly createdAt: Date | undefined;
+  /** When the client last connected before this session, with `times`. */
+  readonly lastConnectedAt: Date | undefined;
+  /**
+   * How long since the client last did anything, in milliseconds
+   * (`client_idle_time`), with `times`; undefined without it.
+   */
+  readonly idleTimeMs: number | undefined;
 }
 
-/** A group a client belongs to, as returned by the list commands. */
-export interface ServerGroupRef {
-  id: bigint;
-  name: string;
-}
-
-function parseServerGroups(raw: string): ServerGroupRef[] {
+function parseServerGroups(raw: string): ServerGroupID[] {
   if (raw === "") return [];
-  return raw.split(",").map((id) => ({ id: BigInt(id === "" ? "0" : id), name: "" }));
+  return raw.split(",").flatMap((id) => (/^\d+$/.test(id) ? [asServerGroupID(BigInt(id))] : []));
 }
 
 function parseClient(row: Record<string, string>): ClientEntry {
@@ -58,60 +98,94 @@ function parseClient(row: Record<string, string>): ClientEntry {
     isRecording: bool(row, "client_is_recording"),
     isTalker: bool(row, "client_is_talker"),
     channelGroupID: asChannelGroupID(big(row, "client_channel_group_id")),
+    createdAt: date(row, "client_created"),
+    lastConnectedAt: date(row, "client_lastconnected"),
+    idleTimeMs:
+      row["client_idle_time"] === undefined
+        ? undefined
+        : durationMs(row, "client_idle_time", MILLISECOND),
   };
 }
 
 /**
- * Every client currently connected.
- *
- * The uid, away, voice and groups flags ask the server to include those fields.
- * Turn them off for a narrower response when watching a busy server.
+ * Which optional fields `clientlist` should include. Each asks the server for
+ * more per client; turn them off for a narrower response when watching a busy
+ * server.
  */
-export async function listClients(
-  client: CommandExecutor,
-  options: {
-    uid?: boolean;
-    away?: boolean;
-    voice?: boolean;
-    groups?: boolean;
-    times?: boolean;
-    info?: boolean;
-    country?: boolean;
-    ip?: boolean;
-    badges?: boolean;
-  } = {},
-): Promise<ClientEntry[]> {
-  const params: Array<readonly [string, ParamValue]> = [];
-  if (options.uid !== false) params.push(["-uid", true]);
-  if (options.away) params.push(["-away", true]);
-  if (options.voice) params.push(["-voice", true]);
-  if (options.groups) params.push(["-groups", true]);
-  if (options.times) params.push(["-times", true]);
-  if (options.info) params.push(["-info", true]);
-  if (options.country) params.push(["-country", true]);
-  if (options.ip) params.push(["-ip", true]);
-  if (options.badges) params.push(["-badges", true]);
-
-  return (await query(client, "clientlist", params)).map(parseClient);
+export interface ClientListOptions {
+  /** The unique identifier (`-uid`). On unless set to false: almost every caller needs it. */
+  readonly uid?: boolean | undefined;
+  /** Away state and message (`-away`). */
+  readonly away?: boolean | undefined;
+  /** Voice state: muted, talking, recording, talker (`-voice`). */
+  readonly voice?: boolean | undefined;
+  /** Server and channel groups (`-groups`). */
+  readonly groups?: boolean | undefined;
+  /** Creation, last connection and idle times (`-times`). */
+  readonly times?: boolean | undefined;
+  /** Client version and platform (`-info`). */
+  readonly info?: boolean | undefined;
+  /** The client's country (`-country`). */
+  readonly country?: boolean | undefined;
+  /** The client's address (`-ip`). */
+  readonly ip?: boolean | undefined;
+  /** The client's badges (`-badges`). */
+  readonly badges?: boolean | undefined;
 }
 
-/** One connected client's full detail. */
+const listFlags: WireNames<ClientListOptions> = {
+  uid: "-uid",
+  away: "-away",
+  voice: "-voice",
+  groups: "-groups",
+  times: "-times",
+  info: "-info",
+  country: "-country",
+  ip: "-ip",
+  badges: "-badges",
+};
+
+/** Every client currently connected. */
+export async function listClients(
+  client: CommandExecutor,
+  include: ClientListOptions = {},
+  options?: CommandOptions,
+): Promise<ClientEntry[]> {
+  const flags = encodeFields({ ...include, uid: include.uid !== false }, listFlags);
+  return (await query(client, "clientlist", flags, options)).map(parseClient);
+}
+
+/**
+ * One connected client's full detail, as the server sent it.
+ *
+ * Raw rather than parsed: `clientinfo` carries some eighty fields, which ones
+ * appear depends on the server version and on the caller's permissions, and a
+ * typed subset would drop the rest. Durations here are in the server's units —
+ * `client_idle_time` and `connection_connected_time` in milliseconds.
+ */
 export async function getClientInfo(
   client: CommandExecutor,
   clid: ClientID,
-): Promise<Record<string, string>> {
-  const rows = await query(client, "clientinfo", [["clid", clid]]);
+  options?: CommandOptions,
+): Promise<Readonly<Record<string, string>>> {
+  const rows = await query(client, "clientinfo", [["clid", clid]], options);
   const row = rows[0];
   if (!row) throw new Error(`no data returned for client ${clid}`);
   return row;
 }
 
-/** Move a client to another channel. */
+/**
+ * Move a client to another channel.
+ *
+ * `password` is the channel's, in cleartext; the voice client hashes it on the
+ * wire. Unset sends none.
+ */
 export async function moveClient(
   client: CommandExecutor,
   clid: ClientID,
   channelID: ChannelID,
   password?: string,
+  options?: CommandOptions,
 ): Promise<void> {
   await exec(
     client,
@@ -121,22 +195,43 @@ export async function moveClient(
       ["cid", channelID],
       ["cpw", password],
     ],
+    options,
     ["cpw"],
   );
 }
 
-/** Disconnect a client from the server. */
+/** The reasons a client can be kicked for. */
+export type KickReason = typeof Reason.KickChannel | typeof Reason.KickServer;
+
+/**
+ * Kick a client from its channel (`Reason.KickChannel`), which moves it to the
+ * default channel, or from the server (`Reason.KickServer`), which disconnects
+ * it. Any other reason is refused before anything is sent.
+ *
+ * `reasonMessage` is shown to the client; unset or `""` sends none.
+ */
 export async function kickClient(
   client: CommandExecutor,
   clid: ClientID,
-  reasonID: number,
+  reason: KickReason,
   reasonMessage?: string,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "clientkick", [
-    ["clid", clid],
-    ["reasonid", reasonID],
-    ["reasonmsg", reasonMessage],
-  ]);
+  if (reason !== Reason.KickChannel && reason !== Reason.KickServer) {
+    throw new RangeError(
+      `a kick's reason is Reason.KickChannel or Reason.KickServer, not ${String(reason)}`,
+    );
+  }
+  await exec(
+    client,
+    "clientkick",
+    [
+      ["clid", clid],
+      ["reasonid", reason],
+      ["reasonmsg", nonEmpty(reasonMessage ?? "")],
+    ],
+    options,
+  );
 }
 
 /** Send a poke to a client. */
@@ -144,62 +239,133 @@ export async function pokeClient(
   client: CommandExecutor,
   clid: ClientID,
   message: string,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "clientpoke", [
-    ["clid", clid],
-    ["msg", message],
-  ]);
-}
-
-/** Change our own client state. Only the fields you set are sent. */
-export interface ClientUpdateOptions {
-  client_nickname?: string;
-  client_input_muted?: boolean;
-  client_output_muted?: boolean;
-  client_away?: boolean;
-  client_away_message?: string;
-  client_input_hardware?: boolean;
-  client_output_hardware?: boolean;
-  client_is_channel_commander?: boolean;
-  client_flag_avatar?: string;
-  client_nickname_phonetic?: string;
-  client_talk_request?: number;
-  client_talk_request_msg?: string;
-  client_is_recording?: boolean;
-  client_badges?: string;
+  await exec(
+    client,
+    "clientpoke",
+    [
+      ["clid", clid],
+      ["msg", message],
+    ],
+    options,
+  );
 }
 
 /**
- * Change our own client state (nickname, mute, away, …).
+ * Our own client state, as `clientupdate` takes it.
+ *
+ * Only the fields you set are sent. An unset (undefined) field is omitted and
+ * leaves the setting alone; any other value is sent, so `""` sends an empty
+ * value — `awayMessage: ""` clears the away message.
+ */
+export interface ClientUpdateOptions {
+  /** Our nickname (`client_nickname`). */
+  readonly nickname?: string | undefined;
+  /** How the nickname is pronounced, for text-to-speech (`client_nickname_phonetic`). */
+  readonly nicknamePhonetic?: string | undefined;
+  /** Whether our microphone is muted (`client_input_muted`). */
+  readonly isInputMuted?: boolean | undefined;
+  /** Whether our speakers are muted (`client_output_muted`). */
+  readonly isOutputMuted?: boolean | undefined;
+  /** Whether we have a working microphone (`client_input_hardware`). */
+  readonly hasInputHardware?: boolean | undefined;
+  /** Whether we have working speakers (`client_output_hardware`). */
+  readonly hasOutputHardware?: boolean | undefined;
+  /** Whether we are away (`client_away`). */
+  readonly isAway?: boolean | undefined;
+  /** The away message (`client_away_message`). */
+  readonly awayMessage?: string | undefined;
+  /** Whether we speak as channel commander (`client_is_channel_commander`). */
+  readonly isChannelCommander?: boolean | undefined;
+  /** Whether we are recording (`client_is_recording`). */
+  readonly isRecording?: boolean | undefined;
+  /** Whether we are requesting to talk (`client_talk_request`). */
+  readonly isRequestingTalk?: boolean | undefined;
+  /** The message sent with a talk request (`client_talk_request_msg`). */
+  readonly talkRequestMessage?: string | undefined;
+  /** Our avatar's MD5, as uploaded to the file area; "" removes it (`client_flag_avatar`). */
+  readonly avatar?: string | undefined;
+  /** Our badges, in the client's own format (`client_badges`). */
+  readonly badges?: string | undefined;
+}
+
+const updateNames: WireNames<ClientUpdateOptions> = {
+  nickname: "client_nickname",
+  nicknamePhonetic: "client_nickname_phonetic",
+  isInputMuted: "client_input_muted",
+  isOutputMuted: "client_output_muted",
+  hasInputHardware: "client_input_hardware",
+  hasOutputHardware: "client_output_hardware",
+  isAway: "client_away",
+  awayMessage: "client_away_message",
+  isChannelCommander: "client_is_channel_commander",
+  isRecording: "client_is_recording",
+  isRequestingTalk: "client_talk_request",
+  talkRequestMessage: "client_talk_request_msg",
+  avatar: "client_flag_avatar",
+  badges: "client_badges",
+};
+
+/**
+ * Change our own client state (nickname, mute, away, …). Only the fields you
+ * set are sent.
  *
  * `clientupdate` addresses the calling client implicitly — there is no clid
  * parameter on the wire, which is why this takes no id.
  */
 export async function updateClient(
   client: CommandExecutor,
-  options: ClientUpdateOptions,
+  update: ClientUpdateOptions,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "clientupdate", Object.entries(options) as Array<[string, ParamValue]>);
+  await exec(client, "clientupdate", encodeFields(update, updateNames), options);
 }
 
-/** Change another client's editable attributes. */
+/**
+ * Another client's editable attributes, as `clientedit` takes them. Unset
+ * fields are omitted; `""` is sent empty.
+ */
+export interface ClientEditOptions {
+  /** The client's description (`client_description`). */
+  readonly description?: string | undefined;
+  /** Whether the client may talk despite a channel's needed talk power (`client_is_talker`). */
+  readonly isTalker?: boolean | undefined;
+}
+
+const editNames: WireNames<ClientEditOptions> = {
+  description: "client_description",
+  isTalker: "client_is_talker",
+};
+
+/** Change another client's editable attributes. Only the fields you set are sent. */
 export async function editClient(
   client: CommandExecutor,
   clid: ClientID,
-  options: { client_description?: string; client_is_talker?: boolean },
+  edit: ClientEditOptions,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "clientedit", [
-    ["clid", clid],
-    ...(Object.entries(options) as Array<[string, ParamValue]>),
-  ]);
+  await exec(client, "clientedit", [["clid", clid], ...encodeFields(edit, editNames)], options);
 }
 
-/** Clients whose nickname contains `pattern`. */
+/** A connected client whose nickname matched a search. */
+export interface ClientMatch {
+  /** The client's id. */
+  readonly id: ClientID;
+  /** The client's nickname. */
+  readonly nickname: string;
+}
+
+/**
+ * Clients whose nickname contains `pattern`. A pattern matching no one is
+ * refused by the server with error 512 (invalid clientID), not answered empty.
+ */
 export async function findClients(
   client: CommandExecutor,
   pattern: string,
-): Promise<Array<{ id: ClientID; nickname: string }>> {
-  const rows = await query(client, "clientfind", [["pattern", pattern]]);
+  options?: CommandOptions,
+): Promise<ClientMatch[]> {
+  const rows = await query(client, "clientfind", [["pattern", pattern]], options);
   return rows.map((row) => ({
     id: asClientID(num(row, "clid")),
     nickname: str(row, "client_nickname"),
@@ -207,20 +373,32 @@ export async function findClients(
 }
 
 /** Every clid currently using a given unique identifier. */
-export async function getClientIDs(client: CommandExecutor, uid: UID): Promise<ClientID[]> {
-  const rows = await query(client, "clientgetids", [["cluid", uid]]);
+export async function getClientIDs(
+  client: CommandExecutor,
+  uid: UID,
+  options?: CommandOptions,
+): Promise<ClientID[]> {
+  const rows = await query(client, "clientgetids", [["cluid", uid]], options);
   return rows.map((row) => asClientID(num(row, "clid")));
 }
 
 /** The uid of a connected client. */
-export async function getClientUIDByID(client: CommandExecutor, clid: ClientID): Promise<UID> {
-  const rows = await query(client, "clientgetuidfromclid", [["clid", clid]]);
+export async function getClientUIDByID(
+  client: CommandExecutor,
+  clid: ClientID,
+  options?: CommandOptions,
+): Promise<UID> {
+  const rows = await query(client, "clientgetuidfromclid", [["clid", clid]], options);
   return asUID(str(rows[0] ?? {}, "cluid"));
 }
 
 /** The persistent database id behind a uid. */
-export async function getClientDBIDByUID(client: CommandExecutor, uid: UID): Promise<ClientDBID> {
-  const rows = await query(client, "clientgetdbidfromuid", [["cluid", uid]]);
+export async function getClientDBIDByUID(
+  client: CommandExecutor,
+  uid: UID,
+  options?: CommandOptions,
+): Promise<ClientDBID> {
+  const rows = await query(client, "clientgetdbidfromuid", [["cluid", uid]], options);
   return asClientDBID(big(rows[0] ?? {}, "cldbid"));
 }
 
@@ -228,157 +406,238 @@ export async function getClientDBIDByUID(client: CommandExecutor, uid: UID): Pro
 export async function getClientNameByDBID(
   client: CommandExecutor,
   cldbid: ClientDBID,
+  options?: CommandOptions,
 ): Promise<string> {
-  const rows = await query(client, "clientgetnamefromdbid", [["cldbid", cldbid]]);
+  const rows = await query(client, "clientgetnamefromdbid", [["cldbid", cldbid]], options);
   return str(rows[0] ?? {}, "name");
+}
+
+/** The database record a uid names, as `clientgetnamefromuid` reports it. */
+export interface ClientDatabaseName {
+  /** The client's database id. */
+  readonly databaseID: ClientDBID;
+  /** The nickname the client last used. */
+  readonly name: string;
 }
 
 /** The database id and nickname recorded for a uid. */
 export async function getClientNameByUID(
   client: CommandExecutor,
   uid: UID,
-): Promise<{ databaseID: ClientDBID; name: string }> {
-  const rows = await query(client, "clientgetnamefromuid", [["cluid", uid]]);
+  options?: CommandOptions,
+): Promise<ClientDatabaseName> {
+  const rows = await query(client, "clientgetnamefromuid", [["cluid", uid]], options);
   const row = rows[0] ?? {};
   return { databaseID: asClientDBID(big(row, "cldbid")), name: str(row, "name") };
 }
 
-/** Join a channel, optionally with a channel group to hold there. */
+/** Give a client a channel group in one channel. */
 export async function setClientChannelGroup(
   client: CommandExecutor,
   cgid: ChannelGroupID,
   cid: ChannelID,
   cldbid: ClientDBID,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "setclientchannelgroup", [
-    ["cgid", cgid],
-    ["cid", cid],
-    ["cldbid", cldbid],
-  ]);
+  await exec(
+    client,
+    "setclientchannelgroup",
+    [
+      ["cgid", cgid],
+      ["cid", cid],
+      ["cldbid", cldbid],
+    ],
+    options,
+  );
 }
 
 // ---- Client database --------------------------------------------------------
 
-/** A persistent client record, as `clientdblist` reports it. */
+/** A persistent client record, as `clientdblist` and `clientdbinfo` report it. */
 export interface ClientDatabaseEntry {
-  databaseID: ClientDBID;
-  uid: UID;
-  nickname: string;
-  created: number;
-  lastConnected: number;
-  totalConnections: number;
-  description: string;
-  lastIP: string;
+  /** The record's id. */
+  readonly databaseID: ClientDBID;
+  /** The client's unique identifier. */
+  readonly uid: UID;
+  /** The nickname the client last used. */
+  readonly nickname: string;
+  /** When the client first connected. */
+  readonly createdAt: Date | undefined;
+  /** When the client last connected. */
+  readonly lastConnectedAt: Date | undefined;
+  /** How many times the client has connected. */
+  readonly totalConnections: number;
+  /** The client's description. */
+  readonly description: string;
+  /** The address the client last connected from. */
+  readonly lastIP: string;
 }
 
 const parseDatabaseEntry = (row: Record<string, string>): ClientDatabaseEntry => ({
   databaseID: asClientDBID(big(row, "cldbid")),
   uid: asUID(str(row, "client_unique_identifier")),
   nickname: str(row, "client_nickname"),
-  created: num(row, "client_created"),
-  lastConnected: num(row, "client_lastconnected"),
+  createdAt: date(row, "client_created"),
+  lastConnectedAt: date(row, "client_lastconnected"),
   totalConnections: num(row, "client_totalconnections"),
   description: str(row, "client_description"),
   lastIP: str(row, "client_lastip"),
 });
 
+/** Which slice of the client database {@link listClientDatabase} reads. */
+export interface ClientDatabasePage {
+  /** The offset of the first record, 0 by default (`start`). */
+  readonly start?: number | undefined;
+  /** How many records to read at most; the server caps it (`duration`). */
+  readonly limit?: number | undefined;
+}
+
+const pageNames: WireNames<ClientDatabasePage> = { start: "start", limit: "duration" };
+
 /**
- * Persistent client records.
+ * One page of persistent client records.
  *
- * This walks the whole database, so it is paged: pass `start` and `duration` to
- * take a slice rather than everything at once.
+ * The database is paged, and the server caps a page; {@link iterateClientDatabase}
+ * walks all of it. A `start` past the last record is an empty page.
  */
 export async function listClientDatabase(
   client: CommandExecutor,
-  options: { start?: number; duration?: number } = {},
+  page: ClientDatabasePage = {},
+  options?: CommandOptions,
 ): Promise<ClientDatabaseEntry[]> {
-  return (
-    await query(client, "clientdblist", [
-      ["start", options.start],
-      ["duration", options.duration],
-    ])
-  ).map(parseDatabaseEntry);
+  return (await list(client, "clientdblist", encodeFields(page, pageNames), options)).map(
+    parseDatabaseEntry,
+  );
 }
 
-/** Database records whose nickname or uid matches `pattern`. */
+/**
+ * Every persistent client record, fetched a page at a time as the loop asks
+ * for more:
+ *
+ * ```ts
+ * for await (const entry of iterateClientDatabase(client, { signal })) { ... }
+ * ```
+ *
+ * The walk ends when the server answers a page past the last record with
+ * error 1281, or with a page shorter than an earlier one; any other error is
+ * thrown from the loop. Each page is a separate `clientdblist`, given the
+ * options' signal and timeout, so records added or removed meanwhile can be
+ * skipped or seen twice.
+ */
+export function iterateClientDatabase(
+  client: CommandExecutor,
+  options?: PageOptions,
+): AsyncIterable<ClientDatabaseEntry> {
+  return pages(
+    client,
+    "clientdblist",
+    parseDatabaseEntry,
+    (previous, next) => next.databaseID > previous.databaseID,
+    options,
+  );
+}
+
+/**
+ * Database ids of the records whose nickname matches `pattern`, which may use
+ * `%` as a wildcard. No match is an empty list.
+ */
 export async function findClientDatabase(
   client: CommandExecutor,
   pattern: string,
-): Promise<Array<{ databaseID: ClientDBID; uid: UID; nickname: string }>> {
-  const rows = await query(client, "clientdbfind", [["pattern", pattern]]);
-  return rows.map((row) => ({
-    databaseID: asClientDBID(big(row, "cldbid")),
-    uid: asUID(str(row, "client_unique_identifier")),
-    nickname: str(row, "client_nickname"),
-  }));
+  options?: CommandOptions,
+): Promise<ClientDBID[]> {
+  const rows = await list(client, "clientdbfind", [["pattern", pattern]], options);
+  return rows.map((row) => asClientDBID(big(row, "cldbid")));
 }
 
 /** One database record. */
 export async function getClientDatabaseInfo(
   client: CommandExecutor,
   cldbid: ClientDBID,
+  options?: CommandOptions,
 ): Promise<ClientDatabaseEntry> {
-  const rows = await query(client, "clientdbinfo", [["cldbid", cldbid]]);
-  return parseDatabaseEntry(rows[0] ?? {});
+  const rows = await query(client, "clientdbinfo", [["cldbid", cldbid]], options);
+  return { ...parseDatabaseEntry(rows[0] ?? {}), databaseID: cldbid };
 }
 
-/** Change a database record. */
+/**
+ * A database record's editable attributes, as `clientdbedit` takes them.
+ * Unset fields are omitted; `""` is sent empty.
+ */
+export interface ClientDatabaseEditOptions {
+  /** The client's description (`client_description`). */
+  readonly description?: string | undefined;
+  /** The nickname on record (`client_nickname`). */
+  readonly nickname?: string | undefined;
+}
+
+const databaseEditNames: WireNames<ClientDatabaseEditOptions> = {
+  description: "client_description",
+  nickname: "client_nickname",
+};
+
+/** Change a database record. Only the fields you set are sent. */
 export async function editClientDatabase(
   client: CommandExecutor,
   cldbid: ClientDBID,
-  options: { client_description?: string; client_nickname?: string },
+  edit: ClientDatabaseEditOptions,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "clientdbedit", [
-    ["cldbid", cldbid],
-    ...(Object.entries(options) as Array<[string, ParamValue]>),
-  ]);
+  await exec(
+    client,
+    "clientdbedit",
+    [["cldbid", cldbid], ...encodeFields(edit, databaseEditNames)],
+    options,
+  );
 }
 
 /** Delete a client from the database entirely. */
 export async function deleteClientDatabase(
   client: CommandExecutor,
   cldbid: ClientDBID,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "clientdbdelete", [["cldbid", cldbid]]);
+  await exec(client, "clientdbdelete", [["cldbid", cldbid]], options);
 }
 
 // ---- Client permissions -----------------------------------------------------
 
-/** Permissions granted to a client from the database. */
+/** Permissions set on a client, server-wide. */
 export async function listClientPermissions(
   client: CommandExecutor,
   cldbid: ClientDBID,
-): Promise<Record<string, string>[]> {
-  return query(client, "clientpermlist", [["cldbid", cldbid]]);
+  options?: CommandOptions,
+): Promise<PermissionEntry[]> {
+  return (await list(client, "clientpermlist", [["cldbid", cldbid]], options)).map(parsePermission);
 }
 
 /**
- * Grant a permission to a client.
+ * Set a permission on a client, server-wide.
  *
- * `permskip` is required by the server here, unlike the channel equivalent.
+ * `skip` is required by the server here, unlike the channel equivalent.
  */
 export async function addClientPermission(
   client: CommandExecutor,
   cldbid: ClientDBID,
-  options: { permvalue: number; permskip: boolean; permid?: PermissionID; permsid?: string },
+  permission: Permission,
+  value: number,
+  skip: boolean,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "clientaddperm", [
-    ["cldbid", cldbid],
-    ["permvalue", options.permvalue],
-    ["permskip", options.permskip],
-    ["permid", options.permid],
-    ["permsid", options.permsid],
-  ]);
+  await exec(
+    client,
+    "clientaddperm",
+    [["cldbid", cldbid], permissionParam(permission), ["permvalue", value], ["permskip", skip]],
+    options,
+  );
 }
 
+/** Remove a permission from a client. */
 export async function deleteClientPermission(
   client: CommandExecutor,
   cldbid: ClientDBID,
-  options: { permid?: PermissionID; permsid?: string },
+  permission: Permission,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "clientdelperm", [
-    ["cldbid", cldbid],
-    ["permid", options.permid],
-    ["permsid", options.permsid],
-  ]);
+  await exec(client, "clientdelperm", [["cldbid", cldbid], permissionParam(permission)], options);
 }

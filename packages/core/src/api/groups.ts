@@ -2,31 +2,72 @@
  * Channel groups, the permission catalogue, and the tokens used to join groups.
  */
 
-import { exec, query, parsePermission, createdGroupID, str, big, num, bool } from "./command.js";
-import type { PermissionEntry } from "./command.js";
-import type { CommandExecutor } from "../command/request.js";
-import type { ChannelGroupID, ChannelID, ClientDBID, PermissionID } from "../command/ids.js";
-import { asChannelGroupID } from "../command/ids.js";
+import {
+  exec,
+  query,
+  list,
+  encodeFields,
+  nonEmpty,
+  parsePermission,
+  permissionParam,
+  createdGroupID,
+  str,
+  big,
+  num,
+  bool,
+  icon,
+  date,
+} from "./command.js";
+import type { Params, PermissionEntry, WireNames } from "./command.js";
+import type { CommandExecutor, CommandOptions } from "../command/request.js";
+import type {
+  ChannelGroupID,
+  ChannelID,
+  ClientDBID,
+  IconID,
+  PermissionID,
+  ServerGroupID,
+} from "../command/ids.js";
+import {
+  asChannelGroupID,
+  asChannelID,
+  asClientDBID,
+  asPermissionID,
+  asServerGroupID,
+} from "../command/ids.js";
+import { TokenType } from "../enums.js";
+import type { GroupType } from "../enums.js";
+import type { Permission } from "../permission.js";
 
 /** A channel group as `channelgrouplist` reports it. */
 export interface ChannelGroup {
-  id: ChannelGroupID;
-  name: string;
-  type: number;
-  iconID: bigint;
-  savedInDatabase: boolean;
-  sortID: bigint;
-  nameMode: number;
-  modifyPower: number;
-  memberAddPower: number;
-  memberRemovePower: number;
+  /** The group's id. */
+  readonly id: ChannelGroupID;
+  /** The group's name. */
+  readonly name: string;
+  /** What kind of group this is, one of {@link GroupType}. */
+  readonly type: number;
+  /** The group's icon, or undefined for none. */
+  readonly iconID: IconID | undefined;
+  /** Whether membership is stored, rather than lost when the server restarts. */
+  readonly savedInDatabase: boolean;
+  /** Where the group sorts among the others. */
+  readonly sortID: bigint;
+  /** Where the group's name shows beside a member's nickname, one of {@link GroupNameMode}. */
+  readonly nameMode: number;
+  /** The power needed to modify the group. */
+  readonly modifyPower: number;
+  /** The power needed to add a member. */
+  readonly memberAddPower: number;
+  /** The power needed to remove a member. */
+  readonly memberRemovePower: number;
 }
 
 const parseChannelGroup = (row: Record<string, string>): ChannelGroup => ({
   id: asChannelGroupID(big(row, "cgid")),
   name: str(row, "name"),
   type: num(row, "type"),
-  iconID: big(row, "iconid"),
+  iconID: icon(row, "iconid"),
   savedInDatabase: bool(row, "savedb"),
   sortID: big(row, "sortid"),
   nameMode: num(row, "namemode"),
@@ -36,80 +77,151 @@ const parseChannelGroup = (row: Record<string, string>): ChannelGroup => ({
 });
 
 /** Every channel group. */
-export async function listChannelGroups(client: CommandExecutor): Promise<ChannelGroup[]> {
-  return (await query(client, "channelgrouplist")).map(parseChannelGroup);
+export async function listChannelGroups(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<ChannelGroup[]> {
+  return (await query(client, "channelgrouplist", [], options)).map(parseChannelGroup);
 }
 
+/**
+ * Create a channel group.
+ *
+ * `type` is required, and always sent: the server's own default is
+ * `GroupType.Regular`, while the type's first value is `Template`, so leaving
+ * it to a default on either side is a trap.
+ */
 export async function createChannelGroup(
   client: CommandExecutor,
   name: string,
-  type?: number,
+  type: GroupType,
+  options?: CommandOptions,
 ): Promise<ChannelGroupID> {
-  const rows = await query(client, "channelgroupadd", [
-    ["name", name],
-    ["type", type],
-  ]);
+  const rows = await query(
+    client,
+    "channelgroupadd",
+    [
+      ["name", name],
+      ["type", type],
+    ],
+    options,
+  );
   return asChannelGroupID(createdGroupID(rows, "cgid", name));
 }
 
+/** Delete a channel group; `force` deletes it even while it has members. */
 export async function deleteChannelGroup(
   client: CommandExecutor,
   cgid: ChannelGroupID,
   force: boolean,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "channelgroupdel", [
-    ["cgid", cgid],
-    ["force", force],
-  ]);
+  await exec(
+    client,
+    "channelgroupdel",
+    [
+      ["cgid", cgid],
+      ["force", force],
+    ],
+    options,
+  );
 }
 
+/** Rename a channel group. */
 export async function renameChannelGroup(
   client: CommandExecutor,
   cgid: ChannelGroupID,
   name: string,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "channelgrouprename", [
-    ["cgid", cgid],
-    ["name", name],
-  ]);
+  await exec(
+    client,
+    "channelgrouprename",
+    [
+      ["cgid", cgid],
+      ["name", name],
+    ],
+    options,
+  );
 }
 
+/**
+ * Copy a channel group's permissions onto another; a `targetGroupID` of 0
+ * makes the server create a new group named `name`, of `type`.
+ */
 export async function copyChannelGroup(
   client: CommandExecutor,
   sourceGroupID: ChannelGroupID,
   targetGroupID: ChannelGroupID,
   name: string,
-  type: number,
+  type: GroupType,
+  options?: CommandOptions,
 ): Promise<ChannelGroupID> {
-  const rows = await query(client, "channelgroupcopy", [
-    ["scgid", sourceGroupID],
-    ["tcgid", targetGroupID],
-    ["name", name],
-    ["type", type],
-  ]);
+  const rows = await query(
+    client,
+    "channelgroupcopy",
+    [
+      ["scgid", sourceGroupID],
+      ["tcgid", targetGroupID],
+      ["name", name],
+      ["type", type],
+    ],
+    options,
+  );
   // Copying onto an existing group keeps that group's id.
   if (targetGroupID !== 0n) return targetGroupID;
   return asChannelGroupID(createdGroupID(rows, "cgid", name));
 }
 
 /**
+ * Which channel group memberships {@link listChannelGroupClients} reports.
+ * Unset fields do not narrow the list.
+ */
+export interface ChannelGroupClientFilter {
+  /** Only memberships in this channel (`cid`). */
+  readonly channelID?: ChannelID | undefined;
+  /** Only this client's memberships (`cldbid`). */
+  readonly databaseID?: ClientDBID | undefined;
+  /** Only memberships of this group (`cgid`). */
+  readonly groupID?: ChannelGroupID | undefined;
+}
+
+const membershipFilterNames: WireNames<ChannelGroupClientFilter> = {
+  channelID: "cid",
+  databaseID: "cldbid",
+  groupID: "cgid",
+};
+
+/** One client holding one channel group in one channel. */
+export interface ChannelGroupMembership {
+  /** The channel. */
+  readonly channelID: ChannelID;
+  /** The client's database id. */
+  readonly databaseID: ClientDBID;
+  /** The channel group. */
+  readonly groupID: ChannelGroupID;
+}
+
+/**
  * Which channel group each client holds in which channel.
  *
- * Pass at least one of `cid`, `cldbid` or `cgid` to narrow it; called with
- * none the server may return nothing.
+ * Set at least one filter field to narrow it; called with none the server may
+ * return nothing.
  */
 export async function listChannelGroupClients(
   client: CommandExecutor,
-  options: { cid?: ChannelID; cldbid?: ClientDBID; cgid?: ChannelGroupID } = {},
-): Promise<Array<{ channelID: ChannelID; databaseID: ClientDBID; groupID: ChannelGroupID }>> {
-  const rows = await query(client, "channelgroupclientlist", [
-    ["cid", options.cid],
-    ["cldbid", options.cldbid],
-    ["cgid", options.cgid],
-  ]);
+  filter: ChannelGroupClientFilter = {},
+  options?: CommandOptions,
+): Promise<ChannelGroupMembership[]> {
+  const rows = await list(
+    client,
+    "channelgroupclientlist",
+    encodeFields(filter, membershipFilterNames),
+    options,
+  );
   return rows.map((row) => ({
-    channelID: big(row, "cid") as ChannelID,
-    databaseID: big(row, "cldbid") as ClientDBID,
+    channelID: asChannelID(big(row, "cid")),
+    databaseID: asClientDBID(big(row, "cldbid")),
     groupID: asChannelGroupID(big(row, "cgid")),
   }));
 }
@@ -118,44 +230,74 @@ export async function listChannelGroupClients(
 export async function listChannelGroupPermissions(
   client: CommandExecutor,
   cgid: ChannelGroupID,
+  options?: CommandOptions,
 ): Promise<PermissionEntry[]> {
-  return (await query(client, "channelgrouppermlist", [["cgid", cgid]])).map(parsePermission);
+  return (await list(client, "channelgrouppermlist", [["cgid", cgid]], options)).map(
+    parsePermission,
+  );
 }
 
+/** Set a permission on a channel group. */
 export async function addChannelGroupPermission(
   client: CommandExecutor,
   cgid: ChannelGroupID,
-  options: { permvalue: number; permid?: PermissionID; permsid?: string },
+  permission: Permission,
+  value: number,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "channelgroupaddperm", [
-    ["cgid", cgid],
-    ["permvalue", options.permvalue],
-    ["permid", options.permid],
-    ["permsid", options.permsid],
-  ]);
+  await exec(
+    client,
+    "channelgroupaddperm",
+    [["cgid", cgid], permissionParam(permission), ["permvalue", value]],
+    options,
+  );
 }
 
+/** Remove a permission from a channel group. */
 export async function deleteChannelGroupPermission(
   client: CommandExecutor,
   cgid: ChannelGroupID,
-  options: { permid?: PermissionID; permsid?: string },
+  permission: Permission,
+  options?: CommandOptions,
 ): Promise<void> {
-  await exec(client, "channelgroupdelperm", [
-    ["cgid", cgid],
-    ["permid", options.permid],
-    ["permsid", options.permsid],
-  ]);
+  await exec(client, "channelgroupdelperm", [["cgid", cgid], permissionParam(permission)], options);
 }
 
 // ---- Permissions ------------------------------------------------------------
 
-/** The server's full permission catalogue. */
-export async function listPermissions(client: CommandExecutor): Promise<Record<string, string>[]> {
-  return query(client, "permissionlist");
+/** One permission in the server's catalogue. */
+export interface PermissionInfo {
+  /** The permission's id on this server build (`permid`). */
+  readonly id: PermissionID;
+  /** The permission's name, such as "i_client_talk_power" (`permname`). */
+  readonly name: string;
+  /** What the permission controls (`permdesc`). */
+  readonly description: string;
 }
 
 /**
- * Resolve a permission name to its numeric id.
+ * The server's full permission catalogue.
+ *
+ * Rows that name no permission — the group markers some servers interleave —
+ * are left out.
+ */
+export async function listPermissions(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<PermissionInfo[]> {
+  const rows = await query(client, "permissionlist", [], options);
+  return rows
+    .filter((row) => row["permname"] !== undefined)
+    .map((row) => ({
+      id: asPermissionID(num(row, "permid")),
+      name: str(row, "permname"),
+      description: str(row, "permdesc"),
+    }));
+}
+
+/**
+ * Resolve a permission name to its numeric id, or undefined when the server
+ * knows no such permission.
  *
  * Needs an instance-level permission (`b_serverinstance_*`), which not even the
  * Server Admin group holds by default — expect error 2568 until it is granted.
@@ -163,43 +305,89 @@ export async function listPermissions(client: CommandExecutor): Promise<Record<s
  */
 export async function getPermissionIDByName(
   client: CommandExecutor,
-  permsid: string,
+  name: string,
+  options?: CommandOptions,
 ): Promise<PermissionID | undefined> {
-  const rows = await query(client, "permidgetbyname", [["permsid", permsid]]);
+  const rows = await query(client, "permidgetbyname", [["permsid", name]], options);
   if (rows.length === 0) return undefined;
-  return big(rows[0] ?? {}, "permid") as PermissionID;
+  return asPermissionID(num(rows[0] ?? {}, "permid"));
 }
 
-/** Every place a permission is set, as `permfind` reports it. */
+/**
+ * One place a permission is set, as `permfind` reports it.
+ *
+ * What `id1` and `id2` name depends on `target` — see {@link PermissionTarget}
+ * — which is why they stay raw numbers rather than typed ids.
+ */
+export interface PermissionLocation {
+  /** What the permission is set on, one of {@link PermissionTarget} (`t`). */
+  readonly target: number;
+  /** The first id naming where (`id1`). */
+  readonly id1: bigint;
+  /** The second id naming where, or 0 (`id2`). */
+  readonly id2: bigint;
+  /** The permission (`p`). */
+  readonly permission: PermissionID;
+}
+
+/** Every place a permission is set. */
 export async function findPermission(
   client: CommandExecutor,
-  options: { permid?: PermissionID; permsid?: string },
-): Promise<Array<{ type: number; id1: bigint; id2: bigint; permission: bigint }>> {
-  const rows = await query(client, "permfind", [
-    ["permid", options.permid],
-    ["permsid", options.permsid],
-  ]);
+  permission: Permission,
+  options?: CommandOptions,
+): Promise<PermissionLocation[]> {
+  const rows = await list(client, "permfind", [permissionParam(permission)], options);
   return rows.map((row) => ({
-    type: num(row, "t"),
+    target: num(row, "t"),
     id1: big(row, "id1"),
     id2: big(row, "id2"),
-    permission: big(row, "p"),
+    permission: asPermissionID(num(row, "p")),
   }));
 }
 
-/** A client's effective permissions in a channel. */
+/** One permission applying to a client in a channel, as `permoverview` reports it. */
+export interface PermissionOverviewEntry extends PermissionLocation {
+  /** The permission's value there (`v`). */
+  readonly value: number;
+  /** Whether the value is negated (`n`). */
+  readonly negated: boolean;
+  /** Whether it skips channel and client overrides (`s`). */
+  readonly skip: boolean;
+}
+
+/**
+ * Every permission that applies to a client in a channel, from every source,
+ * unfiltered.
+ *
+ * It always asks for all of them (`permid=0`): the server requires a
+ * permission parameter — omitting it fails with 1539 — and treats 0 as "all".
+ * Each entry names its permission, so one is easy to pick out.
+ */
 export async function getPermissionOverview(
   client: CommandExecutor,
   cid: ChannelID,
   cldbid: ClientDBID,
-  options: { permid?: PermissionID; permsid?: string } = {},
-): Promise<Record<string, string>[]> {
-  return query(client, "permoverview", [
-    ["cid", cid],
-    ["cldbid", cldbid],
-    ["permid", options.permid],
-    ["permsid", options.permsid],
-  ]);
+  options?: CommandOptions,
+): Promise<PermissionOverviewEntry[]> {
+  const rows = await list(
+    client,
+    "permoverview",
+    [
+      ["cid", cid],
+      ["cldbid", cldbid],
+      ["permid", 0],
+    ],
+    options,
+  );
+  return rows.map((row) => ({
+    target: num(row, "t"),
+    id1: big(row, "id1"),
+    id2: big(row, "id2"),
+    permission: asPermissionID(num(row, "p")),
+    value: num(row, "v"),
+    negated: bool(row, "n"),
+    skip: bool(row, "s"),
+  }));
 }
 
 /**
@@ -208,8 +396,11 @@ export async function getPermissionOverview(
  * Destructive: every custom permission on the server goes. It also drops the
  * caller's own rights, because it resets the group they rely on.
  */
-export async function resetPermissions(client: CommandExecutor): Promise<void> {
-  await exec(client, "permreset");
+export async function resetPermissions(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(client, "permreset", [], options);
 }
 
 // ---- Tokens and privilege keys ----------------------------------------------
@@ -221,56 +412,132 @@ export async function resetPermissions(client: CommandExecutor): Promise<void> {
  * command families.
  */
 export interface PrivilegeKey {
-  token: string;
-  type: number;
-  id1: bigint;
-  id2: bigint;
-  description: string;
-  createdAt: number;
+  /** The key itself. */
+  readonly token: string;
+  /** Which kind of group the key grants, one of {@link TokenType}. */
+  readonly type: number;
+  /** The server group a `TokenType.ServerGroup` key grants; undefined otherwise. */
+  readonly serverGroupID: ServerGroupID | undefined;
+  /** The channel group a `TokenType.ChannelGroup` key grants; undefined otherwise. */
+  readonly channelGroupID: ChannelGroupID | undefined;
+  /** The channel a `TokenType.ChannelGroup` key grants its group in; undefined otherwise. */
+  readonly channelID: ChannelID | undefined;
+  /** The key's description. */
+  readonly description: string;
+  /** When the key was created. */
+  readonly createdAt: Date | undefined;
 }
 
-const parseKey = (row: Record<string, string>): PrivilegeKey => ({
-  token: str(row, "token"),
-  type: num(row, "token_type"),
-  id1: big(row, "token_id1"),
-  id2: big(row, "token_id2"),
-  description: str(row, "token_description"),
-  createdAt: num(row, "token_created"),
-});
+/**
+ * Read a key. The wire carries the group as `token_id1` and the channel as
+ * `token_id2`, whichever kind of group it is; which typed field each belongs in
+ * depends on the token type.
+ */
+const parseKey = (row: Record<string, string>): PrivilegeKey => {
+  const type = num(row, "token_type");
+  const channelGroup = type === TokenType.ChannelGroup;
+  return {
+    token: str(row, "token"),
+    type,
+    serverGroupID: channelGroup ? undefined : asServerGroupID(big(row, "token_id1")),
+    channelGroupID: channelGroup ? asChannelGroupID(big(row, "token_id1")) : undefined,
+    channelID: channelGroup ? asChannelID(big(row, "token_id2")) : undefined,
+    description: str(row, "token_description"),
+    createdAt: date(row, "token_created"),
+  };
+};
 
 /** Every privilege key on the server. */
-export async function listPrivilegeKeys(client: CommandExecutor): Promise<PrivilegeKey[]> {
-  return (await query(client, "privilegekeylist")).map(parseKey);
+export async function listPrivilegeKeys(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<PrivilegeKey[]> {
+  return (await list(client, "privilegekeylist", [], options)).map(parseKey);
 }
 
-export async function listTokens(client: CommandExecutor): Promise<PrivilegeKey[]> {
-  return (await query(client, "tokenlist")).map(parseKey);
+/** Every token on the server; the same keys as {@link listPrivilegeKeys}. */
+export async function listTokens(
+  client: CommandExecutor,
+  options?: CommandOptions,
+): Promise<PrivilegeKey[]> {
+  return (await list(client, "tokenlist", [], options)).map(parseKey);
+}
+
+/**
+ * A privilege key to create: one that grants a server group, or one that
+ * grants a channel group in one channel.
+ */
+export type PrivilegeKeyOptions =
+  | {
+      /** The server group the key grants. */
+      readonly serverGroupID: ServerGroupID;
+      readonly channelGroupID?: never;
+      readonly channelID?: never;
+      /** Shown in the key list; unset or "" sends none. */
+      readonly description?: string | undefined;
+    }
+  | {
+      readonly serverGroupID?: never;
+      /** The channel group the key grants. */
+      readonly channelGroupID: ChannelGroupID;
+      /** The channel it grants the group in. */
+      readonly channelID: ChannelID;
+      /** Shown in the key list; unset or "" sends none. */
+      readonly description?: string | undefined;
+    };
+
+/**
+ * Encode the group a key grants.
+ *
+ * The wire form is a type and two untyped ids whose meaning depends on it:
+ * `tokenid1` is the group and `tokenid2` the channel. The options used to take
+ * them as such, documented the other way round, so the typed fields are checked
+ * here to describe exactly one kind of key.
+ */
+function keyParams(key: PrivilegeKeyOptions): Params {
+  const { serverGroupID, channelGroupID, channelID } = key as {
+    serverGroupID?: unknown;
+    channelGroupID?: unknown;
+    channelID?: unknown;
+  };
+  const isID = (v: unknown): v is bigint => typeof v === "bigint" && v > 0n;
+  const description = nonEmpty(key.description ?? "");
+  if (isID(serverGroupID) && channelGroupID === undefined && channelID === undefined) {
+    return [
+      ["tokentype", TokenType.ServerGroup],
+      ["tokenid1", serverGroupID],
+      ["tokenid2", 0],
+      ["tokendescription", description],
+    ];
+  }
+  if (serverGroupID === undefined && isID(channelGroupID) && isID(channelID)) {
+    return [
+      ["tokentype", TokenType.ChannelGroup],
+      ["tokenid1", channelGroupID],
+      ["tokenid2", channelID],
+      ["tokendescription", description],
+    ];
+  }
+  throw new TypeError("a key grants a server group, or a channel group in a channel");
 }
 
 /** Create a privilege key. Returns the key as the server generated it. */
 export async function addPrivilegeKey(
   client: CommandExecutor,
-  options: {
-    /** 0 = server group, 1 = channel group. */
-    tokenType: number;
-    /** Group id for a server group, channel id for a channel group. */
-    tokenID1: bigint;
-    /** Channel id for a channel group, otherwise 0. */
-    tokenID2: bigint;
-    description?: string;
-  },
+  key: PrivilegeKeyOptions,
+  options?: CommandOptions,
 ): Promise<string> {
-  const rows = await query(client, "privilegekeyadd", [
-    ["tokentype", options.tokenType],
-    ["tokenid1", options.tokenID1],
-    ["tokenid2", options.tokenID2],
-    ["tokendescription", options.description],
-  ]);
+  const rows = await query(client, "privilegekeyadd", keyParams(key), options);
   return str(rows[0] ?? {}, "token");
 }
 
-export async function deletePrivilegeKey(client: CommandExecutor, token: string): Promise<void> {
-  await exec(client, "privilegekeydelete", [["token", token]]);
+/** Delete a privilege key. */
+export async function deletePrivilegeKey(
+  client: CommandExecutor,
+  token: string,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(client, "privilegekeydelete", [["token", token]], options);
 }
 
 /**
@@ -278,27 +545,38 @@ export async function deletePrivilegeKey(client: CommandExecutor, token: string)
  *
  * The key grants only if this connection has not already used one.
  */
-export async function usePrivilegeKey(client: CommandExecutor, token: string): Promise<void> {
-  await exec(client, "privilegekeyuse", [["token", token]]);
+export async function usePrivilegeKey(
+  client: CommandExecutor,
+  token: string,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(client, "privilegekeyuse", [["token", token]], options);
 }
 
+/** Create a token; the same as {@link addPrivilegeKey}, by the other name. */
 export async function addToken(
   client: CommandExecutor,
-  options: { tokenType: number; tokenID1: bigint; tokenID2: bigint; description?: string },
+  key: PrivilegeKeyOptions,
+  options?: CommandOptions,
 ): Promise<string> {
-  const rows = await query(client, "tokenadd", [
-    ["tokentype", options.tokenType],
-    ["tokenid1", options.tokenID1],
-    ["tokenid2", options.tokenID2],
-    ["tokendescription", options.description],
-  ]);
+  const rows = await query(client, "tokenadd", keyParams(key), options);
   return str(rows[0] ?? {}, "token");
 }
 
-export async function deleteToken(client: CommandExecutor, token: string): Promise<void> {
-  await exec(client, "tokendelete", [["token", token]]);
+/** Delete a token. */
+export async function deleteToken(
+  client: CommandExecutor,
+  token: string,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(client, "tokendelete", [["token", token]], options);
 }
 
-export async function useToken(client: CommandExecutor, token: string): Promise<void> {
-  await exec(client, "tokenuse", [["token", token]]);
+/** Redeem a token; the same as {@link usePrivilegeKey}, by the other name. */
+export async function useToken(
+  client: CommandExecutor,
+  token: string,
+  options?: CommandOptions,
+): Promise<void> {
+  await exec(client, "tokenuse", [["token", token]], options);
 }
