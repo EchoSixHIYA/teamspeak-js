@@ -376,7 +376,9 @@ describe("memory", () => {
     socket.deliver(dummyPacket(crypt, 2, 0x20, 1000, payload));
     expect(acks(socket)).toBe(taken + 2);
     await client.disconnect();
-  });
+    // Delivers two thousand full-size datagrams in a loop; a slower runner
+    // needs more than the default five seconds.
+  }, 30_000);
 });
 
 describe("generations", () => {
