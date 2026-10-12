@@ -13,7 +13,8 @@
  * parameters in one place.
  */
 
-import { buildCommandOrdered, unescape } from "../command/command.js";
+import { buildCommandOrdered } from "../command/command.js";
+import { TeamspeakError } from "../errors.js";
 import { prepareClientPassword } from "../handshake.js";
 import type { Client } from "../client.js";
 import { asChannelID } from "../command/ids.js";
@@ -55,6 +56,11 @@ function encode(
 ): string {
   const out: Array<readonly [string, string]> = [];
   for (const [key, value] of params) {
+    // Flags (`-uid`) are switches: present when true, absent otherwise.
+    if (key.startsWith("-")) {
+      if (value === true) out.push([key, ""]);
+      continue;
+    }
     if (passwordFields.includes(key) && typeof value === "string" && value !== "") {
       out.push([key, prepareClientPassword(value)]);
       continue;
@@ -93,8 +99,40 @@ async function query(
   return client.execCommandWithResponse(encode(command, params, passwordFields), DEFAULT_TIMEOUT);
 }
 
-/** Read a base64/escaped string field, tolerating absence. */
-const str = (row: Record<string, string>, key: string): string => unescape(row[key] ?? "");
+/**
+ * Read a string field, tolerating absence.
+ *
+ * The parser has already unescaped it. Unescaping again is how a nickname that
+ * really contains `\s` used to come back with a space in it.
+ */
+const str = (row: Record<string, string>, key: string): string => row[key] ?? "";
+
+/**
+ * The id of the group a create or copy just made.
+ *
+ * ServerQuery answers `servergroupadd` with the new id alone. The voice
+ * protocol answers with the whole group list instead (`notifyservergrouplist`),
+ * so taking the first row returned the first group on the server rather than
+ * the new one. The new group is the one with the requested name — the newest,
+ * should the name repeat across group types.
+ */
+export function createdGroupID(
+  rows: readonly Record<string, string>[],
+  idKey: "sgid" | "cgid",
+  name: string,
+): bigint {
+  const listed = rows.filter((row) => row["name"] !== undefined);
+  if (listed.length === 0) return big(rows[0] ?? {}, idKey);
+
+  let id = 0n;
+  for (const row of listed) {
+    if (row["name"] === name && big(row, idKey) > id) id = big(row, idKey);
+  }
+  if (id === 0n) {
+    throw new TeamspeakError(`the server did not report the new group "${name}"`);
+  }
+  return id;
+}
 
 /** Read a bigint field, tolerating absence. */
 const big = (row: Record<string, string>, key: string): bigint => {

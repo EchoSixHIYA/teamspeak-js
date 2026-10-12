@@ -27,6 +27,20 @@ export class CommandTimeoutError extends TeamspeakError {
   }
 }
 
+/**
+ * A command was sent with no connection to send it on, or the connection was
+ * lost while it waited for its answer.
+ *
+ * Without it such a command would wait out its full timeout and fail as if the
+ * server were slow.
+ */
+export class NotConnectedError extends TeamspeakError {
+  constructor(options?: ErrorOptions) {
+    super("not connected", options);
+    this.name = "NotConnectedError";
+  }
+}
+
 export class AlreadyConnectedError extends TeamspeakError {
   constructor() {
     super("already connecting or connected");
@@ -52,13 +66,6 @@ export class FileTransferError extends TeamspeakError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = "FileTransferError";
-  }
-}
-
-export class FileTransferTimeoutError extends TeamspeakError {
-  constructor() {
-    super("timeout waiting for file transfer notification");
-    this.name = "FileTransferTimeoutError";
   }
 }
 

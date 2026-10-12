@@ -1,39 +1,72 @@
+import { parseCommand } from "./command/parser.js";
 import { ServerError } from "./errors.js";
+
+import type { ResponseSpec } from "./command/responses.js";
 
 export interface CommandResult {
   err: Error | null;
   data: Record<string, string>[];
 }
 
+/** A row waiting for the `error` that says which command it answered. */
+interface BufferedRow {
+  /** The notification that carried it, or "" for a nameless data row. */
+  readonly source: string;
+  readonly params: Record<string, string>;
+}
+
+interface PendingCommand {
+  readonly resolve: (result: CommandResult) => void;
+  readonly spec: ResponseSpec | undefined;
+  /** The request's value for `spec.correlated.key`, when there is one. */
+  readonly correlation: string | undefined;
+  /** Correlated answers that arrived before the command's own `error`. */
+  readonly correlated: Record<string, string>[];
+  /** The command's `error` result, held while its correlated answer is due. */
+  settled?: CommandResult;
+}
+
 /**
- * Tracks in-flight commands by return_code.
+ * Matches the server's answers to the commands that asked for them.
  *
- * The TS3/TS5 server sends a "welcome sequence" of unsolicited data immediately
- * after the connection handshake (channellist, channelclientlist, etc.). This
- * data arrives on the event loop AFTER we may have registered our first pending
- * RC, which would contaminate our command responses.
+ * The server handles one client's commands in order and closes each answer
+ * with `error … return_code=N`, so every row seen since the previous `error`
+ * belongs to command N. Rows are therefore held, tagged with where they came
+ * from, until that `error` says whose they are — attributing them on arrival
+ * would mean guessing which in-flight command the server is answering, and a
+ * command can be registered here well before it is sent (it first waits on the
+ * throttle and the middleware chain).
  *
- * Solution: gate all row buffering on a `#welcomeComplete` flag. The flag is
- * set when `notifycliententerview` for our own clid arrives — the last event
- * the TS3/TS5 server sends in its welcome sequence. Any data arriving before
- * that is silently discarded.
+ * A nameless row always belongs to the command. A notification row belongs to
+ * it only if the command declared that notification as its answer (see
+ * command/responses.ts): the same `notifyclientmoved` that answers nothing can
+ * arrive between any two commands.
+ *
+ * The welcome sequence is the exception. The server pushes channellist,
+ * channelgrouplist and the rest unprompted right after the handshake, before
+ * `channellistfinished`; without the gate they would land in the first
+ * command's answer as duplicate rows and a phantom cid=0.
  */
 export class CommandTracker {
-  readonly #pending = new Map<number, (result: CommandResult) => void>();
+  readonly #pending = new Map<number, PendingCommand>();
+  readonly #ownClientID: () => number;
   #nextRC = 0;
-  #buffer: Record<string, string>[] = [];
-
-  /**
-   * Set to true when we receive `notifycliententerview` for our own clid,
-   * which marks the end of the server's welcome sequence.
-   */
+  #buffer: BufferedRow[] = [];
   #welcomeComplete = false;
 
-  register(): [rc: number, promise: Promise<CommandResult>] {
+  /** @param ownClientID the client's clid, for answers filtered by invoker. */
+  constructor(ownClientID: () => number = () => 0) {
+    this.#ownClientID = ownClientID;
+  }
+
+  register(
+    spec?: ResponseSpec,
+    correlation?: string,
+  ): [rc: number, promise: Promise<CommandResult>] {
     this.#nextRC++;
     const rc = this.#nextRC;
     const promise = new Promise<CommandResult>((resolve) => {
-      this.#pending.set(rc, resolve);
+      this.#pending.set(rc, { resolve, spec, correlation, correlated: [] });
     });
     return [rc, promise];
   }
@@ -42,46 +75,100 @@ export class CommandTracker {
     this.#pending.delete(rc);
   }
 
-  /**
-   * Called when `notifycliententerview` for our own clid arrives.
-   * Marks the welcome sequence as complete and discards any accumulated data.
-   */
+  /** Marks the end of the welcome sequence and drops what it left behind. */
   signalWelcomeComplete(): void {
     this.#welcomeComplete = true;
     this.#buffer = [];
   }
 
-  /**
-   * Buffer a data row from the server. Rows arriving before the welcome
-   * sequence is complete are silently discarded to prevent contamination.
-   */
-  buffer(params: Record<string, string>): void {
+  /** Whether some in-flight command declared `name` as its answer. */
+  expects(name: string): boolean {
+    for (const p of this.#pending.values()) {
+      if (p.spec?.notifications?.includes(name)) return true;
+      if (p.spec?.correlated?.notifications.includes(name)) return true;
+    }
+    return false;
+  }
+
+  /** Hold a row until the next `error` says which command it answered. */
+  buffer(params: Record<string, string>, source = ""): void {
     if (!this.#welcomeComplete) return;
     if (this.#pending.size === 0) return;
-    this.#buffer.push(params);
+    this.#buffer.push({ source, params });
+  }
+
+  /**
+   * Offer a notification to commands answered after their `error`.
+   *
+   * Matching is on the echoed request field, so it does not matter whether the
+   * notification beats the `error` or follows it.
+   */
+  offerCorrelated(name: string, params: Record<string, string>): void {
+    for (const [rc, p] of this.#pending) {
+      const c = p.spec?.correlated;
+      if (!c || p.correlation === undefined || !c.notifications.includes(name)) continue;
+      if (params[c.key] !== p.correlation) continue;
+
+      if (name === c.failure && (params["status"] ?? "0") !== "0") {
+        const err = new ServerError(params["status"] ?? "0", params["msg"] ?? "");
+        this.#settle(rc, p, { err, data: [] });
+        return;
+      }
+      p.correlated.push(params);
+      if (p.settled) this.#settle(rc, p, { err: null, data: [...p.settled.data, ...p.correlated] });
+      return;
+    }
   }
 
   resolve(rc: number, err: Error | null): void {
-    const resolve = this.#pending.get(rc);
-    if (!resolve) {
-      this.#buffer = [];
+    const rows = this.#buffer;
+    this.#buffer = [];
+    const p = this.#pending.get(rc);
+    if (!p) return;
+
+    const data = rows.filter((row) => this.#answers(p, row)).map((row) => row.params);
+    if (err) {
+      this.#settle(rc, p, { err, data });
       return;
     }
-    const data = this.#buffer;
-    this.#buffer = [];
-    this.#pending.delete(rc);
-    resolve({ err, data });
+    // Answered after the error: hold the result until the answer arrives, or
+    // the caller's timeout gives up on it.
+    if (p.spec?.correlated && p.correlation !== undefined && p.correlated.length === 0) {
+      p.settled = { err: null, data };
+      return;
+    }
+    this.#settle(rc, p, { err: null, data: [...data, ...p.correlated] });
   }
 
   discardBuffer(): void {
     this.#buffer = [];
   }
 
-  reset(): void {
+  /**
+   * Forget every command and fail it with `err`.
+   *
+   * Dropping them silently would leave each caller waiting out its full
+   * timeout for an answer that can no longer come.
+   */
+  reset(err: Error): void {
+    const pending = [...this.#pending.values()];
     this.#pending.clear();
+    for (const p of pending) p.resolve({ err, data: [] });
     this.#buffer = [];
     this.#welcomeComplete = false;
     this.#nextRC = 0;
+  }
+
+  #answers(p: PendingCommand, row: BufferedRow): boolean {
+    if (row.source === "") return true;
+    if (!p.spec?.notifications?.includes(row.source)) return false;
+    if (!p.spec.ownRowsOnly) return true;
+    return row.params["invokerid"] === String(this.#ownClientID());
+  }
+
+  #settle(rc: number, p: PendingCommand, result: CommandResult): void {
+    this.#pending.delete(rc);
+    p.resolve(result);
   }
 }
 
@@ -112,9 +199,18 @@ export function parseServerError(params: Record<string, string>): {
 }
 
 /**
- * Append a return_code parameter to a command string if not already present.
+ * Append the tracker's return_code to a command.
+ *
+ * The return_code belongs to the tracker: it is how an answer finds its
+ * command, so a caller-supplied one would detach the command from its answer.
+ * Checked as a parameter rather than as text, because a message body that
+ * merely contains "return_code=" used to suppress the real one and time the
+ * command out.
  */
 export function appendReturnCode(cmd: string, rc: number): string {
-  if (cmd.includes("return_code=")) return cmd;
+  const params = parseCommand(cmd)?.params ?? {};
+  if (Object.hasOwn(params, "return_code")) {
+    throw new TypeError("commands must not carry their own return_code; the client assigns it");
+  }
   return `${cmd} return_code=${rc}`;
 }

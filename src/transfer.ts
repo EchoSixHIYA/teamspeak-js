@@ -1,43 +1,7 @@
 import { createConnection } from "node:net";
 import type { Readable, Writable } from "node:stream";
 import type { FileUploadInfo, FileDownloadInfo, FileTransferSocketFactory } from "./types.js";
-import { FileTransferError, FileTransferTimeoutError } from "./errors.js";
-import { buildCommand } from "./command/command.js";
-import { prepareClientPassword } from "./handshake.js";
-
-type FtNotification =
-  | FileUploadInfo
-  | FileDownloadInfo
-  | import("./types.js").FileTransferStatusInfo;
-
-export class FileTransferTracker {
-  readonly #pending = new Map<number, (v: FtNotification) => void>();
-  #nextID = 0;
-
-  register(): [cftid: number, promise: Promise<FtNotification>] {
-    this.#nextID++;
-    if (this.#nextID > 65535) this.#nextID = 1;
-    const cftid = this.#nextID;
-    const promise = new Promise<FtNotification>((resolve) => {
-      this.#pending.set(cftid, resolve);
-    });
-    return [cftid, promise];
-  }
-
-  unregister(cftid: number): void {
-    this.#pending.delete(cftid);
-  }
-
-  notify(cftid: number, value: FtNotification): void {
-    const resolve = this.#pending.get(cftid);
-    if (resolve) resolve(value);
-  }
-
-  reset(): void {
-    this.#pending.clear();
-    this.#nextID = 0;
-  }
-}
+import { FileTransferError } from "./errors.js";
 
 /**
  * Creates the TCP socket the file transfer connection runs over.
@@ -127,46 +91,4 @@ export async function downloadFileData(
   });
 }
 
-/**
- * Build a ftinitupload command string.
- */
-export function buildFtInitUpload(
-  channelID: bigint,
-  path: string,
-  password: string,
-  size: bigint,
-  cftid: number,
-  overwrite: boolean,
-): string {
-  const targetPath = path.startsWith("/") ? path : `/${path}`;
-  return buildCommand("ftinitupload", {
-    cid: String(channelID),
-    name: targetPath,
-    cpw: prepareClientPassword(password),
-    size: String(size),
-    clientftfid: String(cftid),
-    overwrite: overwrite ? "1" : "0",
-    resume: "0",
-  });
-}
-
-/**
- * Build a ftinitdownload command string.
- */
-export function buildFtInitDownload(
-  channelID: bigint,
-  path: string,
-  password: string,
-  cftid: number,
-): string {
-  const targetPath = path.startsWith("/") ? path : `/${path}`;
-  return buildCommand("ftinitdownload", {
-    cid: String(channelID),
-    name: targetPath,
-    cpw: prepareClientPassword(password),
-    clientftfid: String(cftid),
-    seekpos: "0",
-  });
-}
-
-export { FileTransferError, FileTransferTimeoutError };
+export { FileTransferError };

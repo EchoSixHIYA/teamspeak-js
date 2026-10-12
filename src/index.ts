@@ -13,7 +13,6 @@ export type {
   VoiceData,
   FileUploadInfo,
   FileDownloadInfo,
-  FileTransferStatusInfo,
   EventMap,
   CommandMiddleware,
   EventMiddleware,
@@ -34,7 +33,7 @@ export {
   EAXTagMismatchError,
   FakeSignatureMismatchError,
   FileTransferError,
-  FileTransferTimeoutError,
+  NotConnectedError,
   CryptoInitError,
   InvalidIdentityError,
 } from "./errors.js";

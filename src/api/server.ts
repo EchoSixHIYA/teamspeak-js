@@ -7,7 +7,7 @@
  * easy to mix up.
  */
 
-import { exec, query, parsePermission, str, big, num, bool } from "./command.js";
+import { exec, query, parsePermission, createdGroupID, str, big, num, bool } from "./command.js";
 import type { ParamValue } from "./command.js";
 import type { Client } from "../client.js";
 import type { ChannelID, ClientDBID, PermissionID, ServerGroupID } from "../command/ids.js";
@@ -67,12 +67,24 @@ export async function editServer(
   await exec(client, "serveredit", Object.entries(settings));
 }
 
-/** The host process's settings, as `hostinfo` reports them. */
+/**
+ * The host process's settings, as `hostinfo` reports them.
+ *
+ * Needs an instance-level permission (`b_serverinstance_*`), which not even the
+ * Server Admin group holds by default — expect error 2568 until it is granted.
+ * Granted, it works over the voice protocol like any other query.
+ */
 export async function getHostInfo(client: Client): Promise<Record<string, string>> {
   return (await query(client, "hostinfo"))[0] ?? {};
 }
 
-/** The server instance's settings, as `instanceinfo` reports them. */
+/**
+ * The server instance's settings, as `instanceinfo` reports them.
+ *
+ * Needs an instance-level permission (`b_serverinstance_*`), which not even the
+ * Server Admin group holds by default — expect error 2568 until it is granted.
+ * Granted, it works over the voice protocol like any other query.
+ */
 export async function getInstanceInfo(client: Client): Promise<Record<string, string>> {
   return (await query(client, "instanceinfo"))[0] ?? {};
 }
@@ -85,7 +97,13 @@ export async function editInstance(
   await exec(client, "instanceedit", Object.entries(settings));
 }
 
-/** Active IP bindings, when the instance is multi-homed. */
+/**
+ * Active IP bindings, when the instance is multi-homed.
+ *
+ * Needs an instance-level permission (`b_serverinstance_*`), which not even the
+ * Server Admin group holds by default — expect error 2568 until it is granted.
+ * Granted, it works over the voice protocol like any other query.
+ */
 export async function listBindings(
   client: Client,
   subsystem?: string,
@@ -116,7 +134,13 @@ export async function getConnectionInfo(client: Client): Promise<Record<string, 
   return (await query(client, "serverrequestconnectioninfo"))[0] ?? {};
 }
 
-/** The numeric id of the virtual server listening on `port`. */
+/**
+ * The numeric id of the virtual server listening on `port`.
+ *
+ * Needs an instance-level permission (`b_serverinstance_*`), which not even the
+ * Server Admin group holds by default — expect error 2568 until it is granted.
+ * Granted, it works over the voice protocol like any other query.
+ */
 export async function getServerIDByPort(client: Client, port: number): Promise<bigint> {
   const rows = await query(client, "serveridgetbyport", [["virtualserver_port", port]]);
   return big(rows[0] ?? {}, "server_id");
@@ -134,7 +158,7 @@ export async function createServerGroup(
     ["name", name],
     ["type", type],
   ]);
-  return asServerGroupID(big(rows[0] ?? {}, "sgid"));
+  return asServerGroupID(createdGroupID(rows, "sgid", name));
 }
 
 export async function deleteServerGroup(
@@ -173,7 +197,9 @@ export async function copyServerGroup(
     ["name", name],
     ["type", type],
   ]);
-  return asServerGroupID(big(rows[0] ?? {}, "sgid"));
+  // Copying onto an existing group keeps that group's id.
+  if (targetGroupID !== 0n) return targetGroupID;
+  return asServerGroupID(createdGroupID(rows, "sgid", name));
 }
 
 /** Add a client to a server group. */

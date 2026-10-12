@@ -1,14 +1,10 @@
 import type { Command } from "./command/command.js";
-import { unescape } from "./command/command.js";
 import type {
   ClientInfo,
   ClientLeftViewEvent,
   ClientMovedEvent,
   TextMessage,
   PokeEvent,
-  FileUploadInfo,
-  FileDownloadInfo,
-  FileTransferStatusInfo,
 } from "./types.js";
 import { parseUint64, parseUint16, parseInt10 } from "./helpers.js";
 
@@ -18,9 +14,6 @@ export type NotificationResult =
   | { kind: "clientMoved"; event: ClientMovedEvent }
   | { kind: "textMessage"; message: TextMessage }
   | { kind: "poked"; event: PokeEvent }
-  | { kind: "startUpload"; info: FileUploadInfo }
-  | { kind: "startDownload"; info: FileDownloadInfo }
-  | { kind: "fileTransferStatus"; info: FileTransferStatusInfo }
   | { kind: "unknown" };
 
 export function handleNotification(
@@ -40,12 +33,6 @@ export function handleNotification(
       return handleTextMessage(cmd, clients);
     case "notifyclientpoke":
       return handleClientPoked(cmd);
-    case "notifystartupload":
-      return { kind: "startUpload", info: handleStartUpload(cmd) };
-    case "notifystartdownload":
-      return { kind: "startDownload", info: handleStartDownload(cmd) };
-    case "notifystatusfiletransfer":
-      return { kind: "fileTransferStatus", info: handleFileTransferStatus(cmd) };
     default:
       return { kind: "unknown" };
   }
@@ -132,39 +119,11 @@ function handleTextMessage(cmd: Command, clients: Map<number, ClientInfo>): Noti
     invokerID,
     invokerName: cmd.params["invokername"] ?? "",
     invokerUID: cmd.params["invokeruid"] ?? invokerInfo?.uid ?? "",
-    message: unescape(cmd.params["msg"] ?? ""),
+    message: cmd.params["msg"] ?? "",
     invokerGroups: invokerInfo?.serverGroups ?? [],
   };
 
   return { kind: "textMessage", message };
-}
-
-function handleStartUpload(cmd: Command): FileUploadInfo {
-  return {
-    clientFileTransferID: parseUint16(cmd.params["clientftfid"] ?? ""),
-    serverFileTransferID: parseUint16(cmd.params["serverftfid"] ?? ""),
-    fileTransferKey: cmd.params["ftkey"] ?? "",
-    port: parseUint16(cmd.params["port"] ?? ""),
-    seekPosition: parseUint64(cmd.params["seekpos"] ?? ""),
-  };
-}
-
-function handleStartDownload(cmd: Command): FileDownloadInfo {
-  return {
-    clientFileTransferID: parseUint16(cmd.params["clientftfid"] ?? ""),
-    serverFileTransferID: parseUint16(cmd.params["serverftfid"] ?? ""),
-    fileTransferKey: cmd.params["ftkey"] ?? "",
-    port: parseUint16(cmd.params["port"] ?? ""),
-    size: parseUint64(cmd.params["size"] ?? ""),
-  };
-}
-
-function handleFileTransferStatus(cmd: Command): FileTransferStatusInfo {
-  return {
-    clientFileTransferID: parseUint16(cmd.params["clientftfid"] ?? ""),
-    status: parseInt10(cmd.params["status"] ?? ""),
-    message: cmd.params["msg"] ?? "",
-  };
 }
 
 function handleClientPoked(cmd: Command): NotificationResult {
@@ -172,9 +131,9 @@ function handleClientPoked(cmd: Command): NotificationResult {
     kind: "poked",
     event: {
       invokerID: parseUint16(cmd.params["invokerid"] ?? ""),
-      invokerName: unescape(cmd.params["invokername"] ?? ""),
+      invokerName: cmd.params["invokername"] ?? "",
       invokerUID: cmd.params["invokeruid"] ?? "",
-      message: unescape(cmd.params["msg"] ?? ""),
+      message: cmd.params["msg"] ?? "",
     },
   };
 }

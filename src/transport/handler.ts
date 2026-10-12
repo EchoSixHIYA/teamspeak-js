@@ -238,6 +238,11 @@ export class PacketHandler {
     this.#write(final);
   }
 
+  /** Whether there is a live socket to send on. */
+  get isOpen(): boolean {
+    return this.#conn !== null && !this.#closed;
+  }
+
   close(): void {
     if (this.#closed) return;
     this.#closed = true;

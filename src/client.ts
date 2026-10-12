@@ -16,13 +16,7 @@ import { PacketHandler } from "./transport/handler.js";
 import { PacketType } from "./transport/packet.js";
 import type { Packet } from "./transport/packet.js";
 import { CommandTracker, appendReturnCode, parseServerError } from "./commands.js";
-import {
-  FileTransferTracker,
-  buildFtInitUpload,
-  buildFtInitDownload,
-  uploadFileData,
-  downloadFileData,
-} from "./transfer.js";
+import { uploadFileData, downloadFileData } from "./transfer.js";
 import { buildCommandChain, buildEventChain } from "./events.js";
 import { processInit1 } from "./handshake/crypt-handshake.js";
 import { handleHandshakeInitIV, handleHandshakeExpand2, handleInitServer } from "./handshake.js";
@@ -31,7 +25,8 @@ import { parseCommand } from "./command/parser.js";
 import { CommandThrottle } from "./throttle.js";
 import { splitCommandRows, isAutoNicknameMatch, sleep } from "./helpers.js";
 import type { FileUploadInfo, FileDownloadInfo } from "./types.js";
-import { CommandTimeoutError, FileTransferTimeoutError, FileTransferError } from "./errors.js";
+import { CommandTimeoutError, NotConnectedError } from "./errors.js";
+import { responseSpec } from "./command/responses.js";
 import type { Readable, Writable } from "node:stream";
 import type { SocketFactory, FileTransferSocketFactory } from "./types.js";
 import { unknownServerCapabilities, type ServerCapabilities } from "./capabilities.js";
@@ -98,8 +93,7 @@ export class Client {
   #stopped = false;
   #status: ClientStatus = ClientStatus.Disconnected;
   #throttle = new CommandThrottle();
-  #cmdTrack = new CommandTracker();
-  #ftTrack = new FileTransferTracker();
+  #cmdTrack = new CommandTracker(() => this.clid);
   #clients = new Map<number, ClientInfo>();
   #connectedResolvers: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
   #connectionError: Error | null = null;
@@ -199,6 +193,7 @@ export class Client {
     }
 
     this.handler.close();
+    this.#cmdTrack.reset(new NotConnectedError());
     const handlers = this.#disconnectedHandlers.slice();
     for (const h of handlers) setImmediate(() => h(undefined));
   }
@@ -246,28 +241,38 @@ export class Client {
     cmd: string,
     timeoutMs = 10_000,
   ): Promise<Record<string, string>[]> {
-    const [rc, promise] = this.#cmdTrack.register();
-    const withRc = appendReturnCode(cmd, rc);
+    // A command sent on no socket used to vanish and surface 10 seconds later
+    // as a timeout, which reads like a slow server rather than a usage error.
+    if (!this.handler.isOpen) throw new NotConnectedError();
 
+    // Which notifications answer this command, and — for answers that arrive
+    // after the `error` — the request field they echo back.
+    const parsed = parseCommand(cmd);
+    const spec = responseSpec(parsed?.name ?? "");
+    const key = spec?.correlated?.key;
+    const correlation = key === undefined ? undefined : parsed?.params[key];
+
+    const [rc, promise] = this.#cmdTrack.register(spec, correlation);
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      const withRc = appendReturnCode(cmd, rc);
       await this.#throttle.wait();
       await this.#finalCmdHandler(withRc);
-    } catch (err) {
+
+      const result = await Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new CommandTimeoutError(cmd)), timeoutMs);
+        }),
+      ]);
+      if (result.err) throw result.err;
+      return result.data;
+    } finally {
+      // Cleared, not left to fire: a pending timer keeps the process alive for
+      // the full timeout after the last command has long been answered.
+      clearTimeout(timer);
       this.#cmdTrack.unregister(rc);
-      throw err;
     }
-
-    const result = await Promise.race([
-      promise,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new CommandTimeoutError(cmd)), timeoutMs),
-      ),
-    ]);
-
-    this.#cmdTrack.unregister(rc);
-
-    if (result.err) throw result.err;
-    return result.data;
   }
 
   // ---- Events --------------------------------------------------------------
@@ -362,70 +367,6 @@ export class Client {
 
   // ---- File Transfer -------------------------------------------------------
 
-  async fileTransferInitUpload(
-    channelID: bigint,
-    path: string,
-    password: string,
-    size: bigint,
-    overwrite = false,
-  ): Promise<FileUploadInfo> {
-    const [cftid, ftPromise] = this.#ftTrack.register();
-    const cmd = buildFtInitUpload(channelID, path, password, size, cftid, overwrite);
-
-    try {
-      await this.execCommand(cmd, 10_000);
-    } catch (err) {
-      this.#ftTrack.unregister(cftid);
-      throw err;
-    }
-
-    const result = await Promise.race([
-      ftPromise,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new FileTransferTimeoutError()), 10_000),
-      ),
-    ]);
-    this.#ftTrack.unregister(cftid);
-
-    if ("size" in result) throw new FileTransferError("unexpected download response");
-    if ("status" in result) {
-      const st = result as import("./types.js").FileTransferStatusInfo;
-      throw new FileTransferError(`${st.message} (status=${st.status})`);
-    }
-    return result as FileUploadInfo;
-  }
-
-  async fileTransferInitDownload(
-    channelID: bigint,
-    path: string,
-    password: string,
-  ): Promise<FileDownloadInfo> {
-    const [cftid, ftPromise] = this.#ftTrack.register();
-    const cmd = buildFtInitDownload(channelID, path, password, cftid);
-
-    try {
-      await this.execCommand(cmd, 10_000);
-    } catch (err) {
-      this.#ftTrack.unregister(cftid);
-      throw err;
-    }
-
-    const result = await Promise.race([
-      ftPromise,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new FileTransferTimeoutError()), 10_000),
-      ),
-    ]);
-    this.#ftTrack.unregister(cftid);
-
-    if ("seekPosition" in result) throw new FileTransferError("unexpected upload response");
-    if ("status" in result) {
-      const st = result as import("./types.js").FileTransferStatusInfo;
-      throw new FileTransferError(`${st.message} (status=${st.status})`);
-    }
-    return result as FileDownloadInfo;
-  }
-
   uploadFileData(host: string, info: FileUploadInfo, data: Readable): Promise<void> {
     return uploadFileData(host, info, data, this.#fileTransferSocketFactory);
   }
@@ -459,8 +400,7 @@ export class Client {
     this.handler = new PacketHandler(this.crypt, this.logger, this.#socketFactory);
     this.handler.onPacket = (p) => this.#handlePacket(p);
     this.handler.onClosed = (err) => this.#handleConnectionClosed(err);
-    this.#cmdTrack.reset();
-    this.#ftTrack.reset();
+    this.#cmdTrack.reset(new NotConnectedError());
     this.#clients.clear();
     this.clid = 0;
     this.#finalCmdHandler = this.#buildCmdHandler();
@@ -555,6 +495,13 @@ export class Client {
     }
 
     if (cmd.name.startsWith("notify")) {
+      // Some commands are answered by a notification instead of data rows;
+      // it still goes on to be dispatched as an event, since the same
+      // notification also arrives unprompted.
+      if (this.#cmdTrack.expects(cmd.name)) {
+        this.#cmdTrack.buffer(cmd.params, cmd.name);
+        this.#cmdTrack.offerCorrelated(cmd.name, cmd.params);
+      }
       const result = handleNotification(cmd, this.clid, this.#clients, this.nickname);
       this.#processNotificationResult(result, cmd.params);
       return;
@@ -574,8 +521,10 @@ export class Client {
         this.#handleError(cmd.params);
         break;
       default:
-        // A command the SDK does not model, carrying its own data rows.
-        this.#cmdTrack.buffer(cmd.params);
+        // A named command the SDK does not model. Held under its own name, so
+        // it answers a command only if that command declared it — not merely by
+        // arriving while one is in flight.
+        this.#cmdTrack.buffer(cmd.params, cmd.name);
         break;
     }
   }
@@ -657,15 +606,6 @@ export class Client {
       case "poked":
         this.#dispatchEvent("poked", result.event);
         break;
-      case "startUpload":
-        this.#ftTrack.notify(result.info.clientFileTransferID, result.info);
-        break;
-      case "startDownload":
-        this.#ftTrack.notify(result.info.clientFileTransferID, result.info);
-        break;
-      case "fileTransferStatus":
-        this.#ftTrack.notify(result.info.clientFileTransferID, result.info);
-        break;
     }
   }
 
@@ -699,6 +639,9 @@ export class Client {
 
   #handleConnectionClosed(err: Error | null): void {
     if (this.#status === ClientStatus.Disconnected) return;
+    // Nothing in flight can be answered any more; failing it now, with the
+    // reason, beats every caller timing out one by one.
+    this.#cmdTrack.reset(new NotConnectedError(err ? { cause: err } : undefined));
     if (this.#status !== ClientStatus.Connected) {
       // The socket closed before the handshake finished, so this is a failed
       // connection attempt rather than a disconnect of a live session.

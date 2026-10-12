@@ -1,10 +1,8 @@
 /**
  * Bans, complaints, offline messages and the server log.
  *
- * All four are administrative and most of the read side answers empty over the
- * voice protocol — see docs/voice-protocol-empty-responses.md. The functions
- * exist because the commands do; each says so where it applies rather than
- * pretending the empty result means "nothing there".
+ * All four are administrative: expect a permission error, not an empty list,
+ * when the client lacks the rights.
  */
 
 import { exec, query, str, big, num, bool } from "./command.js";
@@ -42,11 +40,7 @@ const parseBan = (row: Record<string, string>): BanEntry => ({
   reason: str(row, "reason"),
 });
 
-/**
- * Every active ban.
- *
- * Empty over the voice protocol even as Server Admin.
- */
+/** Every active ban. */
 export async function listBans(client: Client): Promise<BanEntry[]> {
   return (await query(client, "banlist")).map(parseBan);
 }
@@ -119,11 +113,7 @@ const parseComplaint = (row: Record<string, string>): Complaint => ({
   timestamp: num(row, "timestamp"),
 });
 
-/**
- * Complaints, optionally only those against one client.
- *
- * Empty over the voice protocol.
- */
+/** Complaints, optionally only those against one client. */
 export async function listComplaints(
   client: Client,
   targetDatabaseID?: ClientDBID,
@@ -183,11 +173,7 @@ const parseMessage = (row: Record<string, string>): OfflineMessage => ({
   isRead: bool(row, "flag_read"),
 });
 
-/**
- * Offline messages for this client.
- *
- * Empty over the voice protocol.
- */
+/** Offline messages for this client. */
 export async function listMessages(client: Client): Promise<OfflineMessage[]> {
   return (await query(client, "messagelist")).map(parseMessage);
 }
@@ -254,11 +240,7 @@ export interface LogEntry {
   lines: string[];
 }
 
-/**
- * Read the server log.
- *
- * Empty over the voice protocol; the log is a ServerQuery facility.
- */
+/** Read the server log. */
 export async function viewLog(
   client: Client,
   options: { lines?: number; reverse?: boolean; instance?: boolean; beginPosition?: bigint } = {},

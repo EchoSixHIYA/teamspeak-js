@@ -108,7 +108,10 @@ export function buildCommandOrdered(
 ): string {
   const parts: string[] = [escape(cmd)];
   for (const [k, v] of params) {
-    parts.push(`${k}=${escape(v)}`);
+    // A flag such as `-uid` is a bare switch. `-uid=1` happens to be accepted
+    // over the voice protocol, but it is not the documented form and nothing
+    // promises another transport tolerates it.
+    parts.push(k.startsWith("-") && v === "" ? k : `${k}=${escape(v)}`);
   }
   return parts.join(" ");
 }

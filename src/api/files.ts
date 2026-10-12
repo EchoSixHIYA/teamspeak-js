@@ -13,6 +13,7 @@
 import { exec, query, str, big, num } from "./command.js";
 import type { Client } from "../client.js";
 import type { ChannelID } from "../command/ids.js";
+import type { FileDownloadInfo, FileUploadInfo } from "../types.js";
 
 const asPath = (path: string): string => (path.startsWith("/") ? path : `/${path}`);
 
@@ -195,47 +196,47 @@ export async function listActiveTransfers(client: Client): Promise<ActiveTransfe
 }
 
 /**
- * Negotiate an upload.
+ * The `clientftfid` for the next negotiation.
  *
- * Returns the transfer key and port the caller then dials over TCP; the data
- * itself does not go through this client.
+ * The server echoes it in the answer, and the echo is the only thing tying the
+ * answer to the request — it arrives after the command has already returned —
+ * so two transfers negotiated at once must not share one.
+ */
+let lastClientFileTransferID = 0;
+function nextClientFileTransferID(): number {
+  lastClientFileTransferID = (lastClientFileTransferID % 65535) + 1;
+  return lastClientFileTransferID;
+}
+
+/**
+ * Negotiate an upload, returning the key and port to dial over TCP.
  *
- * **Unusable over the voice protocol.** `ftinitupload` answers `ok` with no
- * rows, so there is no key to dial — verified with Server Admin on the same
- * identity, and the same command returns `ftkey=…` over ServerQuery. This is
- * the empty-response behaviour documented in
- * docs/voice-protocol-empty-responses.md, not a permission problem.
- *
- * The function exists because the command does, and returns what the server
- * sends. It will produce `fileTransferKey: ""`, which is the honest result
- * rather than a throw the caller cannot act on.
+ * Pass the result to {@link uploadFileData} to send the data; it does not go
+ * through this client. A refusal — no permission to upload, say — is thrown as
+ * a ServerError, even though the voice protocol reports it in a separate
+ * notification after the command itself has succeeded.
  */
 export async function initFileUpload(
   client: Client,
   cid: ChannelID,
   path: string,
   size: bigint,
-  options: { password?: string; overwrite?: boolean; clientFileTransferID?: number } = {},
-): Promise<{
-  fileTransferKey: string;
-  port: number;
-  clientFileTransferID: number;
-  serverFileTransferID: number;
-}> {
+  options: { password?: string; overwrite?: boolean; resume?: boolean } = {},
+): Promise<FileUploadInfo> {
   const rows = await query(
     client,
     "ftinitupload",
     [
-      ["cid", cid],
+      ["clientftfid", nextClientFileTransferID()],
       ["name", asPath(path)],
+      ["cid", cid],
+      ["cpw", options.password ?? ""],
       ["size", size],
       ["overwrite", options.overwrite ?? true],
-      ["resume", false],
+      ["resume", options.resume ?? false],
       // proto is required: omitting it fails the whole call with 1539
       // (parameter not found) rather than defaulting.
       ["proto", 0],
-      ["clientftfid", options.clientFileTransferID ?? 0],
-      ["cpw", options.password],
     ],
     ["cpw"],
   );
@@ -243,39 +244,34 @@ export async function initFileUpload(
   return {
     fileTransferKey: str(row, "ftkey"),
     port: num(row, "port"),
+    seekPosition: big(row, "seekpos"),
     clientFileTransferID: num(row, "clientftfid"),
     serverFileTransferID: num(row, "serverftfid"),
   };
 }
 
 /**
- * Negotiate a download, returning the key and port to dial over TCP.
+ * Negotiate a download, returning the key, port and size to dial over TCP.
  *
- * **Unusable over the voice protocol**, for the same reason as
- * {@link initFileUpload}: `ftinitdownload` answers `ok` with no rows.
+ * Pass the result to {@link downloadFileData}. Refusals are thrown as for
+ * {@link initFileUpload}.
  */
 export async function initFileDownload(
   client: Client,
   cid: ChannelID,
   path: string,
-  options: { password?: string; seekPosition?: bigint; clientFileTransferID?: number } = {},
-): Promise<{
-  fileTransferKey: string;
-  port: number;
-  size: bigint;
-  clientFileTransferID: number;
-  serverFileTransferID: number;
-}> {
+  options: { password?: string; seekPosition?: bigint } = {},
+): Promise<FileDownloadInfo> {
   const rows = await query(
     client,
     "ftinitdownload",
     [
-      ["cid", cid],
+      ["clientftfid", nextClientFileTransferID()],
       ["name", asPath(path)],
+      ["cid", cid],
+      ["cpw", options.password ?? ""],
       ["seekpos", options.seekPosition ?? 0n],
       ["proto", 0],
-      ["clientftfid", options.clientFileTransferID ?? 0],
-      ["cpw", options.password],
     ],
     ["cpw"],
   );

@@ -67,12 +67,6 @@ export interface FileDownloadInfo {
   port: number;
 }
 
-export interface FileTransferStatusInfo {
-  message: string;
-  status: number;
-  clientFileTransferID: number;
-}
-
 export interface PokeEvent {
   invokerName: string;
   invokerUID: string;

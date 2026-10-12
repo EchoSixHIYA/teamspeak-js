@@ -1,12 +1,8 @@
 /**
- * Server groups for channels, and the tokens used to join them.
- *
- * `channelgroupclientlist` is the reason this module carries a warning it does
- * not deserve: see docs/voice-protocol-empty-responses.md. Several lookups here
- * answer `ok` with no data over the voice protocol.
+ * Channel groups, the permission catalogue, and the tokens used to join groups.
  */
 
-import { exec, query, parsePermission, str, big, num, bool } from "./command.js";
+import { exec, query, parsePermission, createdGroupID, str, big, num, bool } from "./command.js";
 import type { PermissionEntry } from "./command.js";
 import type { Client } from "../client.js";
 import type { ChannelGroupID, ChannelID, ClientDBID, PermissionID } from "../command/ids.js";
@@ -39,13 +35,7 @@ const parseChannelGroup = (row: Record<string, string>): ChannelGroup => ({
   memberRemovePower: num(row, "n_member_removep"),
 });
 
-/**
- * Every channel group.
- *
- * Returns an empty array over the voice protocol even as Server Admin — the
- * server answers `ok` with no rows. This is a server behaviour, not a
- * permission or a bug; see docs/voice-protocol-empty-responses.md.
- */
+/** Every channel group. */
 export async function listChannelGroups(client: Client): Promise<ChannelGroup[]> {
   return (await query(client, "channelgrouplist")).map(parseChannelGroup);
 }
@@ -59,7 +49,7 @@ export async function createChannelGroup(
     ["name", name],
     ["type", type],
   ]);
-  return asChannelGroupID(big(rows[0] ?? {}, "cgid"));
+  return asChannelGroupID(createdGroupID(rows, "cgid", name));
 }
 
 export async function deleteChannelGroup(
@@ -97,7 +87,9 @@ export async function copyChannelGroup(
     ["name", name],
     ["type", type],
   ]);
-  return asChannelGroupID(big(rows[0] ?? {}, "cgid"));
+  // Copying onto an existing group keeps that group's id.
+  if (targetGroupID !== 0n) return targetGroupID;
+  return asChannelGroupID(createdGroupID(rows, "cgid", name));
 }
 
 /**
@@ -122,11 +114,7 @@ export async function listChannelGroupClients(
   }));
 }
 
-/**
- * Permissions set on a channel group.
- *
- * Empty over the voice protocol, like the other group permission lists.
- */
+/** Permissions set on a channel group. */
 export async function listChannelGroupPermissions(
   client: Client,
   cgid: ChannelGroupID,
@@ -161,16 +149,18 @@ export async function deleteChannelGroupPermission(
 
 // ---- Permissions ------------------------------------------------------------
 
-/**
- * The server's full permission catalogue.
- *
- * Empty over the voice protocol; the catalogue is a ServerQuery facility.
- */
+/** The server's full permission catalogue. */
 export async function listPermissions(client: Client): Promise<Record<string, string>[]> {
   return query(client, "permissionlist");
 }
 
-/** Resolve a permission name to its numeric id. */
+/**
+ * Resolve a permission name to its numeric id.
+ *
+ * Needs an instance-level permission (`b_serverinstance_*`), which not even the
+ * Server Admin group holds by default — expect error 2568 until it is granted.
+ * Granted, it works over the voice protocol like any other query.
+ */
 export async function getPermissionIDByName(
   client: Client,
   permsid: string,
@@ -248,11 +238,7 @@ const parseKey = (row: Record<string, string>): PrivilegeKey => ({
   createdAt: num(row, "token_created"),
 });
 
-/**
- * Every privilege key on the server.
- *
- * Empty over the voice protocol; token administration is ServerQuery-only.
- */
+/** Every privilege key on the server. */
 export async function listPrivilegeKeys(client: Client): Promise<PrivilegeKey[]> {
   return (await query(client, "privilegekeylist")).map(parseKey);
 }
