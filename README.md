@@ -157,26 +157,35 @@ await sendTextMessage(client, TextMessageTarget.Channel, "hello", cid);
 | `moderation` | Bans, complaints, offline messages, text messages, the log     |
 | `files`      | List, delete, rename, create directories, transfer negotiation |
 
-> **Read [docs/voice-protocol-empty-responses.md](docs/voice-protocol-empty-responses.md) before
-> using the administrative commands.** The voice protocol answers `ok` with no
-> data row for a set of commands that ServerQuery answers normally —
-> `servergrouplist`, `permissionlist`, the group permission lists, several
-> client lookups, and the file transfer negotiation. Verified with Server Admin,
-> so these are server behaviour rather than permissions. A function returning
-> `[]` does not mean "nothing there".
+Many of these commands are answered over the voice protocol with a
+notification rather than data rows — `servergrouplist` with
+`notifyservergrouplist`, `ftinitupload` with `notifystartupload` after the
+command has already succeeded. The client pairs each answer with its command,
+so this is invisible to callers; [docs/voice-protocol-responses.md](docs/voice-protocol-responses.md)
+has the measured table. A refusal is always thrown, never returned as an empty
+result.
 
 For anything outside the typed set, `client.execCommand()` and
 `client.execCommandWithResponse()` take a raw command.
 
 ### File Transfers
 
-| Function                               | Description                       |
-| -------------------------------------- | --------------------------------- |
-| `client.fileTransferInitUpload(...)`   | Initialize a file upload          |
-| `client.fileTransferInitDownload(...)` | Initialize a file download        |
-| `fileTransferDeleteFile(client, ...)`  | Delete files on the server        |
-| `uploadFileData(host, info, reader)`   | Transfer file data to the server  |
-| `downloadFileData(host, info, writer)` | Receive file data from the server |
+Negotiate with the `files` module, then move the bytes over TCP:
+
+```typescript
+import { Readable } from "node:stream";
+import { initFileUpload } from "@honeybbq/teamspeak-client";
+
+const info = await initFileUpload(client, cid, "/notes.txt", BigInt(data.length));
+await client.uploadFileData(host, info, Readable.from([data]));
+```
+
+| Function                                   | Description                       |
+| ------------------------------------------ | --------------------------------- |
+| `initFileUpload(client, ...)`              | Negotiate an upload               |
+| `initFileDownload(client, ...)`            | Negotiate a download              |
+| `client.uploadFileData(host, info, data)`  | Transfer file data to the server  |
+| `client.downloadFileData(host, info, out)` | Receive file data from the server |
 
 ### Identity
 
@@ -309,10 +318,11 @@ teamspeak-js/
 │   ├── command/           # Command builder and parser
 │   └── discovery/         # SRV / TSDNS / direct address resolution
 ├── docs/
-│   └── voice-protocol-empty-responses.md   # Which commands answer empty
+│   └── voice-protocol-responses.md   # Where each command's answer arrives
 ├── scripts/
-│   ├── probe-client-commands.mts           # Which commands the protocol accepts
-│   └── survey-voice-empties.mts            # Re-runs the empty-response check
+│   ├── probe-client-commands.mts     # Which commands the protocol accepts
+│   ├── probe-response-shapes.mts     # How each query is answered
+│   └── ts3-fixture.sh                # Provision a test server
 ├── examples/
 │   └── connect.ts         # Minimal connection example
 ├── vite.config.ts         # Build configuration (Vite library mode)

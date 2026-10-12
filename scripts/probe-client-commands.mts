@@ -7,6 +7,15 @@
  *
  * Run against a local server as Server Admin so permissions do not mask
  * protocol availability.
+ *
+ * The candidates are client-to-server commands only. An earlier list also
+ * carried server-to-client message names (`channellistfinished`,
+ * `notifyservergrouplist`) and names that exist nowhere (`globalmessage`,
+ * `permid`, `notifyregister`); those were the "unavailable" commands, and with
+ * them gone every candidate answers.
+ *
+ * This only tells whether a command is accepted. How its data comes back is
+ * scripts/probe-response-shapes.mts.
  */
 import { generateIdentity } from "../src/crypto/identity.js";
 import { Client } from "../src/client.js";
@@ -59,7 +68,6 @@ const candidates: Array<[string, string]> = [
   ["channelgrouprename", "channelgrouprename cgid=8 name=ProbeRen"],
   ["channelinfo", "channelinfo cid=1"],
   ["channellist", "channellist"],
-  ["channellistfinished", "channellistfinished"],
   ["channelmove", "channelmove cid=1 cpid=0 order=0"],
   ["channelpermlist", "channelpermlist cid=1"],
   ["channelsubscribe", "channelsubscribe cid=1"],
@@ -103,7 +111,7 @@ const candidates: Array<[string, string]> = [
   ["ftlist", "ftlist cid=1"],
   ["ftrenamefile", "ftrenamefile cid=1 oldname=/a newname=/b"],
   ["ftstop", "ftstop serverftfid=1"],
-  ["globalmessage", "globalmessage msg=probe"],
+  ["gm", "gm msg=probe"],
   ["hostinfo", "hostinfo"],
   ["instanceedit", "instanceedit serverinstance_database_id=1"],
   ["instanceinfo", "instanceinfo"],
@@ -114,7 +122,6 @@ const candidates: Array<[string, string]> = [
   ["messagelist", "messagelist"],
   ["messageupdateflag", "messageupdateflag msgid=1 flag=1"],
   ["permfind", "permfind permsid=i_channel_join_power"],
-  ["permid", "permid permsid=i_channel_join_power"],
   ["permidgetbyname", "permidgetbyname permsid=i_channel_join_power"],
   ["permissionlist", "permissionlist"],
   ["permoverview", "permoverview cid=1 cldbid=1 permid=1"],
@@ -156,8 +163,6 @@ const candidates: Array<[string, string]> = [
   ["tokenuse", "tokenuse token=probe"],
   ["version", "version"],
   ["whoami", "whoami"],
-  ["notifyregister", "notifyregister event=server"],
-  ["notifyservergrouplist", "notifyservergrouplist"],
 ];
 
 // The server does not answer commands it does not implement. It also drops a
