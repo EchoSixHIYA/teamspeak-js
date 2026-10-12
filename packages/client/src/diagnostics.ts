@@ -3,9 +3,8 @@
  * APM agent (OpenTelemetry instruments `diagnostics_channel` directly) to
  * subscribe to.
  *
- * They replace an environment variable that wrote raw traffic to stderr. A
- * library does not decide where its traces go, and with no subscriber a
- * channel costs a property read.
+ * A library does not decide where its traces go, so the SDK publishes them
+ * here, and with no subscriber a channel costs a property read.
  *
  * Messages carry the command's name, never its parameters: those hold
  * password hashes, which the server accepts as passwords, and privilege keys.

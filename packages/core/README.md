@@ -12,6 +12,13 @@ for the voice protocol — which re-exports everything here.
 packages. It is not public API and carries no semver promise; the packages are
 released together, each depending on this exact version.
 
+## Compatibility
+
+The open sets — `ErrorCode`, `Reason` and the enumeration tables (`Codec`,
+`GroupType`, `TextMessageTarget`, …) — may gain members in a minor release, so
+a `switch` over one needs a default case. Parsed results carry such values as a
+plain `number`.
+
 ## License
 
 MIT

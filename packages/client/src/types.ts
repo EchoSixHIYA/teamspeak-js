@@ -129,7 +129,11 @@ export interface NotificationEvent {
   readonly params: Readonly<Record<string, string>>;
 }
 
-/** The events `Client.on()` takes, and what each delivers. */
+/**
+ * The events `Client.on()` takes, and what each delivers. May gain events in a
+ * minor release; code that handles every event generically should expect
+ * names it does not know.
+ */
 export interface EventMap {
   /** A text message to this client, its channel or the server. */
   textMessage: TextMessageEvent;
@@ -160,7 +164,11 @@ export interface EventMap {
   kicked: KickedEvent;
 }
 
-/** The events that come from the server, and so pass through event middleware. */
+/**
+ * The events that come from the server, and so pass through event middleware.
+ * May gain members in a minor release: a `switch` over an event's name needs
+ * a default case.
+ */
 export type ServerEventName =
   | "textMessage"
   | "clientEnter"
@@ -236,7 +244,10 @@ const clientStatusValues = {
 /** Where a client is in its connection's life. */
 export const ClientStatus: typeof clientStatusValues =
   /* @__PURE__ */ Object.freeze(clientStatusValues);
-/** One of {@link ClientStatus}. */
+/**
+ * One of {@link ClientStatus}. May gain members in a minor release: a
+ * `switch` over it needs a default case.
+ */
 export type ClientStatus = (typeof ClientStatus)[keyof typeof ClientStatus];
 
 /** Wraps the delivery of server events; it may observe, alter or drop them. */

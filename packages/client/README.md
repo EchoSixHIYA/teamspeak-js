@@ -355,6 +355,19 @@ The uid hash matters because TS3 hashes a client's public key with SHA-1 and TS6
 with SHA-256 — a client that assumes either one computes an identifier the other
 server never sends.
 
+## Compatibility
+
+The packages follow semver from 1.0. A few sets are open by nature and may
+gain members in a minor release: the events (`EventMap`, `ServerEventName`),
+`ClientStatus`, `ServerFamily`, `UIDAlgorithm`, `ErrorCode`, `Reason` and the
+enumeration tables. Write a `switch` over any of them with a default case. A
+field the server sends as a number that one of those tables names — a codec, a
+text message's target mode, a group type — is a plain `number`, since a server
+may send a value newer than the table.
+
+`DatagramSocket` describes the part of a socket the client uses; should a
+later release use more, the new members will be optional.
+
 ## Packages
 
 This package is the voice client. It depends on

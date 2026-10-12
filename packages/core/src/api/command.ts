@@ -250,8 +250,8 @@ export const inSeconds = (ms: number): number => toWireDuration(ms, SECOND);
 /**
  * Read a string field, tolerating absence.
  *
- * The parser has already unescaped it. Unescaping again is how a nickname that
- * really contains `\s` used to come back with a space in it.
+ * The parser has already unescaped it; unescaping again would turn a nickname
+ * that really contains `\s` into one with a space.
  */
 const str = (row: Record<string, string>, key: string): string => row[key] ?? "";
 

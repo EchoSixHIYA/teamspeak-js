@@ -4,8 +4,7 @@
  * TS3 and TS6 differ in ways that stay invisible until something breaks. The
  * clearest: the server hashes a client's public key with SHA-1 on TS3 and
  * SHA-256 on TS6, so a client that assumes either one computes a
- * `client_unique_identifier` the other server never sends. That was a real bug
- * here, found only by running against TS6.
+ * `client_unique_identifier` the other server never sends.
  *
  * Everything below comes from the handshake — `initserver` carries
  * `virtualserver_version`, the one place the server names itself, along with
@@ -17,7 +16,11 @@ import type { IconID } from "@honeybbq/teamspeak-core";
 import { parseIconID } from "@honeybbq/teamspeak-core/internal";
 import { uidAlgorithmForVersion, type UIDAlgorithm } from "./crypto/identity.js";
 
-/** The server generation a version string belongs to. */
+/**
+ * The server generation a version string belongs to. May gain members in a
+ * minor release, as server generations appear: a `switch` over it needs a
+ * default case.
+ */
 export type ServerFamily = "ts3" | "ts6" | "unknown";
 
 /** What a server said about itself in the handshake. */
@@ -81,9 +84,8 @@ export function parseServerCapabilities(
 /**
  * Capabilities of a server that has not been connected to yet.
  *
- * The family is honestly `unknown` — nothing has said which server this is —
- * while `uidAlgorithm` stays SHA-1, so behaviour before connecting is exactly
- * what it was before TS6 support existed.
+ * The family is `unknown` — nothing has said which server this is — and
+ * `uidAlgorithm` is SHA-1, the TS3 hash.
  */
 export function unknownServerCapabilities(): ServerCapabilities {
   return parseServerCapabilities("");

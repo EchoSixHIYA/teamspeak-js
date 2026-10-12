@@ -8,6 +8,9 @@
  * Parameters take the type; parsed results carry a plain `number`, since a
  * server may send a value newer than this table — compare it against the
  * names (`group.type === GroupType.Query`).
+ *
+ * Every table, and `ErrorCode` and `Reason` with them, may gain members in a
+ * minor release: a `switch` over one needs a default case.
  */
 
 /** The values of the table below, before freezing. */
