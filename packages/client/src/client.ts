@@ -1064,14 +1064,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
         // This no longer marks the end of the welcome sequence: the server
         // sends more welcome data after it, and `channellistfinished` is the
         // real terminator.
-        if (info.id !== 0 && info.id === this.#clid) {
+        if (info.id === this.#clid) {
           // Carries the rename the server applied if our nickname was taken.
           this.#nickname = info.nickname;
-        } else if (
-          info.id !== 0 &&
-          this.#clid === 0 &&
-          isAutoNicknameMatch(this.#nickname, info.nickname)
-        ) {
+        } else if (this.#clid === 0 && isAutoNicknameMatch(this.#nickname, info.nickname)) {
           // initserver carried no aclid, so the welcome enter is the only way
           // to learn our clid. Gated on clid still being unknown so a later
           // lookalike can never hijack an established session.

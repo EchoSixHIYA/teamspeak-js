@@ -91,4 +91,16 @@ describe("handleNotification", () => {
     const result = handleNotification(cmd, 1, makeClients(), "Bot");
     expect(result.kind).toBe("unknown");
   });
+
+  // No client has id 0; a row naming it, or naming none, describes nobody.
+  it.each(["notifycliententerview", "notifyclientleftview", "notifyclientmoved"])(
+    "drops %s for clid 0",
+    (name) => {
+      const clients = makeClients();
+      for (const params of [{ clid: "0", ctid: "1" }, { ctid: "1" }]) {
+        expect(handleNotification({ name, params }, 0, clients, "Bot").kind).toBe("unknown");
+      }
+      expect(clients.size).toBe(0);
+    },
+  );
 });

@@ -49,7 +49,9 @@ function handleClientEnterView(
   clients: Map<number, ClientEnterEvent>,
 ): NotificationResult {
   const info = parseClient(cmd.params);
-  if (info.id !== 0) clients.set(info.id, info);
+  // No client has id 0: a row without one describes nobody.
+  if (info.id === 0) return { kind: "unknown" };
+  clients.set(info.id, info);
   return { kind: "clientEnter", info };
 }
 
@@ -59,8 +61,9 @@ function handleClientLeftView(
   clients: Map<number, ClientEnterEvent>,
 ): NotificationResult {
   const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
-  const isSelf = clid !== 0 && clid === selfCLID;
-  if (clid !== 0) clients.delete(clid);
+  if (clid === 0) return { kind: "unknown" };
+  const isSelf = clid === selfCLID;
+  clients.delete(clid);
   return {
     kind: "clientLeave",
     event: {
@@ -81,11 +84,10 @@ function handleClientMoved(
 ): NotificationResult {
   const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
   const ctid = asChannelID(parseUint64(cmd.params["ctid"] ?? ""));
+  if (clid === 0) return { kind: "unknown" };
 
-  if (clid !== 0) {
-    const existing = clients.get(clid);
-    if (existing) clients.set(clid, { ...existing, channelID: ctid });
-  }
+  const existing = clients.get(clid);
+  if (existing) clients.set(clid, { ...existing, channelID: ctid });
 
   return {
     kind: "clientMoved",
