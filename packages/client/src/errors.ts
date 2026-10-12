@@ -48,8 +48,8 @@ export class CryptoInitError extends TeamspeakError {
 
 /** An identity string `parseIdentity()` cannot read. */
 export class InvalidIdentityError extends TeamspeakError {
-  constructor(message = "invalid identity format") {
-    super(message);
+  constructor(message = "invalid identity format", options?: ErrorOptions) {
+    super(message, options);
     this.name = "InvalidIdentityError";
   }
 }

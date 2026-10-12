@@ -7,48 +7,69 @@ import {
   type KeyObject,
 } from "node:crypto";
 import { InvalidIdentityError } from "../errors.js";
+import { asUID, type UID } from "@honeybbq/teamspeak-core";
 
 const P256_SCALAR_SIZE = 32;
 const P256_UNCOMPRESSED_KEY_SIZE = 65;
 const P256_POINT_PREFIX = 0x04;
 
+/** The most a security level can be: SHA-1 is 160 bits wide. */
+const MAX_SECURITY_LEVEL = 160;
+
+let createIdentity: (privateKey: KeyObject, offset: bigint) => Identity;
+let privateKeyOf: (identity: Identity) => KeyObject;
+
 /**
  * A TeamSpeak client identity: a P-256 key pair plus a counter, the offset,
  * whose hash with the public key sets the identity's security level.
  *
- * `toString()`, `toJSON()` and `util.inspect()` never reveal the private key,
- * so an identity that reaches a log or an error message does not leak;
- * `export()` is the one way to get the secret form, for storing it.
+ * Immutable: raising the level returns a new identity. Opaque: the private
+ * key is never exposed, and `toString()`, `toJSON()` and `util.inspect()`
+ * describe the identity without it, so an identity that reaches a log or an
+ * error message does not leak; `export()` is the one way to get the secret
+ * form, for storing it. Make one with `generateIdentity()` or
+ * `parseIdentity()`.
  */
 export class Identity {
-  /** The P-256 private key. Treat it as a secret. */
-  readonly privateKey: KeyObject;
-  /** The counter whose hash with the public key sets the security level. */
-  offset: bigint;
+  static {
+    createIdentity = (privateKey, offset) => new Identity(privateKey, offset);
+    privateKeyOf = (identity) => identity.#privateKey;
+  }
 
-  constructor(privateKey: KeyObject, offset: bigint) {
-    this.privateKey = privateKey;
-    this.offset = offset;
+  readonly #privateKey: KeyObject;
+  readonly #offset: bigint;
+  #publicKey: string | undefined;
+
+  private constructor(privateKey: KeyObject, offset: bigint) {
+    this.#privateKey = privateKey;
+    this.#offset = offset;
+  }
+
+  /** The counter whose hash with the public key sets the security level. */
+  get offset(): bigint {
+    return this.#offset;
   }
 
   /** The public key in TeamSpeak's encoding: base64 of its DER form. */
   publicKeyBase64(): string {
-    const rawJwk = this.privateKey.export({ format: "jwk" });
-
-    if (
-      rawJwk.x === undefined ||
-      rawJwk.y === undefined ||
-      typeof rawJwk.x !== "string" ||
-      typeof rawJwk.y !== "string"
-    ) {
-      return "";
-    }
+    if (this.#publicKey !== undefined) return this.#publicKey;
+    const rawJwk = this.#privateKey.export({ format: "jwk" });
+    if (typeof rawJwk.x !== "string" || typeof rawJwk.y !== "string") return "";
 
     const xBytes = base64UrlToBytes(rawJwk.x, P256_SCALAR_SIZE);
     const yBytes = base64UrlToBytes(rawJwk.y, P256_SCALAR_SIZE);
-
     // Encode as TS3 canonical ASN.1: SEQUENCE { BIT STRING, INTEGER(32), INTEGER(x), INTEGER(y) }
-    return encodeTsPublicKey(xBytes, yBytes);
+    this.#publicKey = encodeTsPublicKey(xBytes, yBytes);
+    return this.#publicKey;
+  }
+
+  /**
+   * The identity's unique identifier, hashed with `algorithm`: SHA-1 for a
+   * TeamSpeak 3 server, SHA-256 for TeamSpeak 6. A connected client's `uid`
+   * already uses the one its server does.
+   */
+  uid(algorithm: UIDAlgorithm): UID {
+    return uidFromPublicKey(this.publicKeyBase64(), algorithm);
   }
 
   /**
@@ -56,21 +77,15 @@ export class Identity {
    * Store it as you would a password.
    */
   export(): string {
-    const jwk = this.privateKey.export({ format: "jwk" }) as { d?: string };
-    if (!jwk.d) {
-      return `:${this.offset}`;
-    }
-    // Convert base64url d to fixed-size standard base64
+    const jwk = this.#privateKey.export({ format: "jwk" }) as { d?: string };
+    if (!jwk.d) return `:${this.#offset}`;
     const dBytes = base64UrlToBytes(jwk.d, P256_SCALAR_SIZE);
-    return `${Buffer.from(dBytes).toString("base64")}:${this.offset}`;
+    return `${Buffer.from(dBytes).toString("base64")}:${this.#offset}`;
   }
 
-  /**
-   * Describes the identity without its private key. It used to return the key
-   * itself, so interpolating an identity into a log line leaked it.
-   */
+  /** Describes the identity, by its SHA-1 unique identifier, without its private key. */
   toString(): string {
-    return `identity ${getUidFromPublicKey(this.publicKeyBase64())} (private key redacted)`;
+    return `identity ${this.uid("sha1")} (private key redacted)`;
   }
 
   /** The same as `toString()`, so serialising an identity cannot leak its key. */
@@ -80,32 +95,35 @@ export class Identity {
 
   /** The security level: trailing zero bits in SHA-1 of the public key and offset. */
   securityLevel(): number {
-    const h = createHash("sha1");
-    h.update(this.publicKeyBase64());
-    h.update(this.offset.toString(10));
-    return countLeadingZeros(h.digest());
+    return levelAt(this.publicKeyBase64(), this.#offset);
   }
 
   /**
-   * Advance the offset until the security level reaches `targetLevel`. Each
-   * level doubles the expected work, so a high level can take a long time;
-   * `signal` bounds it, and the event loop keeps running meanwhile.
+   * The same key at an offset whose security level reaches `targetLevel`, as
+   * a new identity; this one is unchanged, and returned as it is when it
+   * already reaches the level.
+   *
+   * Each level doubles the expected work, so a high level can take a long
+   * time; `signal` bounds it, and the event loop keeps running meanwhile. A
+   * level above 160, the width of SHA-1, can never be reached and is refused
+   * with a RangeError.
    */
   async upgradeToLevel(
     targetLevel: number,
     options: { readonly signal?: AbortSignal | undefined } = {},
-  ): Promise<void> {
+  ): Promise<Identity> {
+    checkLevel(targetLevel);
     const { signal } = options;
     const prefix = this.publicKeyBase64();
+    let offset = this.#offset;
     while (true) {
       signal?.throwIfAborted();
-      const h = createHash("sha1");
-      h.update(prefix);
-      h.update(this.offset.toString(10));
-      if (countLeadingZeros(h.digest()) >= targetLevel) return;
-      this.offset++;
-      // Yield to event loop periodically to avoid blocking
-      if (this.offset % 10000n === 0n) {
+      if (levelAt(prefix, offset) >= targetLevel) {
+        return offset === this.#offset ? this : new Identity(this.#privateKey, offset);
+      }
+      offset++;
+      // Yield to the event loop now and then rather than blocking it.
+      if (offset % 10000n === 0n) {
         await new Promise<void>((resolve) => setImmediate(resolve));
       }
     }
@@ -121,17 +139,43 @@ Object.defineProperty(Identity.prototype, Symbol.for("nodejs.util.inspect.custom
   },
 });
 
-/** Read an identity from the form `Identity.export()` writes. */
+/**
+ * The private key of an identity, for the handshake. Not exported from the
+ * package.
+ *
+ * @internal
+ */
+export function identityPrivateKey(identity: Identity): KeyObject {
+  return privateKeyOf(identity);
+}
+
+function checkLevel(level: number): void {
+  if (!Number.isInteger(level) || level < 0 || level > MAX_SECURITY_LEVEL) {
+    throw new RangeError(`a security level is an integer from 0 to 160, not ${level}`);
+  }
+}
+
+function levelAt(publicKey: string, offset: bigint): number {
+  const h = createHash("sha1");
+  h.update(publicKey);
+  h.update(offset.toString(10));
+  return countLeadingZeros(h.digest());
+}
+
+/**
+ * Read an identity from the form `Identity.export()` writes. Anything else
+ * throws an InvalidIdentityError, with the underlying failure as its cause.
+ */
 export function parseIdentity(s: string): Identity {
   const colonIdx = s.lastIndexOf(":");
   if (colonIdx < 0) throw new InvalidIdentityError();
 
   const dBase64 = s.slice(0, colonIdx);
   const offsetStr = s.slice(colonIdx + 1);
-
-  const dBytes = Buffer.from(dBase64, "base64");
+  if (!/^\d+$/.test(offsetStr)) throw new InvalidIdentityError("invalid identity offset");
   const offset = BigInt(offsetStr);
 
+  const dBytes = Buffer.from(dBase64, "base64");
   if (dBytes.length > P256_SCALAR_SIZE) {
     throw new InvalidIdentityError("private key scalar too large");
   }
@@ -140,50 +184,49 @@ export function parseIdentity(s: string): Identity {
   const padded = Buffer.alloc(P256_SCALAR_SIZE);
   dBytes.copy(padded, P256_SCALAR_SIZE - dBytes.length);
 
-  // node:crypto JWK import requires x and y to be present.
-  // Derive the public key from the private scalar via ECDH.
-  const ecdh = createECDH("prime256v1");
-  ecdh.setPrivateKey(padded);
-  const pub = ecdh.getPublicKey(null, "uncompressed"); // 65 bytes: 0x04 || x(32) || y(32)
+  try {
+    // node:crypto JWK import requires x and y to be present.
+    // Derive the public key from the private scalar via ECDH.
+    const ecdh = createECDH("prime256v1");
+    ecdh.setPrivateKey(padded);
+    const pub = ecdh.getPublicKey(null, "uncompressed"); // 65 bytes: 0x04 || x(32) || y(32)
 
-  const x = Buffer.from(pub.slice(1, 33)).toString("base64url");
-  const y = Buffer.from(pub.slice(33, 65)).toString("base64url");
-  const d = padded.toString("base64url");
+    const x = Buffer.from(pub.slice(1, 33)).toString("base64url");
+    const y = Buffer.from(pub.slice(33, 65)).toString("base64url");
+    const d = padded.toString("base64url");
 
-  const jwk = { kty: "EC", crv: "P-256", d, x, y };
-  const privateKey = createPrivateKey({ key: jwk, format: "jwk" });
-  return new Identity(privateKey, offset);
+    const jwk = { kty: "EC", crv: "P-256", d, x, y };
+    return createIdentity(createPrivateKey({ key: jwk, format: "jwk" }), offset);
+  } catch (error) {
+    throw new InvalidIdentityError("invalid private key", { cause: error });
+  }
 }
 
 /**
- * Create an identity at the given security level. Each level doubles the
- * expected work; `signal` bounds it, and the event loop keeps running
- * meanwhile.
+ * Create an identity at the given security level, at most 160. Each level
+ * doubles the expected work; `signal` bounds it, and the event loop keeps
+ * running meanwhile.
  */
 export async function generateIdentity(
   targetLevel: number,
   options: { readonly signal?: AbortSignal | undefined } = {},
 ): Promise<Identity> {
-  const id = new Identity(generateKey(), 0n);
-  await id.upgradeToLevel(targetLevel, options);
-  return id;
+  checkLevel(targetLevel);
+  return createIdentity(generateKey(), 0n).upgradeToLevel(targetLevel, options);
 }
 
 /**
- * Create an identity at the given security level, blocking until done. Fine
- * for a low level; a high one can block the event loop for minutes, so prefer
- * `generateIdentity()` there.
+ * Create an identity at the given security level, at most 160, blocking until
+ * done. Fine for a low level; a high one can block the event loop for minutes,
+ * so prefer `generateIdentity()` there.
  */
 export function generateIdentitySync(targetLevel: number): Identity {
-  const id = new Identity(generateKey(), 0n);
-  const prefix = id.publicKeyBase64();
-  while (true) {
-    const h = createHash("sha1");
-    h.update(prefix);
-    h.update(id.offset.toString(10));
-    if (countLeadingZeros(h.digest()) >= targetLevel) return id;
-    id.offset++;
-  }
+  checkLevel(targetLevel);
+  const key = generateKey();
+  const prefix = createIdentity(key, 0n).publicKeyBase64();
+  let offset = 0n;
+  while (levelAt(prefix, offset) < targetLevel) offset++;
+  return createIdentity(key, offset);
 }
 
 function generateKey(): KeyObject {
@@ -198,22 +241,24 @@ function generateKey(): KeyObject {
  * 6 switched to SHA-256 (32 bytes). The algorithm is not negotiable on the
  * wire, so a client that guesses wrong computes a UID that matches nothing the
  * server ever sends — self-identification by UID silently fails.
+ *
+ * May gain members in a minor release, should a server generation change the
+ * hash again: a `switch` over it needs a default case.
  */
-export type UidAlgorithm = "sha1" | "sha256";
+export type UIDAlgorithm = "sha1" | "sha256";
 
 /** Pick the UID hash from a `virtualserver_version` string, e.g. "6.0.0-beta13.1". */
-export function uidAlgorithmForVersion(version: string): UidAlgorithm {
+export function uidAlgorithmForVersion(version: string): UIDAlgorithm {
   const major = Number.parseInt(version, 10);
   return Number.isNaN(major) || major < 6 ? "sha1" : "sha256";
 }
 
 /**
- * The unique identifier of a public key, in TeamSpeak's encoding, hashed with
- * `algorithm`: SHA-1 on TeamSpeak 3, SHA-256 on TeamSpeak 6.
+ * The unique identifier of a public key in TeamSpeak's encoding, hashed with
+ * `algorithm`: SHA-1 for a TeamSpeak 3 server, SHA-256 for TeamSpeak 6.
  */
-export function getUidFromPublicKey(publicKey: string, algorithm: UidAlgorithm = "sha1"): string {
-  const sum = createHash(algorithm).update(publicKey).digest();
-  return Buffer.from(sum).toString("base64");
+export function uidFromPublicKey(publicKey: string, algorithm: UIDAlgorithm): UID {
+  return asUID(createHash(algorithm).update(publicKey).digest("base64"));
 }
 
 export function hash512(data: Uint8Array): Uint8Array {

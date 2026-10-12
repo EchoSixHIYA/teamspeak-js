@@ -1,10 +1,11 @@
+import { InvalidIdentityError } from "../errors.js";
 import { describe, it, expect } from "vitest";
 import { inspect } from "node:util";
 import {
   generateIdentity,
   generateIdentitySync,
   parseIdentity,
-  getUidFromPublicKey,
+  uidFromPublicKey,
   uidAlgorithmForVersion,
 } from "./identity.js";
 
@@ -62,10 +63,10 @@ describe("Identity", () => {
     expect(() => parseIdentity("notvalid")).toThrow();
   });
 
-  it("getUidFromPublicKey is SHA1(publicKey) base64", () => {
+  it("uidFromPublicKey is base64 of the hash of the public key", () => {
     const id = generateIdentitySync(8);
     const pub = id.publicKeyBase64();
-    const uid = getUidFromPublicKey(pub);
+    const uid = uidFromPublicKey(pub, "sha1");
     expect(uid.length).toBeGreaterThan(0);
     // Base64 character set
     expect(uid).toMatch(/^[A-Za-z0-9+/]+=*$/);
@@ -84,17 +85,40 @@ describe("Identity", () => {
     expect(uidAlgorithmForVersion("unknown")).toBe("sha1");
   });
 
-  it("getUidFromPublicKey uses the requested algorithm", () => {
+  it("uidFromPublicKey uses the requested algorithm", () => {
     const id = generateIdentitySync(8);
     const pub = id.publicKeyBase64();
-    const sha1Uid = getUidFromPublicKey(pub, "sha1");
-    const sha256Uid = getUidFromPublicKey(pub, "sha256");
+    const sha1Uid = uidFromPublicKey(pub, "sha1");
+    const sha256Uid = uidFromPublicKey(pub, "sha256");
     // 20 bytes and 32 bytes base64-encode to 28 and 44 characters, so the two
     // digests cannot be confused for one another.
     expect(sha1Uid).toHaveLength(28);
     expect(sha256Uid).toHaveLength(44);
     expect(sha1Uid).not.toBe(sha256Uid);
-    // The default stays TS3-compatible for existing callers.
-    expect(getUidFromPublicKey(pub)).toBe(sha1Uid);
+    expect(id.uid("sha256")).toBe(sha256Uid);
+  });
+
+  it("is immutable: upgrading returns a new identity and leaves this one alone", async () => {
+    const id = generateIdentitySync(0);
+    const upgraded = await id.upgradeToLevel(6);
+    expect(upgraded.securityLevel()).toBeGreaterThanOrEqual(6);
+    expect(upgraded.publicKeyBase64()).toBe(id.publicKeyBase64());
+    expect(id.offset).toBe(0n);
+    expect(await upgraded.upgradeToLevel(1)).toBe(upgraded);
+    expect(() => {
+      (id as { offset: bigint }).offset = 5n;
+    }).toThrow(TypeError);
+    expect(Object.keys(id)).toEqual([]);
+  });
+
+  it("refuses a level SHA-1 cannot reach", async () => {
+    await expect(generateIdentitySync(0).upgradeToLevel(161)).rejects.toBeInstanceOf(RangeError);
+    expect(() => generateIdentitySync(161)).toThrow(RangeError);
+  });
+
+  it("parseIdentity throws only InvalidIdentityError", () => {
+    for (const bad of ["notvalid", "abc:1x", ":-1", "AAAA:99999999999999999999999999x", "AAAA:1"]) {
+      expect(() => parseIdentity(bad), bad).toThrow(InvalidIdentityError);
+    }
   });
 });

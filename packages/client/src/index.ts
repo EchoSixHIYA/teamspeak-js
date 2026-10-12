@@ -70,5 +70,6 @@ export {
   parseIdentity,
   generateIdentity,
   generateIdentitySync,
-  getUidFromPublicKey,
+  uidFromPublicKey,
 } from "./crypto/index.js";
+export type { UIDAlgorithm } from "./crypto/index.js";

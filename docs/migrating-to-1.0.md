@@ -29,6 +29,23 @@ const restored = parseIdentity(saved);
 
 `generateIdentitySync(level)` keeps the blocking form.
 
+An `Identity` is immutable and opaque. `upgradeToLevel(level, { signal })`
+returns a new identity instead of changing this one, and refuses a level above
+160; `offset` is read-only, and the private key is no longer a property —
+`export()` is the one way to the secret. `new Identity(...)` is gone: make one
+with `generateIdentity` or `parseIdentity`, which throws only an
+`InvalidIdentityError`.
+
+```ts
+// 0.x
+await id.upgradeToLevel(10);
+const uid = getUidFromPublicKey(id.publicKeyBase64());
+
+// 1.0
+const stronger = await id.upgradeToLevel(10);
+const uid = id.uid("sha1"); // or uidFromPublicKey(publicKey, "sha1"); TS6 uses "sha256"
+```
+
 ## Connecting
 
 ```ts

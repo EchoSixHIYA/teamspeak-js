@@ -240,9 +240,16 @@ const exported = identity.export();
 // Import from a previously exported string
 const restored = parseIdentity(exported);
 
-// Upgrade security level (CPU-intensive)
-await identity.upgradeToLevel(10);
+// Raise the security level (CPU-intensive). Identities are immutable: this
+// returns a new one with the same key.
+const stronger = await identity.upgradeToLevel(10, { signal });
+
+// The unique identifier, hashed as a TS3 (sha1) or TS6 (sha256) server does
+const uid = identity.uid("sha1");
 ```
+
+The private key never leaves the identity except through `export()`:
+`toString()`, `toJSON()` and `util.inspect()` describe it without the key.
 
 ### Options
 

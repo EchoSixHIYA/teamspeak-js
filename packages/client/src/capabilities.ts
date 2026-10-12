@@ -15,7 +15,7 @@
 
 import type { IconID } from "@honeybbq/teamspeak-core";
 import { parseIconID } from "@honeybbq/teamspeak-core/internal";
-import { uidAlgorithmForVersion, type UidAlgorithm } from "./crypto/identity.js";
+import { uidAlgorithmForVersion, type UIDAlgorithm } from "./crypto/identity.js";
 
 /** The server generation a version string belongs to. */
 export type ServerFamily = "ts3" | "ts6" | "unknown";
@@ -34,7 +34,7 @@ export interface ServerCapabilities {
    * Read from the family rather than offered as a setting: the server decides
    * this, and a client that picks differently never matches.
    */
-  readonly uidAlgorithm: UidAlgorithm;
+  readonly uidAlgorithm: UIDAlgorithm;
   /** The virtual server's name (`virtualserver_name`). */
   readonly name: string;
   /**

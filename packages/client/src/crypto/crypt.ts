@@ -1,7 +1,7 @@
 import { createHash, createECDH, randomBytes } from "node:crypto";
 import { CryptoInitError, FakeSignatureMismatchError } from "../errors.js";
 import type { Identity } from "./identity.js";
-import { importPublicKey } from "./identity.js";
+import { identityPrivateKey, importPublicKey } from "./identity.js";
 import { EAX } from "./eax.js";
 
 const FAKE_SIGNATURE_SIZE = 8;
@@ -206,7 +206,7 @@ export class Crypt {
   }
 
   #getSharedSecret(serverPubKey: import("node:crypto").KeyObject): Uint8Array {
-    const privJwk = this.identity.privateKey.export({ format: "jwk" }) as {
+    const privJwk = identityPrivateKey(this.identity).export({ format: "jwk" }) as {
       d: string;
     };
     const pubJwk = serverPubKey.export({ format: "jwk" }) as {

@@ -20,7 +20,6 @@ import {
   type UID,
   asChannelID,
   asClientID,
-  asUID,
   type Logger,
   ErrorCode,
   Reason,
@@ -29,7 +28,7 @@ import {
 } from "@honeybbq/teamspeak-core";
 import { AlreadyConnectedError, CryptoInitError, RemovedError } from "./errors.js";
 import { abortable, abortReason } from "./abort.js";
-import { Identity, Crypt, getUidFromPublicKey } from "./crypto/index.js";
+import { Identity, Crypt } from "./crypto/index.js";
 import { Resolver } from "./discovery/resolver.js";
 import { PacketHandler } from "./transport/handler.js";
 import { PacketType } from "./transport/packet.js";
@@ -637,9 +636,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * TS6 server silently never matches.
    */
   uniqueIdentifier(): UID {
-    return asUID(
-      getUidFromPublicKey(this.#identity.publicKeyBase64(), this.#capabilities.uidAlgorithm),
-    );
+    return this.#identity.uid(this.#capabilities.uidAlgorithm);
   }
 
   /** The channel this client is in, as it last learned; 0 before connecting. */

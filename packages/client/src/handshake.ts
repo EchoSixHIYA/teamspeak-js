@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { buildCommandOrdered, buildCommand } from "@honeybbq/teamspeak-core";
 import { sign, generateTemporaryKey } from "./crypto/primitives.js";
+import { identityPrivateKey } from "./crypto/identity.js";
 import { parseServerCapabilities } from "./capabilities.js";
 import { cryptoInit2 } from "./handshake/crypt-init2.js";
 import { PacketType } from "./transport/packet.js";
@@ -85,7 +86,7 @@ function buildClientEkProof(client: ClientInternals, publicKey: Uint8Array, beta
   const toSign = new Uint8Array(86);
   toSign.set(publicKey.slice(0, 32));
   toSign.set(betaBytes.slice(0, Math.min(54, betaBytes.length)), 32);
-  const sig = sign(client.crypt.identity.privateKey, toSign);
+  const sig = sign(identityPrivateKey(client.crypt.identity), toSign);
   return Buffer.from(sig).toString("base64");
 }
 
