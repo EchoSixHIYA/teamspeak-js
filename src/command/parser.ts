@@ -1,6 +1,18 @@
 import { unescape } from "./command.js";
 import type { Command } from "./command.js";
 
+/**
+ * Whether a token is a command name.
+ *
+ * A command name is a run of ASCII alphanumerics — the rule tsproto-packets
+ * uses (CommandParser::new). Everything that splits or parses a line asks this
+ * one function, so the parser and the row splitter cannot disagree about where
+ * a command's data begins.
+ */
+export function isCommandName(token: string): boolean {
+  return /^[A-Za-z0-9]+$/.test(token);
+}
+
 export function parseCommand(s: string): Command | null {
   if (s === "") return null;
 
@@ -31,7 +43,7 @@ export function parseCommand(s: string): Command | null {
   if (first === "") return null;
 
   const params: Record<string, string> = {};
-  const name = /^[A-Za-z0-9]+$/.test(first) ? first : "";
+  const name = isCommandName(first) ? first : "";
   const start = name === "" ? 0 : 1;
 
   for (let i = start; i < parts.length; i++) {

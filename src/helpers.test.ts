@@ -57,6 +57,24 @@ describe("splitCommandRows", () => {
     ]);
   });
 
+  // Response rows carry no name. Treating the first field as one copied it onto
+  // every row, and a batch with no space in it was never split at all.
+  it("splits a nameless batch without inventing a name", () => {
+    expect(splitCommandRows("clid=1 cid=5|clid=2 cid=6")).toEqual(["clid=1 cid=5", "clid=2 cid=6"]);
+  });
+
+  it("splits one-field rows", () => {
+    expect(splitCommandRows("cldbid=1|cldbid=2|cldbid=3")).toEqual([
+      "cldbid=1",
+      "cldbid=2",
+      "cldbid=3",
+    ]);
+  });
+
+  it("inherits omitted fields in nameless rows too", () => {
+    expect(splitCommandRows("cid=1 name=a|name=b")).toEqual(["cid=1 name=a", "cid=1 name=b"]);
+  });
+
   it("returns original for command with no space", () => {
     expect(splitCommandRows("ping")).toEqual(["ping"]);
   });

@@ -1,3 +1,5 @@
+import { isCommandName } from "./command/parser.js";
+
 export function parseUint64(s: string): bigint {
   if (s === "" || s === undefined) return 0n;
   try {
@@ -30,15 +32,19 @@ export function isAutoNicknameMatch(expected: string, actual: string): boolean {
 }
 
 /**
- * Expand a pipe-separated multi-row TS3 command line into individual rows,
- * each prefixed with the command name.
+ * Expand a pipe-separated multi-row TS3 command line into individual rows.
+ *
+ * A named line (`notifyclientleftview a=1|a=2`) keeps its name on every row; a
+ * nameless response (`cldbid=1|cldbid=2`) stays nameless. Whether the first
+ * token is a name is decided by the parser's own rule — deciding it here by
+ * position is how a nameless batch with no space in it went through unsplit and
+ * a one-field-per-row response came back as a single row.
  */
 export function splitCommandRows(line: string): string[] {
   const spaceIdx = line.indexOf(" ");
-  if (spaceIdx < 0) return [line];
-
-  const name = line.slice(0, spaceIdx);
-  const rest = line.slice(spaceIdx + 1);
+  const head = spaceIdx < 0 ? line : line.slice(0, spaceIdx);
+  const name = isCommandName(head) ? head : "";
+  const rest = name === "" ? line : spaceIdx < 0 ? "" : line.slice(spaceIdx + 1);
 
   if (!rest.includes("|")) return [line];
 
@@ -64,7 +70,8 @@ export function splitCommandRows(line: string): string[] {
     }
 
     const resolvedTokens = [...inheritedTokens, ...tokens];
-    rows.push(`${name} ${resolvedTokens.join(" ")}`);
+    const row = resolvedTokens.join(" ");
+    rows.push(name === "" ? row : `${name} ${row}`);
 
     inheritedFields = new Map<string, string>();
     for (const token of resolvedTokens) {
