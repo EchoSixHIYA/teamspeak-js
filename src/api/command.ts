@@ -1,102 +1,46 @@
 /**
  * Typed command layer.
  *
- * Every command the voice protocol accepts is one function here, taking a
- * single options object. The options object — rather than positional
- * parameters — is what lets a command gain an optional parameter later without
- * breaking callers, and several commands have no positional reading at all
- * (`channeledit` takes eight).
- *
- * Functions that only send a command return `Promise<void>`; functions that
- * read return a parsed type. Nothing here re-encodes ids by hand: the branded
- * types in `ids.ts` and the encoder below turn an options object into wire
- * parameters in one place.
+ * Every command both the voice protocol and ServerQuery accept is one function
+ * here, running on any CommandExecutor. Functions that only send a command
+ * return `Promise<void>`; functions that read return a parsed type. Nothing
+ * here re-encodes ids by hand: the branded types in `ids.ts` and the request
+ * encoder turn parameters into wire form in one place.
  */
 
-import { buildCommandOrdered } from "../command/command.js";
 import { TeamspeakError } from "../errors.js";
-import { prepareClientPassword } from "../handshake.js";
-import type { Client } from "../client.js";
+import type { CommandExecutor, ParamValue } from "../command/request.js";
 import { asChannelID } from "../command/ids.js";
 import type { ChannelID, IconID, PermissionID } from "../command/ids.js";
-
-const DEFAULT_TIMEOUT = 10_000;
-
-// ---- Encoder ----------------------------------------------------------------
-
-/** A parameter value as a caller may supply it. */
-export type ParamValue = string | number | bigint | boolean | undefined;
-
-/**
- * Turn a value into its wire form.
- *
- * Returns undefined for values that should be omitted entirely — an unset
- * optional field — because sending `foo=` is not the same as not sending it:
- * for `channel_password` the first clears the password and the second leaves it
- * alone. Callers distinguish "unset" from "empty string" by passing undefined
- * versus "".
- */
-function encodeValue(value: ParamValue): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value === "boolean") return value ? "1" : "0";
-  return String(value);
-}
-
-/**
- * Build the parameter list for a command, skipping unset optionals.
- *
- * `password` fields are hashed rather than sent as given: the client protocol
- * expects `base64(sha1(password))` for `clientmove`'s `cpw`, unlike raw
- * ServerQuery. Doing it here means no call site can forget.
- */
-function encode(
-  command: string,
-  params: ReadonlyArray<readonly [string, ParamValue]>,
-  passwordFields: readonly string[] = [],
-): string {
-  const out: Array<readonly [string, string]> = [];
-  for (const [key, value] of params) {
-    // Flags (`-uid`) are switches: present when true, absent otherwise.
-    if (key.startsWith("-")) {
-      if (value === true) out.push([key, ""]);
-      continue;
-    }
-    if (passwordFields.includes(key) && typeof value === "string" && value !== "") {
-      out.push([key, prepareClientPassword(value)]);
-      continue;
-    }
-    const encoded = encodeValue(value);
-    if (encoded !== undefined) out.push([key, encoded]);
-  }
-  return buildCommandOrdered(command, out);
-}
 
 // ---- Shared helpers ---------------------------------------------------------
 
 /**
  * Send a command that produces no data and wait for the server's answer.
  *
- * `passwordFields` are the parameter names the server expects as
- * `base64(sha1(value))`; naming them here keeps every call site from having to
- * remember, which is how a raw password used to reach the server and fail 781.
+ * `passwords` names the parameters that carry a channel password. Naming them
+ * here, rather than encoding them, leaves the encoding to the transport — the
+ * voice protocol hashes them, ServerQuery does not — and keeps every call site
+ * from having to remember, which is how a raw password once reached the server
+ * and failed 781.
  */
 async function exec(
-  client: Client,
+  client: CommandExecutor,
   command: string,
   params: ReadonlyArray<readonly [string, ParamValue]> = [],
-  passwordFields: readonly string[] = [],
+  passwords: readonly string[] = [],
 ): Promise<void> {
-  await client.execCommand(encode(command, params, passwordFields), DEFAULT_TIMEOUT);
+  await client.send({ command, params, passwords });
 }
 
 /** Send a command and return its response rows. */
 async function query(
-  client: Client,
+  client: CommandExecutor,
   command: string,
   params: ReadonlyArray<readonly [string, ParamValue]> = [],
-  passwordFields: readonly string[] = [],
+  passwords: readonly string[] = [],
 ): Promise<Record<string, string>[]> {
-  return client.execCommandWithResponse(encode(command, params, passwordFields), DEFAULT_TIMEOUT);
+  return client.send({ command, params, passwords });
 }
 
 /**
@@ -156,7 +100,8 @@ const num = (row: Record<string, string>, key: string): number => {
 /** Read a boolean field: the protocol writes 0/1. */
 const bool = (row: Record<string, string>, key: string): boolean => num(row, key) !== 0;
 
-export { exec, query, str, big, num, bool, encode };
+export { exec, query, str, big, num, bool };
+export type { ParamValue };
 
 // ---- Result types -----------------------------------------------------------
 

@@ -4,17 +4,26 @@ import { listClients, moveClient } from "./clients.js";
 import { createdGroupID } from "./command.js";
 import { deleteFile, initFileUpload, listFiles } from "./files.js";
 import { listServerGroups } from "./server.js";
-import type { Client } from "../client.js";
 import { asChannelID, asClientID } from "../command/ids.js";
+import { encodeRequest } from "../command/request.js";
+import type { CommandExecutor } from "../command/request.js";
+import { prepareClientPassword } from "../handshake.js";
 
+/**
+ * An executor that encodes each request the way the voice client does and
+ * records the result, so the assertions below read as what goes on the wire.
+ * `execCommand` and `execCommandWithResponse` are the same recorder; the two
+ * names keep the assertions readable for commands with and without data.
+ */
 const fakeClient = () => {
-  const execCommand = vi.fn().mockResolvedValue(undefined);
-  const execCommandWithResponse = vi.fn().mockResolvedValue([]);
-  return {
-    client: { execCommand, execCommandWithResponse } as unknown as Client,
-    execCommand,
-    execCommandWithResponse,
+  const execCommandWithResponse = vi
+    .fn<(cmd: string, timeoutMs: number) => Promise<Record<string, string>[]>>()
+    .mockResolvedValue([]);
+  const client: CommandExecutor = {
+    send: (request) =>
+      execCommandWithResponse(encodeRequest(request, prepareClientPassword), 10_000),
   };
+  return { client, execCommand: execCommandWithResponse, execCommandWithResponse };
 };
 
 describe("password handling", () => {

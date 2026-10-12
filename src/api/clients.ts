@@ -9,7 +9,7 @@
 
 import { exec, query, str, big, num, bool } from "./command.js";
 import type { ParamValue } from "./command.js";
-import type { Client } from "../client.js";
+import type { CommandExecutor } from "../command/request.js";
 import type {
   ChannelGroupID,
   ChannelID,
@@ -68,7 +68,7 @@ function parseClient(row: Record<string, string>): ClientEntry {
  * Turn them off for a narrower response when watching a busy server.
  */
 export async function listClients(
-  client: Client,
+  client: CommandExecutor,
   options: {
     uid?: boolean;
     away?: boolean;
@@ -97,7 +97,7 @@ export async function listClients(
 
 /** One connected client's full detail. */
 export async function getClientInfo(
-  client: Client,
+  client: CommandExecutor,
   clid: ClientID,
 ): Promise<Record<string, string>> {
   const rows = await query(client, "clientinfo", [["clid", clid]]);
@@ -108,7 +108,7 @@ export async function getClientInfo(
 
 /** Move a client to another channel. */
 export async function moveClient(
-  client: Client,
+  client: CommandExecutor,
   clid: ClientID,
   channelID: ChannelID,
   password?: string,
@@ -127,7 +127,7 @@ export async function moveClient(
 
 /** Disconnect a client from the server. */
 export async function kickClient(
-  client: Client,
+  client: CommandExecutor,
   clid: ClientID,
   reasonID: number,
   reasonMessage?: string,
@@ -140,7 +140,11 @@ export async function kickClient(
 }
 
 /** Send a poke to a client. */
-export async function pokeClient(client: Client, clid: ClientID, message: string): Promise<void> {
+export async function pokeClient(
+  client: CommandExecutor,
+  clid: ClientID,
+  message: string,
+): Promise<void> {
   await exec(client, "clientpoke", [
     ["clid", clid],
     ["msg", message],
@@ -171,13 +175,16 @@ export interface ClientUpdateOptions {
  * `clientupdate` addresses the calling client implicitly — there is no clid
  * parameter on the wire, which is why this takes no id.
  */
-export async function updateClient(client: Client, options: ClientUpdateOptions): Promise<void> {
+export async function updateClient(
+  client: CommandExecutor,
+  options: ClientUpdateOptions,
+): Promise<void> {
   await exec(client, "clientupdate", Object.entries(options) as Array<[string, ParamValue]>);
 }
 
 /** Change another client's editable attributes. */
 export async function editClient(
-  client: Client,
+  client: CommandExecutor,
   clid: ClientID,
   options: { client_description?: string; client_is_talker?: boolean },
 ): Promise<void> {
@@ -189,7 +196,7 @@ export async function editClient(
 
 /** Clients whose nickname contains `pattern`. */
 export async function findClients(
-  client: Client,
+  client: CommandExecutor,
   pattern: string,
 ): Promise<Array<{ id: ClientID; nickname: string }>> {
   const rows = await query(client, "clientfind", [["pattern", pattern]]);
@@ -200,32 +207,35 @@ export async function findClients(
 }
 
 /** Every clid currently using a given unique identifier. */
-export async function getClientIDs(client: Client, uid: UID): Promise<ClientID[]> {
+export async function getClientIDs(client: CommandExecutor, uid: UID): Promise<ClientID[]> {
   const rows = await query(client, "clientgetids", [["cluid", uid]]);
   return rows.map((row) => asClientID(num(row, "clid")));
 }
 
 /** The uid of a connected client. */
-export async function getClientUIDByID(client: Client, clid: ClientID): Promise<UID> {
+export async function getClientUIDByID(client: CommandExecutor, clid: ClientID): Promise<UID> {
   const rows = await query(client, "clientgetuidfromclid", [["clid", clid]]);
   return asUID(str(rows[0] ?? {}, "cluid"));
 }
 
 /** The persistent database id behind a uid. */
-export async function getClientDBIDByUID(client: Client, uid: UID): Promise<ClientDBID> {
+export async function getClientDBIDByUID(client: CommandExecutor, uid: UID): Promise<ClientDBID> {
   const rows = await query(client, "clientgetdbidfromuid", [["cluid", uid]]);
   return asClientDBID(big(rows[0] ?? {}, "cldbid"));
 }
 
 /** The nickname recorded for a database id. */
-export async function getClientNameByDBID(client: Client, cldbid: ClientDBID): Promise<string> {
+export async function getClientNameByDBID(
+  client: CommandExecutor,
+  cldbid: ClientDBID,
+): Promise<string> {
   const rows = await query(client, "clientgetnamefromdbid", [["cldbid", cldbid]]);
   return str(rows[0] ?? {}, "name");
 }
 
 /** The database id and nickname recorded for a uid. */
 export async function getClientNameByUID(
-  client: Client,
+  client: CommandExecutor,
   uid: UID,
 ): Promise<{ databaseID: ClientDBID; name: string }> {
   const rows = await query(client, "clientgetnamefromuid", [["cluid", uid]]);
@@ -235,7 +245,7 @@ export async function getClientNameByUID(
 
 /** Join a channel, optionally with a channel group to hold there. */
 export async function setClientChannelGroup(
-  client: Client,
+  client: CommandExecutor,
   cgid: ChannelGroupID,
   cid: ChannelID,
   cldbid: ClientDBID,
@@ -279,7 +289,7 @@ const parseDatabaseEntry = (row: Record<string, string>): ClientDatabaseEntry =>
  * take a slice rather than everything at once.
  */
 export async function listClientDatabase(
-  client: Client,
+  client: CommandExecutor,
   options: { start?: number; duration?: number } = {},
 ): Promise<ClientDatabaseEntry[]> {
   return (
@@ -292,7 +302,7 @@ export async function listClientDatabase(
 
 /** Database records whose nickname or uid matches `pattern`. */
 export async function findClientDatabase(
-  client: Client,
+  client: CommandExecutor,
   pattern: string,
 ): Promise<Array<{ databaseID: ClientDBID; uid: UID; nickname: string }>> {
   const rows = await query(client, "clientdbfind", [["pattern", pattern]]);
@@ -305,7 +315,7 @@ export async function findClientDatabase(
 
 /** One database record. */
 export async function getClientDatabaseInfo(
-  client: Client,
+  client: CommandExecutor,
   cldbid: ClientDBID,
 ): Promise<ClientDatabaseEntry> {
   const rows = await query(client, "clientdbinfo", [["cldbid", cldbid]]);
@@ -314,7 +324,7 @@ export async function getClientDatabaseInfo(
 
 /** Change a database record. */
 export async function editClientDatabase(
-  client: Client,
+  client: CommandExecutor,
   cldbid: ClientDBID,
   options: { client_description?: string; client_nickname?: string },
 ): Promise<void> {
@@ -325,7 +335,10 @@ export async function editClientDatabase(
 }
 
 /** Delete a client from the database entirely. */
-export async function deleteClientDatabase(client: Client, cldbid: ClientDBID): Promise<void> {
+export async function deleteClientDatabase(
+  client: CommandExecutor,
+  cldbid: ClientDBID,
+): Promise<void> {
   await exec(client, "clientdbdelete", [["cldbid", cldbid]]);
 }
 
@@ -333,7 +346,7 @@ export async function deleteClientDatabase(client: Client, cldbid: ClientDBID): 
 
 /** Permissions granted to a client from the database. */
 export async function listClientPermissions(
-  client: Client,
+  client: CommandExecutor,
   cldbid: ClientDBID,
 ): Promise<Record<string, string>[]> {
   return query(client, "clientpermlist", [["cldbid", cldbid]]);
@@ -345,7 +358,7 @@ export async function listClientPermissions(
  * `permskip` is required by the server here, unlike the channel equivalent.
  */
 export async function addClientPermission(
-  client: Client,
+  client: CommandExecutor,
   cldbid: ClientDBID,
   options: { permvalue: number; permskip: boolean; permid?: PermissionID; permsid?: string },
 ): Promise<void> {
@@ -359,7 +372,7 @@ export async function addClientPermission(
 }
 
 export async function deleteClientPermission(
-  client: Client,
+  client: CommandExecutor,
   cldbid: ClientDBID,
   options: { permid?: PermissionID; permsid?: string },
 ): Promise<void> {

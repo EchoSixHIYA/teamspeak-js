@@ -4,7 +4,7 @@
 
 import { exec, query, parsePermission, createdGroupID, str, big, num, bool } from "./command.js";
 import type { PermissionEntry } from "./command.js";
-import type { Client } from "../client.js";
+import type { CommandExecutor } from "../command/request.js";
 import type { ChannelGroupID, ChannelID, ClientDBID, PermissionID } from "../command/ids.js";
 import { asChannelGroupID } from "../command/ids.js";
 
@@ -36,12 +36,12 @@ const parseChannelGroup = (row: Record<string, string>): ChannelGroup => ({
 });
 
 /** Every channel group. */
-export async function listChannelGroups(client: Client): Promise<ChannelGroup[]> {
+export async function listChannelGroups(client: CommandExecutor): Promise<ChannelGroup[]> {
   return (await query(client, "channelgrouplist")).map(parseChannelGroup);
 }
 
 export async function createChannelGroup(
-  client: Client,
+  client: CommandExecutor,
   name: string,
   type?: number,
 ): Promise<ChannelGroupID> {
@@ -53,7 +53,7 @@ export async function createChannelGroup(
 }
 
 export async function deleteChannelGroup(
-  client: Client,
+  client: CommandExecutor,
   cgid: ChannelGroupID,
   force: boolean,
 ): Promise<void> {
@@ -64,7 +64,7 @@ export async function deleteChannelGroup(
 }
 
 export async function renameChannelGroup(
-  client: Client,
+  client: CommandExecutor,
   cgid: ChannelGroupID,
   name: string,
 ): Promise<void> {
@@ -75,7 +75,7 @@ export async function renameChannelGroup(
 }
 
 export async function copyChannelGroup(
-  client: Client,
+  client: CommandExecutor,
   sourceGroupID: ChannelGroupID,
   targetGroupID: ChannelGroupID,
   name: string,
@@ -99,7 +99,7 @@ export async function copyChannelGroup(
  * none the server may return nothing.
  */
 export async function listChannelGroupClients(
-  client: Client,
+  client: CommandExecutor,
   options: { cid?: ChannelID; cldbid?: ClientDBID; cgid?: ChannelGroupID } = {},
 ): Promise<Array<{ channelID: ChannelID; databaseID: ClientDBID; groupID: ChannelGroupID }>> {
   const rows = await query(client, "channelgroupclientlist", [
@@ -116,14 +116,14 @@ export async function listChannelGroupClients(
 
 /** Permissions set on a channel group. */
 export async function listChannelGroupPermissions(
-  client: Client,
+  client: CommandExecutor,
   cgid: ChannelGroupID,
 ): Promise<PermissionEntry[]> {
   return (await query(client, "channelgrouppermlist", [["cgid", cgid]])).map(parsePermission);
 }
 
 export async function addChannelGroupPermission(
-  client: Client,
+  client: CommandExecutor,
   cgid: ChannelGroupID,
   options: { permvalue: number; permid?: PermissionID; permsid?: string },
 ): Promise<void> {
@@ -136,7 +136,7 @@ export async function addChannelGroupPermission(
 }
 
 export async function deleteChannelGroupPermission(
-  client: Client,
+  client: CommandExecutor,
   cgid: ChannelGroupID,
   options: { permid?: PermissionID; permsid?: string },
 ): Promise<void> {
@@ -150,7 +150,7 @@ export async function deleteChannelGroupPermission(
 // ---- Permissions ------------------------------------------------------------
 
 /** The server's full permission catalogue. */
-export async function listPermissions(client: Client): Promise<Record<string, string>[]> {
+export async function listPermissions(client: CommandExecutor): Promise<Record<string, string>[]> {
   return query(client, "permissionlist");
 }
 
@@ -162,7 +162,7 @@ export async function listPermissions(client: Client): Promise<Record<string, st
  * Granted, it works over the voice protocol like any other query.
  */
 export async function getPermissionIDByName(
-  client: Client,
+  client: CommandExecutor,
   permsid: string,
 ): Promise<PermissionID | undefined> {
   const rows = await query(client, "permidgetbyname", [["permsid", permsid]]);
@@ -172,7 +172,7 @@ export async function getPermissionIDByName(
 
 /** Every place a permission is set, as `permfind` reports it. */
 export async function findPermission(
-  client: Client,
+  client: CommandExecutor,
   options: { permid?: PermissionID; permsid?: string },
 ): Promise<Array<{ type: number; id1: bigint; id2: bigint; permission: bigint }>> {
   const rows = await query(client, "permfind", [
@@ -189,7 +189,7 @@ export async function findPermission(
 
 /** A client's effective permissions in a channel. */
 export async function getPermissionOverview(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   cldbid: ClientDBID,
   options: { permid?: PermissionID; permsid?: string } = {},
@@ -208,7 +208,7 @@ export async function getPermissionOverview(
  * Destructive: every custom permission on the server goes. It also drops the
  * caller's own rights, because it resets the group they rely on.
  */
-export async function resetPermissions(client: Client): Promise<void> {
+export async function resetPermissions(client: CommandExecutor): Promise<void> {
   await exec(client, "permreset");
 }
 
@@ -239,17 +239,17 @@ const parseKey = (row: Record<string, string>): PrivilegeKey => ({
 });
 
 /** Every privilege key on the server. */
-export async function listPrivilegeKeys(client: Client): Promise<PrivilegeKey[]> {
+export async function listPrivilegeKeys(client: CommandExecutor): Promise<PrivilegeKey[]> {
   return (await query(client, "privilegekeylist")).map(parseKey);
 }
 
-export async function listTokens(client: Client): Promise<PrivilegeKey[]> {
+export async function listTokens(client: CommandExecutor): Promise<PrivilegeKey[]> {
   return (await query(client, "tokenlist")).map(parseKey);
 }
 
 /** Create a privilege key. Returns the key as the server generated it. */
 export async function addPrivilegeKey(
-  client: Client,
+  client: CommandExecutor,
   options: {
     /** 0 = server group, 1 = channel group. */
     tokenType: number;
@@ -269,7 +269,7 @@ export async function addPrivilegeKey(
   return str(rows[0] ?? {}, "token");
 }
 
-export async function deletePrivilegeKey(client: Client, token: string): Promise<void> {
+export async function deletePrivilegeKey(client: CommandExecutor, token: string): Promise<void> {
   await exec(client, "privilegekeydelete", [["token", token]]);
 }
 
@@ -278,12 +278,12 @@ export async function deletePrivilegeKey(client: Client, token: string): Promise
  *
  * The key grants only if this connection has not already used one.
  */
-export async function usePrivilegeKey(client: Client, token: string): Promise<void> {
+export async function usePrivilegeKey(client: CommandExecutor, token: string): Promise<void> {
   await exec(client, "privilegekeyuse", [["token", token]]);
 }
 
 export async function addToken(
-  client: Client,
+  client: CommandExecutor,
   options: { tokenType: number; tokenID1: bigint; tokenID2: bigint; description?: string },
 ): Promise<string> {
   const rows = await query(client, "tokenadd", [
@@ -295,10 +295,10 @@ export async function addToken(
   return str(rows[0] ?? {}, "token");
 }
 
-export async function deleteToken(client: Client, token: string): Promise<void> {
+export async function deleteToken(client: CommandExecutor, token: string): Promise<void> {
   await exec(client, "tokendelete", [["token", token]]);
 }
 
-export async function useToken(client: Client, token: string): Promise<void> {
+export async function useToken(client: CommandExecutor, token: string): Promise<void> {
   await exec(client, "tokenuse", [["token", token]]);
 }

@@ -19,7 +19,14 @@ import { CommandTracker, appendReturnCode, parseServerError } from "./commands.j
 import { uploadFileData, downloadFileData } from "./transfer.js";
 import { buildCommandChain, buildEventChain } from "./events.js";
 import { processInit1 } from "./handshake/crypt-handshake.js";
-import { handleHandshakeInitIV, handleHandshakeExpand2, handleInitServer } from "./handshake.js";
+import {
+  handleHandshakeInitIV,
+  handleHandshakeExpand2,
+  handleInitServer,
+  prepareClientPassword,
+} from "./handshake.js";
+import { encodeRequest } from "./command/request.js";
+import type { CommandExecutor, CommandRequest } from "./command/request.js";
 import { handleNotification } from "./notifications.js";
 import { parseCommand } from "./command/parser.js";
 import { CommandThrottle } from "./throttle.js";
@@ -61,7 +68,7 @@ function normalizeClientInitOptions(options: ClientOptions): ClientInitOptions {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyHandler = (arg: any) => void;
 
-export class Client {
+export class Client implements CommandExecutor {
   // Internal — accessible from handshake.ts helpers
   /** @internal */ crypt: Crypt;
   /** @internal */ handler: PacketHandler;
@@ -231,6 +238,17 @@ export class Client {
   async sendCommandNoWait(cmd: string): Promise<void> {
     await this.#throttle.wait();
     await this.#finalCmdHandler(cmd);
+  }
+
+  /**
+   * Send a typed command; this is the CommandExecutor the typed commands run on.
+   *
+   * Channel passwords are hashed here because that is this protocol's rule:
+   * the voice protocol expects `base64(sha1(password))`, where ServerQuery
+   * takes the password itself.
+   */
+  send(request: CommandRequest): Promise<Record<string, string>[]> {
+    return this.execCommandWithResponse(encodeRequest(request, prepareClientPassword));
   }
 
   async execCommand(cmd: string, timeoutMs = 10_000): Promise<void> {

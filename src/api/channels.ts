@@ -10,7 +10,7 @@
 
 import { exec, query, parseChannel, parsePermission, big, str } from "./command.js";
 import type { ParamValue } from "./command.js";
-import type { Client } from "../client.js";
+import type { CommandExecutor } from "../command/request.js";
 import type { ChannelID, ClientDBID, PermissionID } from "../command/ids.js";
 import { asChannelID } from "../command/ids.js";
 import type { Channel, PermissionEntry } from "./command.js";
@@ -41,7 +41,7 @@ export interface ChannelCreateOptions {
 
 /** Create a channel and return the id the server assigned. */
 export async function createChannel(
-  client: Client,
+  client: CommandExecutor,
   options: ChannelCreateOptions,
 ): Promise<ChannelID> {
   const rows = await query(
@@ -80,7 +80,7 @@ export interface ChannelEditOptions {
 
 /** Change a channel's settings. Only the fields you set are sent. */
 export async function editChannel(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   options: Omit<ChannelEditOptions, "cid">,
 ): Promise<void> {
@@ -98,7 +98,11 @@ export async function editChannel(
  * `force` is required by the server, not just conventional: deleting a channel
  * that still holds clients fails without it.
  */
-export async function deleteChannel(client: Client, cid: ChannelID, force: boolean): Promise<void> {
+export async function deleteChannel(
+  client: CommandExecutor,
+  cid: ChannelID,
+  force: boolean,
+): Promise<void> {
   await exec(client, "channeldelete", [
     ["cid", cid],
     ["force", force],
@@ -106,7 +110,7 @@ export async function deleteChannel(client: Client, cid: ChannelID, force: boole
 }
 
 /** All channels on the server, in the server's own sort order. */
-export async function listChannels(client: Client): Promise<Channel[]> {
+export async function listChannels(client: CommandExecutor): Promise<Channel[]> {
   return (await query(client, "channellist")).map(parseChannel);
 }
 
@@ -117,20 +121,14 @@ export async function listChannels(client: Client): Promise<Channel[]> {
  * is whatever was asked for — so the id is taken from the argument rather than
  * read from the row, where it would come back 0.
  */
-export async function getChannelInfo(client: Client, cid: ChannelID): Promise<Channel> {
+export async function getChannelInfo(client: CommandExecutor, cid: ChannelID): Promise<Channel> {
   const rows = await query(client, "channelinfo", [["cid", cid]]);
   return { ...parseChannel(rows[0] ?? {}), id: cid };
 }
 
-/** The channel's description, which `listChannels` omits for bandwidth. */
-export async function getChannelDescription(client: Client, cid: ChannelID): Promise<string> {
-  const rows = await query(client, "channelgetdescription", [["cid", cid]]);
-  return str(rows[0] ?? {}, "channel_description");
-}
-
 /** Channels whose name contains `pattern`. */
 export async function findChannels(
-  client: Client,
+  client: CommandExecutor,
   pattern: string,
 ): Promise<Array<{ id: ChannelID; name: string }>> {
   const rows = await query(client, "channelfind", [["pattern", pattern]]);
@@ -139,7 +137,7 @@ export async function findChannels(
 
 /** Move a channel to a new parent and/or position. */
 export async function moveChannel(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   cpid: ChannelID,
   order?: bigint,
@@ -151,22 +149,6 @@ export async function moveChannel(
   ]);
 }
 
-export async function subscribeChannel(client: Client, cid: ChannelID): Promise<void> {
-  await exec(client, "channelsubscribe", [["cid", cid]]);
-}
-
-export async function unsubscribeChannel(client: Client, cid: ChannelID): Promise<void> {
-  await exec(client, "channelunsubscribe", [["cid", cid]]);
-}
-
-export async function subscribeAllChannels(client: Client): Promise<void> {
-  await exec(client, "channelsubscribeall");
-}
-
-export async function unsubscribeAllChannels(client: Client): Promise<void> {
-  await exec(client, "channelunsubscribeall");
-}
-
 // ---- Channel permissions ----------------------------------------------------
 
 /**
@@ -176,7 +158,7 @@ export async function unsubscribeAllChannels(client: Client): Promise<void> {
  * name form is the readable one.
  */
 export async function addChannelPermission(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   options: { permvalue: number; permid?: PermissionID; permsid?: string },
 ): Promise<void> {
@@ -189,7 +171,7 @@ export async function addChannelPermission(
 }
 
 export async function deleteChannelPermission(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   options: { permid?: PermissionID; permsid?: string },
 ): Promise<void> {
@@ -202,7 +184,7 @@ export async function deleteChannelPermission(
 
 /** Permissions set directly on a channel. */
 export async function listChannelPermissions(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
 ): Promise<PermissionEntry[]> {
   return (await query(client, "channelpermlist", [["cid", cid]])).map(parsePermission);
@@ -210,7 +192,7 @@ export async function listChannelPermissions(
 
 /** Permissions granted to one client within one channel. */
 export async function listChannelClientPermissions(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   cldbid: ClientDBID,
 ): Promise<PermissionEntry[]> {
@@ -223,7 +205,7 @@ export async function listChannelClientPermissions(
 }
 
 export async function addChannelClientPermission(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   cldbid: ClientDBID,
   options: { permvalue: number; permid?: PermissionID; permsid?: string },
@@ -238,7 +220,7 @@ export async function addChannelClientPermission(
 }
 
 export async function deleteChannelClientPermission(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   cldbid: ClientDBID,
   options: { permid?: PermissionID; permsid?: string },

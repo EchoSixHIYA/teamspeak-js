@@ -6,7 +6,7 @@
  */
 
 import { exec, query, str, big, num, bool } from "./command.js";
-import type { Client } from "../client.js";
+import type { CommandExecutor } from "../command/request.js";
 import type { ChannelID, ClientDBID, ClientID } from "../command/ids.js";
 
 // ---- Bans -------------------------------------------------------------------
@@ -41,7 +41,7 @@ const parseBan = (row: Record<string, string>): BanEntry => ({
 });
 
 /** Every active ban. */
-export async function listBans(client: Client): Promise<BanEntry[]> {
+export async function listBans(client: CommandExecutor): Promise<BanEntry[]> {
   return (await query(client, "banlist")).map(parseBan);
 }
 
@@ -50,7 +50,7 @@ export async function listBans(client: Client): Promise<BanEntry[]> {
  * server rejects the call.
  */
 export async function addBan(
-  client: Client,
+  client: CommandExecutor,
   options: {
     ip?: string;
     name?: string;
@@ -72,7 +72,7 @@ export async function addBan(
 
 /** Ban a connected client by clid. */
 export async function banClient(
-  client: Client,
+  client: CommandExecutor,
   clid: ClientID,
   options: { duration?: number; reason?: string } = {},
 ): Promise<bigint> {
@@ -84,11 +84,11 @@ export async function banClient(
   return big(rows[0] ?? {}, "banid");
 }
 
-export async function deleteBan(client: Client, banID: bigint): Promise<void> {
+export async function deleteBan(client: CommandExecutor, banID: bigint): Promise<void> {
   await exec(client, "bandel", [["banid", banID]]);
 }
 
-export async function deleteAllBans(client: Client): Promise<void> {
+export async function deleteAllBans(client: CommandExecutor): Promise<void> {
   await exec(client, "bandelall");
 }
 
@@ -115,14 +115,14 @@ const parseComplaint = (row: Record<string, string>): Complaint => ({
 
 /** Complaints, optionally only those against one client. */
 export async function listComplaints(
-  client: Client,
+  client: CommandExecutor,
   targetDatabaseID?: ClientDBID,
 ): Promise<Complaint[]> {
   return (await query(client, "complainlist", [["tcldbid", targetDatabaseID]])).map(parseComplaint);
 }
 
 export async function addComplaint(
-  client: Client,
+  client: CommandExecutor,
   targetDatabaseID: ClientDBID,
   message: string,
 ): Promise<void> {
@@ -134,7 +134,7 @@ export async function addComplaint(
 
 /** Withdraw a complaint this client filed. */
 export async function deleteComplaint(
-  client: Client,
+  client: CommandExecutor,
   targetDatabaseID: ClientDBID,
   fromDatabaseID: ClientDBID,
 ): Promise<void> {
@@ -146,7 +146,7 @@ export async function deleteComplaint(
 
 /** Withdraw every complaint against a client. */
 export async function deleteAllComplaints(
-  client: Client,
+  client: CommandExecutor,
   targetDatabaseID: ClientDBID,
 ): Promise<void> {
   await exec(client, "complaindelall", [["tcldbid", targetDatabaseID]]);
@@ -174,21 +174,24 @@ const parseMessage = (row: Record<string, string>): OfflineMessage => ({
 });
 
 /** Offline messages for this client. */
-export async function listMessages(client: Client): Promise<OfflineMessage[]> {
+export async function listMessages(client: CommandExecutor): Promise<OfflineMessage[]> {
   return (await query(client, "messagelist")).map(parseMessage);
 }
 
-export async function getMessage(client: Client, messageID: bigint): Promise<OfflineMessage> {
+export async function getMessage(
+  client: CommandExecutor,
+  messageID: bigint,
+): Promise<OfflineMessage> {
   return parseMessage((await query(client, "messageget", [["msgid", messageID]]))[0] ?? {});
 }
 
-export async function deleteMessage(client: Client, messageID: bigint): Promise<void> {
+export async function deleteMessage(client: CommandExecutor, messageID: bigint): Promise<void> {
   await exec(client, "messagedel", [["msgid", messageID]]);
 }
 
 /** Mark a message read or unread. */
 export async function updateMessageFlag(
-  client: Client,
+  client: CommandExecutor,
   messageID: bigint,
   read: boolean,
 ): Promise<void> {
@@ -218,7 +221,7 @@ export const TextMessageTarget = {
  * channel id to a client-mode message reaches an unrelated client.
  */
 export async function sendTextMessage(
-  client: Client,
+  client: CommandExecutor,
   targetMode: number,
   message: string,
   target?: ClientID | ChannelID,
@@ -242,7 +245,7 @@ export interface LogEntry {
 
 /** Read the server log. */
 export async function viewLog(
-  client: Client,
+  client: CommandExecutor,
   options: { lines?: number; reverse?: boolean; instance?: boolean; beginPosition?: bigint } = {},
 ): Promise<LogEntry> {
   const rows = await query(client, "logview", [
@@ -265,7 +268,11 @@ export async function viewLog(
  * `level` follows the server's own levels: 1 error, 2 warning, 3 debug,
  * 4 info.
  */
-export async function addLog(client: Client, level: number, message: string): Promise<void> {
+export async function addLog(
+  client: CommandExecutor,
+  level: number,
+  message: string,
+): Promise<void> {
   await exec(client, "logadd", [
     ["loglevel", level],
     ["logmsg", message],

@@ -9,7 +9,7 @@
 
 import { exec, query, parsePermission, createdGroupID, str, big, num, bool } from "./command.js";
 import type { ParamValue } from "./command.js";
-import type { Client } from "../client.js";
+import type { CommandExecutor } from "../command/request.js";
 import type { ChannelID, ClientDBID, PermissionID, ServerGroupID } from "../command/ids.js";
 import type { PermissionEntry } from "./command.js";
 import { asServerGroupID } from "../command/ids.js";
@@ -43,12 +43,12 @@ const parseServerGroup = (row: Record<string, string>): ServerGroup => ({
 });
 
 /** Every server group. */
-export async function listServerGroups(client: Client): Promise<ServerGroup[]> {
+export async function listServerGroups(client: CommandExecutor): Promise<ServerGroup[]> {
   return (await query(client, "servergrouplist")).map(parseServerGroup);
 }
 
 /** The server's own settings, as `serverinfo` reports them. */
-export async function getServerInfo(client: Client): Promise<Record<string, string>> {
+export async function getServerInfo(client: CommandExecutor): Promise<Record<string, string>> {
   return (await query(client, "serverinfo"))[0] ?? {};
 }
 
@@ -61,7 +61,7 @@ export async function getServerInfo(client: Client): Promise<Record<string, stri
  * be able to write them straight back.
  */
 export async function editServer(
-  client: Client,
+  client: CommandExecutor,
   settings: Record<string, ParamValue>,
 ): Promise<void> {
   await exec(client, "serveredit", Object.entries(settings));
@@ -74,7 +74,7 @@ export async function editServer(
  * Server Admin group holds by default — expect error 2568 until it is granted.
  * Granted, it works over the voice protocol like any other query.
  */
-export async function getHostInfo(client: Client): Promise<Record<string, string>> {
+export async function getHostInfo(client: CommandExecutor): Promise<Record<string, string>> {
   return (await query(client, "hostinfo"))[0] ?? {};
 }
 
@@ -85,13 +85,13 @@ export async function getHostInfo(client: Client): Promise<Record<string, string
  * Server Admin group holds by default — expect error 2568 until it is granted.
  * Granted, it works over the voice protocol like any other query.
  */
-export async function getInstanceInfo(client: Client): Promise<Record<string, string>> {
+export async function getInstanceInfo(client: CommandExecutor): Promise<Record<string, string>> {
   return (await query(client, "instanceinfo"))[0] ?? {};
 }
 
 /** Change the server instance's settings. Passed through as given. */
 export async function editInstance(
-  client: Client,
+  client: CommandExecutor,
   settings: Record<string, ParamValue>,
 ): Promise<void> {
   await exec(client, "instanceedit", Object.entries(settings));
@@ -105,7 +105,7 @@ export async function editInstance(
  * Granted, it works over the voice protocol like any other query.
  */
 export async function listBindings(
-  client: Client,
+  client: CommandExecutor,
   subsystem?: string,
 ): Promise<Array<{ subsystem: string; ip: string; port: number }>> {
   const rows = await query(client, "bindinglist", [["subsystem", subsystem]]);
@@ -118,19 +118,19 @@ export async function listBindings(
 
 /** The server's build version. */
 export async function getVersion(
-  client: Client,
+  client: CommandExecutor,
 ): Promise<{ version: string; build: number; platform: string }> {
   const row = (await query(client, "version"))[0] ?? {};
   return { version: str(row, "version"), build: num(row, "build"), platform: str(row, "platform") };
 }
 
 /** Which server and client this connection is, as the server sees it. */
-export async function whoAmI(client: Client): Promise<Record<string, string>> {
+export async function whoAmI(client: CommandExecutor): Promise<Record<string, string>> {
   return (await query(client, "whoami"))[0] ?? {};
 }
 
 /** Connection statistics for our own session. */
-export async function getConnectionInfo(client: Client): Promise<Record<string, string>> {
+export async function getConnectionInfo(client: CommandExecutor): Promise<Record<string, string>> {
   return (await query(client, "serverrequestconnectioninfo"))[0] ?? {};
 }
 
@@ -141,7 +141,7 @@ export async function getConnectionInfo(client: Client): Promise<Record<string, 
  * Server Admin group holds by default — expect error 2568 until it is granted.
  * Granted, it works over the voice protocol like any other query.
  */
-export async function getServerIDByPort(client: Client, port: number): Promise<bigint> {
+export async function getServerIDByPort(client: CommandExecutor, port: number): Promise<bigint> {
   const rows = await query(client, "serveridgetbyport", [["virtualserver_port", port]]);
   return big(rows[0] ?? {}, "server_id");
 }
@@ -150,7 +150,7 @@ export async function getServerIDByPort(client: Client, port: number): Promise<b
 
 /** Create a server group. */
 export async function createServerGroup(
-  client: Client,
+  client: CommandExecutor,
   name: string,
   type?: number,
 ): Promise<ServerGroupID> {
@@ -162,7 +162,7 @@ export async function createServerGroup(
 }
 
 export async function deleteServerGroup(
-  client: Client,
+  client: CommandExecutor,
   sgid: ServerGroupID,
   force: boolean,
 ): Promise<void> {
@@ -173,7 +173,7 @@ export async function deleteServerGroup(
 }
 
 export async function renameServerGroup(
-  client: Client,
+  client: CommandExecutor,
   sgid: ServerGroupID,
   name: string,
 ): Promise<void> {
@@ -185,7 +185,7 @@ export async function renameServerGroup(
 
 /** Copy a server group; `tsgid` of 0 makes the server allocate a new id. */
 export async function copyServerGroup(
-  client: Client,
+  client: CommandExecutor,
   sourceGroupID: ServerGroupID,
   targetGroupID: ServerGroupID,
   name: string,
@@ -204,7 +204,7 @@ export async function copyServerGroup(
 
 /** Add a client to a server group. */
 export async function addClientToServerGroup(
-  client: Client,
+  client: CommandExecutor,
   sgid: ServerGroupID,
   cldbid: ClientDBID,
 ): Promise<void> {
@@ -215,7 +215,7 @@ export async function addClientToServerGroup(
 }
 
 export async function removeClientFromServerGroup(
-  client: Client,
+  client: CommandExecutor,
   sgid: ServerGroupID,
   cldbid: ClientDBID,
 ): Promise<void> {
@@ -227,7 +227,7 @@ export async function removeClientFromServerGroup(
 
 /** Members of a server group, optionally with their nicknames and uids. */
 export async function listServerGroupClients(
-  client: Client,
+  client: CommandExecutor,
   sgid: ServerGroupID,
   options: { names?: boolean; uids?: boolean } = {},
 ): Promise<Array<{ databaseID: ClientDBID; nickname: string; uid: string }>> {
@@ -245,7 +245,7 @@ export async function listServerGroupClients(
 
 /** Server groups a client belongs to. */
 export async function getServerGroupsByClient(
-  client: Client,
+  client: CommandExecutor,
   cldbid: ClientDBID,
 ): Promise<Array<{ id: ServerGroupID; name: string }>> {
   const rows = await query(client, "servergroupsbyclientid", [["cldbid", cldbid]]);
@@ -254,14 +254,14 @@ export async function getServerGroupsByClient(
 
 /** Permissions set on a server group. */
 export async function listServerGroupPermissions(
-  client: Client,
+  client: CommandExecutor,
   sgid: ServerGroupID,
 ): Promise<PermissionEntry[]> {
   return (await query(client, "servergrouppermlist", [["sgid", sgid]])).map(parsePermission);
 }
 
 export async function addServerGroupPermission(
-  client: Client,
+  client: CommandExecutor,
   sgid: ServerGroupID,
   options: {
     permvalue: number;
@@ -282,7 +282,7 @@ export async function addServerGroupPermission(
 }
 
 export async function deleteServerGroupPermission(
-  client: Client,
+  client: CommandExecutor,
   sgid: ServerGroupID,
   options: { permid?: PermissionID; permsid?: string },
 ): Promise<void> {
@@ -303,7 +303,7 @@ export interface TempPassword {
   targetChannelID: ChannelID;
 }
 
-export async function listTempPasswords(client: Client): Promise<TempPassword[]> {
+export async function listTempPasswords(client: CommandExecutor): Promise<TempPassword[]> {
   const rows = await query(client, "servertemppasswordlist");
   return rows.map((row) => ({
     password: str(row, "pw_clear"),
@@ -316,7 +316,7 @@ export async function listTempPasswords(client: Client): Promise<TempPassword[]>
 
 /** Create a temporary password, and return it as the server generated it. */
 export async function addTempPassword(
-  client: Client,
+  client: CommandExecutor,
   options: {
     description: string;
     /** Validity in seconds. */
@@ -335,6 +335,6 @@ export async function addTempPassword(
   return str(rows[0] ?? {}, "pw_clear");
 }
 
-export async function deleteTempPassword(client: Client, password: string): Promise<void> {
+export async function deleteTempPassword(client: CommandExecutor, password: string): Promise<void> {
   await exec(client, "servertemppassworddel", [["pw", password]]);
 }

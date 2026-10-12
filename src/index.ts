@@ -40,6 +40,7 @@ export {
 
 // Typed command layer, one module per area of the protocol.
 export * from "./api/channels.js";
+export * from "./api/voice.js";
 export * from "./api/clients.js";
 export * from "./api/server.js";
 export * from "./api/groups.js";

@@ -11,7 +11,7 @@
  */
 
 import { exec, query, str, big, num } from "./command.js";
-import type { Client } from "../client.js";
+import type { CommandExecutor } from "../command/request.js";
 import type { ChannelID } from "../command/ids.js";
 import type { FileDownloadInfo, FileUploadInfo } from "../types.js";
 
@@ -36,7 +36,7 @@ const parseFileEntry = (row: Record<string, string>): FileEntry => ({
 
 /** Directory listing for one path in a channel's file area. */
 export async function listFiles(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   path = "/",
   password = "",
@@ -56,7 +56,7 @@ export async function listFiles(
 
 /** Size and timestamp of one file. */
 export async function getFileInfo(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   path: string,
   password = "",
@@ -81,7 +81,7 @@ export async function getFileInfo(
  * this takes an array rather than being called once per file.
  */
 export async function deleteFile(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   paths: string | string[],
   password = "",
@@ -103,7 +103,7 @@ export async function deleteFile(
 
 /** Create a directory, including any missing parents. */
 export async function createDirectory(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   dirname: string,
   password = "",
@@ -122,7 +122,7 @@ export async function createDirectory(
 
 /** Rename or move a file, optionally into another channel. */
 export async function renameFile(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   oldName: string,
   newName: string,
@@ -150,7 +150,7 @@ export async function renameFile(
  * after a failed upload.
  */
 export async function stopFileTransfer(
-  client: Client,
+  client: CommandExecutor,
   serverFileTransferID: number,
   removePartialFile: boolean,
 ): Promise<void> {
@@ -177,7 +177,7 @@ export interface ActiveTransfer {
 }
 
 /** File transfers in progress. Requires the file-transfer-info permission. */
-export async function listActiveTransfers(client: Client): Promise<ActiveTransfer[]> {
+export async function listActiveTransfers(client: CommandExecutor): Promise<ActiveTransfer[]> {
   const rows = await query(client, "ftlist");
   return rows.map((row) => ({
     clientID: num(row, "clid"),
@@ -217,7 +217,7 @@ function nextClientFileTransferID(): number {
  * notification after the command itself has succeeded.
  */
 export async function initFileUpload(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   path: string,
   size: bigint,
@@ -257,7 +257,7 @@ export async function initFileUpload(
  * {@link initFileUpload}.
  */
 export async function initFileDownload(
-  client: Client,
+  client: CommandExecutor,
   cid: ChannelID,
   path: string,
   options: { password?: string; seekPosition?: bigint } = {},
