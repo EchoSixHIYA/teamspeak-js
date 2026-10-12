@@ -126,3 +126,12 @@ export function plainPacket(
 ): Uint8Array {
   return datagram(fakeSignature, s2cHeader(id, type | flags | 0x80), payload);
 }
+
+/** Complete crypto init with fixed keys, as the handshake would have. */
+export function completeCryptoInit(crypt: Crypt): void {
+  crypt.setSharedSecret(
+    new Uint8Array(10).fill(7),
+    new Uint8Array(54).fill(9),
+    new Uint8Array(20).fill(3),
+  );
+}

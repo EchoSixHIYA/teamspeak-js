@@ -11,7 +11,7 @@ import {
 } from "@honeybbq/teamspeak-core";
 import { CommandThrottle } from "./throttle.js";
 import { PacketType, type Packet } from "./transport/packet.js";
-import { FakeSocket } from "./testing/fake-server.js";
+import { FakeSocket, completeCryptoInit } from "./testing/fake-server.js";
 import type { ClientOptions } from "./types.js";
 
 const identity = generateIdentitySync(0);
@@ -49,6 +49,7 @@ async function connected(
   const client = clientOn(() => (socket = new FakeSocket()), options);
   const connecting = client.connect();
   await until(() => clientInternals(client).handler.isOpen);
+  completeCryptoInit(clientInternals(client).crypt);
   clientInternals(client).clid = 5;
   clientInternals(client).markConnected();
   await connecting;

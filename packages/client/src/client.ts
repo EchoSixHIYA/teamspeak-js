@@ -196,6 +196,9 @@ const MAX_PENDING_DELIVERIES = 256;
 /** How often dropped voice is reported, at most. */
 const VOICE_DROP_WARN_INTERVAL_MS = 10_000;
 
+/** The only commands handled before crypto init completes. */
+const PRE_INIT_COMMANDS: ReadonlySet<string> = new Set(["clientinitiv", "initivexpand2", "error"]);
+
 interface Subscription {
   readonly listener: (payload: unknown) => void;
   removed: boolean;
@@ -908,6 +911,16 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #handleCommandStr(s: string): void {
     const cmd = parseCommand(s);
     if (!cmd) return;
+    // Before crypto init a packet needs only the public dummy key, so anyone
+    // on the path could have sent it: nothing but the handshake's own steps,
+    // and an error that may end the attempt, is taken then. A notification
+    // would be a forged event, a row a forged answer.
+    if (!this.#crypt.cryptoInitComplete && !PRE_INIT_COMMANDS.has(cmd.name)) {
+      this.#logger.debug("dropped a command that arrived before crypto init", {
+        command: cmd.name,
+      });
+      return;
+    }
     if (packetChannel.hasSubscribers) packetChannel.publish({ command: cmd.name, client: this });
 
     // No name means a response row: the server sends data without echoing the
@@ -996,6 +1009,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
       return;
     }
 
+    // Only a connected session gets here, so only after crypto init: an error
+    // under the public dummy key can fail an attempt, never stop the client.
     if (err?.code === ErrorCode.ConnectFailedBanned) {
       this.#logger.warn("banned by the server, closing the connection");
       setImmediate(() => this.disconnect().catch(() => {}));

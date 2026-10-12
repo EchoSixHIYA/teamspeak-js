@@ -15,6 +15,8 @@ import {
   commandChannel,
 } from "./index.js";
 import { PacketType, type Packet } from "./transport/packet.js";
+import { FakeSocket, completeCryptoInit, dummyPacket } from "./testing/fake-server.js";
+import { type Logger, noopLogger } from "@honeybbq/teamspeak-core";
 
 function commandPacket(text: string): Packet {
   return {
@@ -32,6 +34,7 @@ function connectedClient(nickname: string, clid: number): Client {
   const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", nickname);
   clientInternals(client).clid = clid;
   clientInternals(client).handler.setClientID(clid);
+  completeCryptoInit(clientInternals(client).crypt);
   return client;
 }
 
@@ -62,6 +65,7 @@ describe("Client self identification on notifycliententerview", () => {
 
   it("still learns its clid from the welcome enter when initserver carried no aclid", () => {
     const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "Bot");
+    completeCryptoInit(clientInternals(client).crypt);
 
     clientInternals(client).handler.onPacket?.(
       commandPacket("notifycliententerview clid=7 ctid=1 client_nickname=Bot"),
@@ -76,6 +80,8 @@ describe("Client self identification on notifycliententerview", () => {
     // signal available, so the first one wins. The clid is then known, which
     // is what stops any later lookalike from taking over.
     const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "Bot");
+    completeCryptoInit(clientInternals(client).crypt);
+    completeCryptoInit(clientInternals(client).crypt);
 
     clientInternals(client).handler.onPacket?.(
       commandPacket("notifycliententerview clid=9 ctid=1 client_nickname=Bot3"),
@@ -254,6 +260,7 @@ describe("events", () => {
       ],
     });
     clientInternals(client).clid = 5;
+    completeCryptoInit(clientInternals(client).crypt);
     const poked: string[] = [];
     client.on("poked", (e) => poked.push(e.message));
 
@@ -275,6 +282,7 @@ describe("being removed by the server", () => {
     const client = await silentServerClient();
     const connecting = client.connect();
     await until(() => clientInternals(client).handler.isOpen);
+    completeCryptoInit(clientInternals(client).crypt);
     clientInternals(client).clid = 5;
     clientInternals(client).markConnected();
     await connecting;
@@ -489,5 +497,62 @@ describe("secrets", () => {
       }
     }
     await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});
+
+describe("before crypto init", () => {
+  /** A client whose handshake has started, on a socket the test feeds. */
+  async function connecting(logger?: Logger): Promise<{
+    client: Client;
+    socket: FakeSocket;
+    attempt: Promise<void>;
+  }> {
+    let socket: FakeSocket | undefined;
+    const client = new Client(generateIdentitySync(0), "127.0.0.1:9987", "Bot", {
+      socketFactory: () => (socket = new FakeSocket()),
+      ...(logger ? { logger } : {}),
+    });
+    const attempt = client.connect();
+    attempt.catch(() => {});
+    await until(() => clientInternals(client).handler.isOpen);
+    return { client, socket: socket!, attempt };
+  }
+  const line = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+  // Under the public dummy key anyone on the path can make a packet.
+  it("drops every notification, initserver and row: they could be forged", async () => {
+    const { client, socket } = await connecting();
+    const crypt = clientInternals(client).crypt;
+    const heard: string[] = [];
+    client.on("textMessage", (m) => heard.push(m.message));
+    client.on("poked", (m) => heard.push(m.message));
+    client.on("notification", (n) => heard.push(n.name));
+
+    const forged = [
+      "notifytextmessage targetmode=3 msg=forged invokerid=7 invokername=Admin invokeruid=x",
+      "notifyclientpoke invokerid=7 invokername=Admin invokeruid=x msg=forged",
+      "initserver aclid=9 virtualserver_name=Forged",
+      "virtualserver_name=row",
+    ];
+    forged.forEach((text, id) => socket.deliver(dummyPacket(crypt, 2, 0x20, id, line(text))));
+    await settle();
+
+    expect(heard).toEqual([]);
+    expect(client.status).toBe(ClientStatus.Connecting);
+    expect(clientInternals(client).clid).toBe(0);
+    await client.disconnect();
+  });
+
+  it("fails the attempt on an error, but never takes the ban path", async () => {
+    const warnings: string[] = [];
+    const logger: Logger = { ...noopLogger, warn: (message) => warnings.push(message) };
+    const { client, socket, attempt } = await connecting(logger);
+    const crypt = clientInternals(client).crypt;
+
+    socket.deliver(dummyPacket(crypt, 2, 0x20, 0, line("error id=3329 msg=banned")));
+
+    await expect(attempt).rejects.toMatchObject({ code: 3329 });
+    expect(client.status).toBe(ClientStatus.Disconnected);
+    expect(warnings).not.toContain("banned by the server, closing the connection");
   });
 });
