@@ -11,7 +11,7 @@
  *
  * ```ts
  * import { tracingChannel } from "node:diagnostics_channel";
-import type { Client } from "./client.js";
+ *
  * tracingChannel("honeybbq:teamspeak:command").subscribe({
  *   start: ({ command }) => console.time(command),
  *   asyncEnd: ({ command }) => console.timeEnd(command),

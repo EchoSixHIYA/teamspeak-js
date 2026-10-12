@@ -22,15 +22,15 @@ export interface CommandRequest {
    * Its parameters, as wire name and value pairs, in the order they are sent;
    * an undefined value is omitted.
    */
-  readonly params?: ReadonlyArray<readonly [string, ParamValue]>;
+  readonly params?: ReadonlyArray<readonly [string, ParamValue]> | undefined;
   /**
    * Further rows, for a command that takes a list: each is a group of
    * parameters sent after a `|`, as `ftdeletefile cid=1 cpw= name=/a|name=/b`
    * sends two names. The first row's parameters follow `params`.
    */
-  readonly rows?: ReadonlyArray<ReadonlyArray<readonly [string, ParamValue]>>;
+  readonly rows?: ReadonlyArray<ReadonlyArray<readonly [string, ParamValue]>> | undefined;
   /** Names of the parameters that carry a channel password. */
-  readonly passwords?: readonly string[];
+  readonly passwords?: readonly string[] | undefined;
 }
 
 /** How long a command may take, and how to abandon it. */
