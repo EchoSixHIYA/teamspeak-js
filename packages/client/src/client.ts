@@ -619,6 +619,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
       }
       const result = handleNotification(cmd, this.clid, this.#clients, this.nickname);
       this.#processNotificationResult(result);
+      if (this.#listeners.get("notification")?.length || this.#eventMiddlewares.length > 0) {
+        this.#emitServerEvent({
+          name: "notification",
+          payload: { name: cmd.name, params: { ...cmd.params } },
+        });
+      }
       return;
     }
 

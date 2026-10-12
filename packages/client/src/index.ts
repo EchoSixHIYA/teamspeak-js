@@ -16,6 +16,7 @@ export type {
   ClientMovedEvent,
   ClientLeftViewEvent,
   KickedEvent,
+  RawNotification,
   ClientInfo,
   PokeEvent,
   VoiceData,

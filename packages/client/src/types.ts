@@ -68,6 +68,17 @@ export interface VoiceData {
   readonly data: Uint8Array;
 }
 
+/**
+ * A notification from the server, as it arrived: the escape hatch for one the
+ * SDK does not model.
+ */
+export interface RawNotification {
+  /** The notification's name, such as `notifyserveredited`. */
+  readonly name: string;
+  /** Its parameters, unescaped. */
+  readonly params: Readonly<Record<string, string>>;
+}
+
 /** The events `Client.on()` takes, and what each delivers. */
 export interface EventMap {
   textMessage: TextMessage;
@@ -76,6 +87,11 @@ export interface EventMap {
   clientMoved: ClientMovedEvent;
   poked: PokeEvent;
   voiceData: VoiceData;
+  /**
+   * Every notification the server sends, modelled or not, after any event it
+   * produces.
+   */
+  notification: RawNotification;
   connected: void;
   /**
    * `undefined` after `disconnect()`, and the cause otherwise: a failed
@@ -94,7 +110,8 @@ export type ServerEventName =
   | "clientLeave"
   | "clientMoved"
   | "poked"
-  | "voiceData";
+  | "voiceData"
+  | "notification";
 
 /** A server event as event middleware sees it. */
 export type ServerEvent = {

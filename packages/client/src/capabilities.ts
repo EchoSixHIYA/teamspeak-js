@@ -8,10 +8,12 @@
  * here, found only by running against TS6.
  *
  * Everything below comes from the handshake — `initserver` carries
- * `virtualserver_version`, the one place the server names itself — so reading
- * it costs no extra round trip.
+ * `virtualserver_version`, the one place the server names itself, along with
+ * its name, icon, banner and welcome message — so reading it costs no extra
+ * round trip.
  */
 
+import { asIconID, type IconID } from "@honeybbq/teamspeak-core";
 import { uidAlgorithmForVersion, type UidAlgorithm } from "./crypto/identity.js";
 
 /** The server generation a version string belongs to. */
@@ -19,22 +21,42 @@ export type ServerFamily = "ts3" | "ts6" | "unknown";
 
 export interface ServerCapabilities {
   /** The `virtualserver_version` string, exactly as the server sent it. */
-  version: string;
+  readonly version: string;
   /** Major version number, or 0 when it could not be parsed. */
-  major: number;
+  readonly major: number;
   /** Which server generation this is. */
-  family: ServerFamily;
+  readonly family: ServerFamily;
   /**
    * The hash the server uses for `client_unique_identifier`.
    *
    * Read from the family rather than offered as a setting: the server decides
    * this, and a client that picks differently never matches.
    */
-  uidAlgorithm: UidAlgorithm;
+  readonly uidAlgorithm: UidAlgorithm;
+  /** The virtual server's name (`virtualserver_name`). */
+  readonly name: string;
+  /**
+   * The server's icon (`virtualserver_icon_id`), or `undefined` for none. The
+   * server sends the icon's CRC32, sometimes as a negative 32-bit number; this
+   * is the unsigned value, which names the icon file.
+   */
+  readonly iconID: IconID | undefined;
+  /** The host banner image's URL (`virtualserver_hostbanner_gfx_url`), if one is set. */
+  readonly hostBannerImageURL: string | undefined;
+  /** The welcome message shown on connecting (`virtualserver_welcomemessage`). */
+  readonly welcomeMessage: string;
 }
 
-/** Parse a `virtualserver_version` value such as "6.0.0-beta13.1 [Build: 1]". */
-export function parseServerCapabilities(version: string): ServerCapabilities {
+/**
+ * Read what a server says about itself in `initserver`, or a version string
+ * alone, such as "6.0.0-beta13.1 [Build: 1]".
+ */
+export function parseServerCapabilities(
+  initserver: string | Readonly<Record<string, string>>,
+): ServerCapabilities {
+  const params =
+    typeof initserver === "string" ? { virtualserver_version: initserver } : initserver;
+  const version = params["virtualserver_version"] ?? "";
   const parsed = Number.parseInt(version, 10);
   const major = Number.isNaN(parsed) ? 0 : parsed;
 
@@ -42,7 +64,25 @@ export function parseServerCapabilities(version: string): ServerCapabilities {
   if (major === 3) family = "ts3";
   else if (major >= 6) family = "ts6";
 
-  return { version, major, family, uidAlgorithm: uidAlgorithmForVersion(version) };
+  return {
+    version,
+    major,
+    family,
+    uidAlgorithm: uidAlgorithmForVersion(version),
+    name: params["virtualserver_name"] ?? "",
+    iconID: parseIconID(params["virtualserver_icon_id"]),
+    hostBannerImageURL: params["virtualserver_hostbanner_gfx_url"]?.trim() || undefined,
+    welcomeMessage: params["virtualserver_welcomemessage"] ?? "",
+  };
+}
+
+/** An icon id, signed or not, as its unsigned CRC32; 0 and garbage mean none. */
+function parseIconID(raw: string | undefined): IconID | undefined {
+  if (raw === undefined || !/^-?\d+$/.test(raw.trim())) return undefined;
+  const value = BigInt(raw.trim());
+  if (value < -(2n ** 31n) || value >= 2n ** 32n) return undefined;
+  const unsigned = BigInt.asUintN(32, value);
+  return unsigned === 0n ? undefined : asIconID(unsigned);
 }
 
 /**

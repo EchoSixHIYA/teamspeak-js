@@ -252,7 +252,7 @@ describe("events", () => {
     );
     await settle();
 
-    expect(names).toEqual(["poked", "clientEnter"]);
+    expect(names).toEqual(["poked", "notification", "clientEnter", "notification"]);
     expect(poked).toEqual([]);
   });
 });
@@ -371,5 +371,21 @@ describe("diagnostics channels", () => {
     ]);
     expect(JSON.stringify(traced)).not.toContain("secret");
     await client.disconnect({ signal: AbortSignal.timeout(50) });
+  });
+});
+
+// After EchoSixHIYA/teamspeak-js (4b82c32, by illusia).
+describe("notification", () => {
+  it("delivers every notification as it arrived, after the event it produces", async () => {
+    const client = connectedClient("Bot", 5);
+    const order: string[] = [];
+    client.on("poked", () => order.push("poked"));
+    client.on("notification", (n) => order.push(`${n.name} ${n.params["msg"] ?? ""}`.trim()));
+
+    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=hi"));
+    client.handler.onPacket?.(commandPacket("notifyserveredited virtualserver_name=X"));
+    await settle();
+
+    expect(order).toEqual(["poked", "notifyclientpoke hi", "notifyserveredited"]);
   });
 });

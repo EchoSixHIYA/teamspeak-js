@@ -46,11 +46,8 @@ export function handleInitServer(client: Client, params: Record<string, string>)
   // the server hashes our public key into client_unique_identifier: SHA-1 on
   // TS3, SHA-256 on TS6. Recording the whole capability set here keeps callers
   // from re-deriving it, or assuming one server generation.
-  const version = params["virtualserver_version"];
-  if (version) {
-    client.capabilities = parseServerCapabilities(version);
-    client.uidAlgorithm = client.capabilities.uidAlgorithm;
-  }
+  client.capabilities = parseServerCapabilities(params);
+  client.uidAlgorithm = client.capabilities.uidAlgorithm;
 
   client.logger.info("connected to server", { selfId: client.clid });
   client._markConnected();
