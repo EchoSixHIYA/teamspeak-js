@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { CommandThrottle } from "./throttle.js";
 
 describe("CommandThrottle", () => {
@@ -33,5 +33,31 @@ describe("CommandThrottle", () => {
     setTimeout(() => controller.abort(new Error("aborted")), 50);
 
     await expect(t.wait(controller.signal)).rejects.toThrow("aborted");
+  });
+
+  // Each waiter used to poll on its own timer, so a later one could take the
+  // turn of one that had waited longer.
+  it("releases waiters in the order they arrived", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = new CommandThrottle();
+      const order: number[] = [];
+      const waits: Promise<void>[] = [];
+      for (let i = 0; i < 12; i++) waits.push(t.wait().then(() => void order.push(i)));
+      // A token is due at 250 ms, and the sleepers woke 10 ms after it.
+      await vi.advanceTimersByTimeAsync(255);
+      for (let i = 12; i < 14; i++) waits.push(t.wait().then(() => void order.push(i)));
+      const aborted = new AbortController();
+      const givenUp = expect(t.wait(aborted.signal)).rejects.toThrow("gave up");
+      aborted.abort(new Error("gave up"));
+      waits.push(t.wait().then(() => void order.push(14)));
+      await vi.advanceTimersByTimeAsync(10_000);
+      await Promise.all(waits);
+
+      expect(order).toEqual([...Array(15).keys()]);
+      await givenUp;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
