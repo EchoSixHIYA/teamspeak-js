@@ -21,7 +21,7 @@ import {
   num,
   date,
 } from "./command.js";
-import type { PageOptions, PermissionEntry, WireNames } from "./command.js";
+import type { PagingOptions, PermissionEntry, WireNames } from "./command.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type {
   ChannelGroupID,
@@ -456,14 +456,14 @@ const parseDatabaseEntry = (row: Record<string, string>): ClientDatabaseEntry =>
 });
 
 /** Which slice of the client database {@link listClientDatabase} reads. */
-export interface ClientDatabasePage extends CommandOptions {
+export interface ClientDatabasePageOptions extends CommandOptions {
   /** The offset of the first record, 0 by default (`start`). */
   readonly start?: number | undefined;
   /** How many records to read at most; the server caps it (`duration`). */
   readonly limit?: number | undefined;
 }
 
-const pageNames: WireNames<ClientDatabasePage> = { start: "start", limit: "duration" };
+const pageNames: WireNames<ClientDatabasePageOptions> = { start: "start", limit: "duration" };
 
 /**
  * One page of persistent client records.
@@ -473,7 +473,7 @@ const pageNames: WireNames<ClientDatabasePage> = { start: "start", limit: "durat
  */
 export async function listClientDatabase(
   client: CommandExecutor,
-  options: ClientDatabasePage = {},
+  options: ClientDatabasePageOptions = {},
 ): Promise<ClientDatabaseEntry[]> {
   return (await list(client, "clientdblist", encodeFields(options, pageNames), options)).map(
     parseDatabaseEntry,
@@ -496,7 +496,7 @@ export async function listClientDatabase(
  */
 export function iterateClientDatabase(
   client: CommandExecutor,
-  options?: PageOptions,
+  options?: PagingOptions,
 ): AsyncIterable<ClientDatabaseEntry> {
   return pages(
     client,

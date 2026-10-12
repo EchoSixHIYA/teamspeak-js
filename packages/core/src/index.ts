@@ -80,4 +80,4 @@ export * from "./api/server.js";
 export * from "./api/groups.js";
 export * from "./api/moderation.js";
 export * from "./api/files.js";
-export type { Channel, PageOptions, PermissionEntry } from "./api/command.js";
+export type { Channel, PagingOptions, PermissionEntry } from "./api/command.js";

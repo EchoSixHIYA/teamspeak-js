@@ -40,7 +40,7 @@ export {
   CryptoInitError,
   InvalidIdentityError,
   RemovedError,
-  TimedOutError,
+  ConnectionTimeoutError,
 } from "./errors.js";
 
 // Commands only the voice protocol has.

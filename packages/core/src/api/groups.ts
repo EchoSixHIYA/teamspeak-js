@@ -182,7 +182,7 @@ export async function copyChannelGroup(
  * Which channel group memberships {@link listChannelGroupClients} reports.
  * Unset fields do not narrow the list.
  */
-export interface ChannelGroupClientFilter extends CommandOptions {
+export interface ChannelGroupClientListOptions extends CommandOptions {
   /** Only memberships in this channel (`cid`). */
   readonly channelID?: ChannelID | undefined;
   /** Only this client's memberships (`cldbid`). */
@@ -191,7 +191,7 @@ export interface ChannelGroupClientFilter extends CommandOptions {
   readonly groupID?: ChannelGroupID | undefined;
 }
 
-const membershipFilterNames: WireNames<ChannelGroupClientFilter> = {
+const membershipFilterNames: WireNames<ChannelGroupClientListOptions> = {
   channelID: "cid",
   databaseID: "cldbid",
   groupID: "cgid",
@@ -215,7 +215,7 @@ export interface ChannelGroupMembership {
  */
 export async function listChannelGroupClients(
   client: CommandExecutor,
-  options: ChannelGroupClientFilter = {},
+  options: ChannelGroupClientListOptions = {},
 ): Promise<ChannelGroupMembership[]> {
   const rows = await list(
     client,

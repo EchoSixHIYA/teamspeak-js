@@ -95,7 +95,7 @@ async function list(
 const DEFAULT_PAGE_SIZE = 100;
 
 /** How {@link pages} walks a paged command. */
-export interface PageOptions extends CommandOptions {
+export interface PagingOptions extends CommandOptions {
   /**
    * How many rows to ask for per page; 100 by default. The server may cap a
    * page below this, which the walk allows for.
@@ -125,7 +125,7 @@ async function* pages<T>(
   command: string,
   parse: (row: Record<string, string>) => T,
   advanced: (previous: T, next: T) => boolean,
-  options: PageOptions = {},
+  options: PagingOptions = {},
 ): AsyncGenerator<T, void, undefined> {
   const { pageSize = DEFAULT_PAGE_SIZE, ...commandOptions } = options;
   if (!Number.isInteger(pageSize) || pageSize < 1) {

@@ -113,7 +113,7 @@ process.on("SIGINT", async () => {
 a `Disposable` (`using listener = client.on(...)`). Listeners run one at a
 time, in the order their events arrived, so a listener may call the client and
 await an answer. `disconnected` delivers `undefined` after `disconnect()`, and
-the cause otherwise — a `TimedOutError`, or a `RemovedError` for a kick, a ban
+the cause otherwise — a `ConnectionTimeoutError`, or a `RemovedError` for a kick, a ban
 or a server stopping. `await using client = new Client(...)` disconnects when
 the scope ends.
 

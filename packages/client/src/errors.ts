@@ -80,13 +80,13 @@ export class InvalidIdentityError extends TeamspeakError {
  * The server stopped answering: nothing arrived, or a packet went
  * unacknowledged, for a minute.
  */
-export class TimedOutError extends TeamspeakError {
+export class ConnectionTimeoutError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
-  static override readonly kind: string = "TimedOutError";
+  static override readonly kind: string = "ConnectionTimeoutError";
 
   constructor() {
     super("connection timed out: the server stopped answering");
-    this.name = "TimedOutError";
+    this.name = "ConnectionTimeoutError";
   }
 }
 

@@ -161,7 +161,7 @@ export interface EventMap {
   connected: void;
   /**
    * `undefined` after `disconnect()`, and the cause otherwise: a failed
-   * handshake, a `TimedOutError`, or a `RemovedError` for a kick, a
+   * handshake, a `ConnectionTimeoutError`, or a `RemovedError` for a kick, a
    * ban or a server stopping.
    */
   disconnected: Error | undefined;

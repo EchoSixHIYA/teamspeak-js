@@ -14,7 +14,7 @@ import {
   buildC2SHeader,
   parseS2CHeader,
 } from "./packet.js";
-import { TimedOutError } from "../errors.js";
+import { ConnectionTimeoutError } from "../errors.js";
 import { abortable, abortReason } from "../abort.js";
 import { NotConnectedError } from "@honeybbq/teamspeak-core";
 import { GenerationWindow } from "./generation-window.js";
@@ -791,7 +791,7 @@ export class PacketHandler {
 
     if (now - this.#lastMessageReceived > PACKET_TIMEOUT_MS) {
       this.#logger.warn("idle timeout");
-      this.#triggerClose(new TimedOutError());
+      this.#triggerClose(new ConnectionTimeoutError());
       return;
     }
 
@@ -802,7 +802,7 @@ export class PacketHandler {
     for (const [key, rp] of this.#ackManager) {
       if (now - rp.firstSend > PACKET_TIMEOUT_MS) {
         this.#ackManager.delete(key);
-        this.#triggerClose(new TimedOutError());
+        this.#triggerClose(new ConnectionTimeoutError());
         return;
       }
       this.#doResend(rp, now);

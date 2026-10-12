@@ -107,6 +107,10 @@ take them in the options object:
 | `listBindings(c, subsystem)`                                                                      | `listBindings(c, { subsystem })`                               |
 | `banClient`, `viewLog`, `listClientDatabase`, `listServerGroupClients`, `listChannelGroupClients` | their options and `{ signal, timeout }` merged into one object |
 
+The options types are named `…Options` like the rest: `listClientDatabase`
+takes a `ClientDatabasePageOptions`, `listChannelGroupClients` a
+`ChannelGroupClientListOptions`, and `pages` a `PagingOptions`.
+
 Ids the server hands back are branded like the rest: a ban is a `BanID`
 (`BanEntry.id`, `addBan`, `banClient`, `deleteBan`), an offline message a
 `MessageID`, a virtual server a `ServerID` (`WhoAmI.serverID`,
@@ -165,7 +169,9 @@ copies. A handshake that fails on what
 the server sent rejects with a `CryptoInitError`; `parseIdentity` throws only
 an `InvalidIdentityError`. `EAXTagMismatchError` and
 `FakeSignatureMismatchError` are no longer exported: a packet that fails them
-is dropped, and they never reached a caller.
+is dropped, and they never reached a caller. `TimedOutError` is now
+`ConnectionTimeoutError`, which says which timeout it is: a command's is a
+`CommandTimeoutError`.
 
 The exported tables — `ErrorCode`, `Reason`, `ClientStatus`, every enumeration,
 `noopLogger`, `consoleLogger` and `defaultBackoffPolicy` — are frozen.
@@ -191,7 +197,7 @@ stop the others: its exception surfaces as an `uncaughtException`, as an
 EventEmitter listener's would, and the event still reaches the listeners after
 it. `disconnected` is `undefined`
 only after `disconnect()`; otherwise it is the cause, such as a `RemovedError`
-for a kick or a `TimedOutError`. Channel kicks now reach `kicked`. Ids in
+for a kick or a `ConnectionTimeoutError`. Channel kicks now reach `kicked`. Ids in
 events are branded, and `clientEnter` delivers the same `ClientEntry` that
 `listClients` returns.
 
