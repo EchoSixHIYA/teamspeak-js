@@ -52,6 +52,8 @@ export interface ChannelInfo {
   parentID: bigint;
   /** ID of the sibling channel after which this channel is placed. */
   order: bigint;
+  /** Whether joining this channel requires a password. The password itself is never exposed. */
+  passwordProtected?: boolean;
 }
 
 /** Additional client state included in a live server directory snapshot. */

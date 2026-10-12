@@ -5,6 +5,12 @@ import { parseInt10, parseUint16, parseUint64 } from "./helpers.js";
 export function parseDirectoryChannel(params: Record<string, string>): ChannelInfo | null {
   const id = parseUint64(params["cid"] ?? "");
   if (id === 0n) return null;
+  const passwordProtected =
+    params["channel_flag_password"] === "1"
+      ? true
+      : params["channel_flag_password"] === "0"
+        ? false
+        : undefined;
 
   return {
     id,
@@ -12,6 +18,7 @@ export function parseDirectoryChannel(params: Record<string, string>): ChannelIn
     order: parseUint64(params["channel_order"] ?? params["order"] ?? ""),
     name: params["channel_name"] ?? "",
     description: params["channel_topic"] ?? params["channel_description"] ?? "",
+    ...(passwordProtected === undefined ? {} : { passwordProtected }),
   };
 }
 
@@ -66,6 +73,9 @@ export function applyChannelNotification(
       }
       if (params["channel_order"] !== undefined || params["order"] !== undefined) {
         next.order = parseUint64(params["channel_order"] ?? params["order"] ?? "");
+      }
+      if (params["channel_flag_password"] === "0" || params["channel_flag_password"] === "1") {
+        next.passwordProtected = params["channel_flag_password"] === "1";
       }
       channels.set(id, next);
       return true;

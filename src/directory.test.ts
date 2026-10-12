@@ -5,6 +5,7 @@ import {
   parseDirectoryChannel,
   parseDirectoryClient,
 } from "./directory.js";
+import type { ChannelInfo } from "./types.js";
 
 describe("directory parsing", () => {
   it("keeps values already decoded by the command parser unchanged", () => {
@@ -23,6 +24,18 @@ describe("directory parsing", () => {
       name: "Lobby Room",
       description: "A|B",
     });
+  });
+
+  it("includes the public channel password-required flag when provided", () => {
+    expect(
+      parseDirectoryChannel({ cid: "2", channel_name: "msicbot", channel_flag_password: "1" }),
+    ).toMatchObject({ id: 2n, name: "msicbot", passwordProtected: true });
+    expect(
+      parseDirectoryChannel({ cid: "3", channel_name: "Lobby", channel_flag_password: "0" }),
+    ).toMatchObject({ id: 3n, name: "Lobby", passwordProtected: false });
+    expect(parseDirectoryChannel({ cid: "4", channel_name: "Unknown" })).not.toHaveProperty(
+      "passwordProtected",
+    );
   });
 
   it("parses extended client state from channelclientlist", () => {
@@ -56,7 +69,7 @@ describe("directory parsing", () => {
   });
 
   it("updates the channel map from channel notifications", () => {
-    const channels = new Map([
+    const channels = new Map<bigint, ChannelInfo>([
       [
         1n,
         {
@@ -77,6 +90,7 @@ describe("directory parsing", () => {
           channel_name: "New Lobby",
           channel_topic: "new",
           channel_order: "9",
+          channel_flag_password: "1",
         },
         channels,
       ),
@@ -87,15 +101,25 @@ describe("directory parsing", () => {
       order: 9n,
       name: "New Lobby",
       description: "new",
+      passwordProtected: true,
     });
 
     expect(
-      applyChannelNotification("notifychannelmoved", { cid: "1", cpid: "2" }, channels),
+      applyChannelNotification(
+        "notifychanneledited",
+        { cid: "1", channel_flag_password: "0" },
+        channels,
+      ),
     ).toBe(true);
+    expect(channels.get(1n)?.passwordProtected).toBe(false);
+
+    expect(applyChannelNotification("notifychannelmoved", { cid: "1", cpid: "2" }, channels)).toBe(
+      true,
+    );
     expect(channels.get(1n)?.parentID).toBe(2n);
     expect(channels.get(1n)?.order).toBe(9n);
 
-      expect(applyChannelNotification("notifychanneldeleted", { cid: "1" }, channels)).toBe(true);
+    expect(applyChannelNotification("notifychanneldeleted", { cid: "1" }, channels)).toBe(true);
     expect(channels.size).toBe(0);
   });
 
