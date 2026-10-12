@@ -7,8 +7,13 @@ import { abortable } from "../abort.js";
 const TS_DNS_DEFAULT_PORT = 41144;
 const NICKNAME_LOOKUP_URL = "https://named.myteamspeak.com/lookup";
 const CACHE_TTL_MS = 10 * 60 * 1000;
-/** How long resolution may take in all; past it, the address is used as given. */
-const RESOLVE_BUDGET_MS = 8_000;
+/**
+ * How long resolution may take in all; past it, the address is used as given.
+ * A Client holds any resolver, its own or a custom one, to the same budget.
+ *
+ * @internal
+ */
+export const RESOLVE_BUDGET_MS = 10_000;
 /** How long one TSDNS server may take to answer. */
 const TSDNS_TIMEOUT_MS = 3_000;
 

@@ -527,3 +527,34 @@ describe("the goodbye", () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 });
+
+describe("address resolution", () => {
+  // A custom resolver used to be bounded by nothing but the caller's signal.
+  it("holds a custom resolver to the 10 s budget, then connects as given", async () => {
+    let seen: AbortSignal | undefined;
+    const client = clientOn(() => new FakeSocket(), {
+      resolver: {
+        resolve: (_addr, options) => {
+          seen = options?.signal;
+          return new Promise(() => {});
+        },
+      },
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let connecting: Promise<void>;
+    try {
+      connecting = client.connect();
+      connecting.catch(() => {});
+      await vi.advanceTimersByTimeAsync(9_990);
+      expect(seen?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(20);
+      expect(seen?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+    await until(() => clientInternals(client).handler.isOpen);
+    expect(client.status).toBe("connecting");
+    await client.disconnect();
+    await expect(connecting).rejects.toBeInstanceOf(NotConnectedError);
+  });
+});

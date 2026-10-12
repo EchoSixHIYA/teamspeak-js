@@ -272,8 +272,9 @@ takes its signal in an options object, and returns `ResolvedAddr`s whose
 
 A dot-less address (`mybox`) was sent to named.myteamspeak.com as a server
 nickname. That lookup is now opt-in, with `resolveNicknames: true`; without it
-the name is resolved like any host. Resolution as a whole is bounded at eight
-seconds, after which the address is used as given.
+the name is resolved like any host. Resolution as a whole is bounded at ten
+seconds, after which the address is used as given; the client holds a custom
+`resolver` to the same budget, through the `signal` it passes in.
 
 ## Transports
 

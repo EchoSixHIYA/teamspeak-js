@@ -29,7 +29,7 @@ import {
 import { AlreadyConnectedError, CryptoInitError, RemovedError } from "./errors.js";
 import { abortable, abortReason } from "./abort.js";
 import { Identity, Crypt } from "./crypto/index.js";
-import { Resolver } from "./discovery/resolver.js";
+import { RESOLVE_BUDGET_MS, Resolver } from "./discovery/resolver.js";
 import { PacketHandler } from "./transport/handler.js";
 import { PacketType } from "./transport/packet.js";
 import type { Packet } from "./transport/packet.js";
@@ -878,21 +878,35 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#capabilities = unknownServerCapabilities();
   }
 
-  async #resolveAddr(signal: AbortSignal | undefined): Promise<string> {
+  async #resolveAddr(signal: AbortSignal): Promise<string> {
     // Parsed, not tested for a colon: an IPv6 literal has colons and no port.
     const { host, port } = splitHostPort(this.#addr);
     const fallback = joinHostPort(host, port);
+    // Every resolver, a custom one too, gets the same budget: past it the
+    // address is used as given. A timer the tests can control, not
+    // AbortSignal.timeout().
+    const budget = new AbortController();
+    const timer = setTimeout(
+      () => budget.abort(new TeamspeakError("address resolution took too long")),
+      RESOLVE_BUDGET_MS,
+    );
+    const lookup = AbortSignal.any([signal, budget.signal]);
     try {
       // Raced against the signal: a resolver that ignores it must still not
       // hold up an attempt that has been given up.
-      const resolved = await abortable(this.#resolver.resolve(this.#addr, { signal }), signal);
+      const resolved = await abortable(
+        this.#resolver.resolve(this.#addr, { signal: lookup }),
+        lookup,
+      );
       return resolved[0]?.addr ?? fallback;
     } catch (error) {
-      signal?.throwIfAborted();
+      signal.throwIfAborted();
       this.#logger.warn("address resolution failed, falling back to direct", {
-        error: String(error),
+        error: String(budget.signal.aborted ? budget.signal.reason : error),
       });
       return fallback;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

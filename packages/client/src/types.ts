@@ -283,8 +283,9 @@ export interface ResolvedAddr {
 export interface AddrResolver {
   /**
    * The endpoints for `addr`, best first. An empty answer falls back to `addr`
-   * itself. `signal` aborts when the connection attempt is given up; a
-   * resolver that ignores it is abandoned all the same.
+   * itself. `signal` aborts when the connection attempt is given up, or once
+   * resolution has taken 10 seconds, after which the client connects to
+   * `addr` as given; a resolver that ignores it is abandoned all the same.
    */
   resolve(
     addr: string,

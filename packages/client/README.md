@@ -292,6 +292,10 @@ const client = new Client(identity, "ts.example.com", "Bot", {
 });
 ```
 
+Address resolution — the built-in one or a custom `resolver` — has ten seconds
+in all: the `signal` a resolver is given aborts then, and the client connects
+to the address as given.
+
 `commandMiddleware` wraps the typed commands: each middleware receives the
 request (its command name and parameters) with its options and returns the
 answering rows, so it can time, retry or answer a command itself. Raw `exec`
