@@ -149,6 +149,11 @@ meaning. `backoffDelay(policy, attempt)` takes no random source, and
 
 ## Status
 
+The client's state is read through getters: `client.status`,
+`client.clientID`, `client.channelID`, `client.uid` (was
+`uniqueIdentifier()`) and `client.serverCapabilities` — no parentheses, and
+the ids are already branded.
+
 `ClientStatus` is a string union (`"disconnected"`, `"connecting"`,
 `"connected"`) rather than a `const enum`; compare against
 `ClientStatus.Connected` as before.

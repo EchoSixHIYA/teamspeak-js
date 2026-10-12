@@ -35,13 +35,13 @@ await c.waitConnected(AbortSignal.timeout(10_000));
 
 const me = await c.execCommandWithResponse("clientinfo", 5000).catch(() => []);
 const myDbId = me[0]?.["client_database_id"] ?? "1";
-console.log(`PROBE clid=${c.clientID()} dbid=${myDbId}`);
+console.log(`PROBE clid=${c.clientID} dbid=${myDbId}`);
 
 // A representative argument set for each command. Wrong arguments still prove
 // the command exists, because the server answers with a parameter error.
 const candidates: Array<[string, string]> = [
   ["banadd", "banadd ip=192.0.2.1 banreason=probe time=60"],
-  ["banclient", `banclient clid=${c.clientID()} time=60`],
+  ["banclient", `banclient clid=${c.clientID} time=60`],
   ["bandel", "bandel banid=1"],
   ["bandelall", "bandelall"],
   ["banlist", "banlist"],
@@ -87,20 +87,20 @@ const candidates: Array<[string, string]> = [
   ["clientdbinfo", `clientdbinfo cldbid=${myDbId}`],
   ["clientdblist", "clientdblist start=0 duration=10"],
   ["clientdelperm", `clientdelperm cldbid=${myDbId} permsid=i_channel_join_power`],
-  ["clientedit", `clientedit clid=${c.clientID()} client_description=probe`],
+  ["clientedit", `clientedit clid=${c.clientID} client_description=probe`],
   ["clientfind", "clientfind pattern=probe"],
   ["clientgetdbidfromuid", "clientgetdbidfromuid cluid=probeuid"],
   ["clientgetids", "clientgetids cluid=probeuid"],
   ["clientgetnamefromdbid", `clientgetnamefromdbid cldbid=${myDbId}`],
   ["clientgetnamefromuid", "clientgetnamefromuid cluid=probeuid"],
-  ["clientgetuidfromclid", `clientgetuidfromclid clid=${c.clientID()}`],
-  ["clientgetvariables", `clientgetvariables clid=${c.clientID()}`],
-  ["clientinfo", `clientinfo clid=${c.clientID()}`],
-  ["clientkick", `clientkick clid=${c.clientID()} reasonid=5`],
+  ["clientgetuidfromclid", `clientgetuidfromclid clid=${c.clientID}`],
+  ["clientgetvariables", `clientgetvariables clid=${c.clientID}`],
+  ["clientinfo", `clientinfo clid=${c.clientID}`],
+  ["clientkick", `clientkick clid=${c.clientID} reasonid=5`],
   ["clientlist", "clientlist"],
-  ["clientmove", `clientmove clid=${c.clientID()} cid=1`],
+  ["clientmove", `clientmove clid=${c.clientID} cid=1`],
   ["clientpermlist", `clientpermlist cldbid=${myDbId}`],
-  ["clientpoke", `clientpoke clid=${c.clientID()} msg=probe`],
+  ["clientpoke", `clientpoke clid=${c.clientID} msg=probe`],
   ["clientsetserverquerylogin", "clientsetserverquerylogin client_login_name=probe"],
   ["clientupdate", "clientupdate client_description=probe"],
   ["complainadd", `complainadd tcldbid=${myDbId} message=probe`],

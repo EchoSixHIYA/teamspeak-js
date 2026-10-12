@@ -71,7 +71,7 @@ beforeAll(async () => {
   });
   selfClientEnter = new Promise((resolve) => {
     client.on("clientEnter", (info) => {
-      if (info.id === client.clientID()) resolve(info);
+      if (info.id === client.clientID) resolve(info);
     });
   });
 
@@ -111,7 +111,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
         `connect auth enabled: serverPassword=${SERVER_PASSWORD !== ""} defaultChannel=${DEFAULT_CHANNEL !== ""} defaultChannelPassword=${DEFAULT_CHANNEL_PASSWORD !== ""}`,
       );
     }
-    expect(sharedClient.clientID()).toBeGreaterThan(0);
+    expect(sharedClient.clientID).toBeGreaterThan(0);
   });
 
   it("reports the handshake failure and disconnects when the password is rejected", async () => {
@@ -147,7 +147,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   });
 
   it("receives a non-zero server-assigned client ID", () => {
-    const clid = sharedClient.clientID();
+    const clid = sharedClient.clientID;
     console.log(`connected: clid=${clid}`);
     expect(clid).toBeGreaterThan(0);
   });
@@ -167,7 +167,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   it("reports the server's version and uid hash", async () => {
     // Capabilities come from initserver, so they are available as soon as the
     // handshake completes and need no extra round trip.
-    const caps = sharedClient.serverCapabilities();
+    const caps = sharedClient.serverCapabilities;
     console.log(
       `capabilities: version="${caps.version}" family=${caps.family} uid=${caps.uidAlgorithm}`,
     );
@@ -176,10 +176,10 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(caps.uidAlgorithm).toBe(caps.family === "ts6" ? "sha256" : "sha1");
 
     // The reported hash must be the one the server applies, not just a claim:
-    // uniqueIdentifier() hashes with it, and the server agrees with the result.
-    const mine = sharedClient.uniqueIdentifier();
+    // uid hashes with it, and the server agrees with the result.
+    const mine = sharedClient.uid;
     const clients = await listClients(sharedClient);
-    const self = clients.find((c) => c.id === sharedClient.clientID());
+    const self = clients.find((c) => c.id === sharedClient.clientID);
     expect(self?.uid).toBe(mine);
   }, 15_000);
 
@@ -187,14 +187,14 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // TS3 hashes the public key with SHA-1 and TS6 with SHA-256. Hard-coding
     // either one silently never matches on the other server, which is exactly
     // how a UID-based self-identification passed on TS3 and failed on TS6.
-    const mine = sharedClient.uniqueIdentifier();
+    const mine = sharedClient.uid;
     // The algorithm comes from the server's version, so it must be stable
     // within one connection.
-    expect(sharedClient.uniqueIdentifier()).toBe(mine);
+    expect(sharedClient.uid).toBe(mine);
 
     const clients = await listClients(sharedClient);
 
-    const self = clients.find((c) => c.id === sharedClient.clientID());
+    const self = clients.find((c) => c.id === sharedClient.clientID);
     console.log(`uid: ours=${mine} server=${self?.uid}`);
     expect(self?.uid).toBe(mine);
   }, 15_000);
@@ -204,7 +204,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
 
     expect(clients.length).toBeGreaterThan(0);
 
-    const ownID = sharedClient.clientID();
+    const ownID = sharedClient.clientID;
     const self = clients.find((c) => c.id === ownID);
     console.log(`self: clid=${ownID} nick="${self?.nickname}" cid=${self?.channelID}`);
     expect(self).toBeDefined();
@@ -246,13 +246,13 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     );
     const me = await whoAmI(sharedClient);
     console.log(`whoami: clid=${me.clientID} cid=${me.channelID} uid=${me.uid}`);
-    expect(me.clientID).toBe(sharedClient.clientID());
-    expect(me.channelID).toBe(sharedClient.channelID());
+    expect(me.clientID).toBe(sharedClient.clientID);
+    expect(me.channelID).toBe(sharedClient.channelID);
   }, 15_000);
 
   it("listClients — reports idle time in milliseconds", async () => {
     const clients = await listClients(sharedClient, { times: true });
-    const self = clients.find((c) => c.id === sharedClient.clientID());
+    const self = clients.find((c) => c.id === sharedClient.clientID);
     console.log(`times: idle=${self?.idleTimeMs}ms created=${self?.createdAt?.toISOString()}`);
     expect(self?.idleTimeMs).toBeGreaterThanOrEqual(0);
     expect(self?.idleTimeMs).toBeLessThan(10 * 60_000);
@@ -273,7 +273,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
       listClients(sharedClient),
     ]);
 
-    const self = clients.find((client) => client.id === sharedClient.clientID());
+    const self = clients.find((client) => client.id === sharedClient.clientID);
     const currentChannel = channels.find((channel) => channel.id === self?.channelID);
 
     expect(self).toBeDefined();
@@ -333,7 +333,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   // collect only data rows, report an empty success for every one of them, and
   // pin that as server behaviour in this very test.
   it("client lookups answer with their data", async () => {
-    const ownID = asClientID(sharedClient.clientID());
+    const ownID = sharedClient.clientID;
     const me = await getClientInfo(sharedClient, ownID);
     const uid = asUID(me["client_unique_identifier"]!);
     const dbid = asClientDBID(BigInt(me["client_database_id"]!));
@@ -363,7 +363,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   // The voice protocol answers channelcreate with notifychannelcreated, not a
   // cid row, so the id came back as 0.
   it("createChannel — returns the new channel's id", async () => {
-    const before = sharedClient.channelID();
+    const before = sharedClient.channelID;
     const name = `ts-js-${Date.now().toString(36)}`;
     const cid = await createChannel(sharedClient, { name });
     try {
@@ -373,14 +373,14 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
       // Creating a channel over the voice protocol moves the creator into it,
       // and the server deletes a temporary channel once its last client
       // leaves — so moving back is the cleanup.
-      await moveClient(sharedClient, asClientID(sharedClient.clientID()), asChannelID(before));
+      await moveClient(sharedClient, sharedClient.clientID, asChannelID(before));
     }
   }, 20_000);
 
   // The key arrives in a notification after the command has already returned;
   // without it there is nothing to dial.
   it("file transfer — uploads and downloads the same bytes", async () => {
-    const cid = asChannelID(sharedClient.channelID());
+    const cid = sharedClient.channelID;
     const path = `/ts-js-${Date.now().toString(36)}.bin`;
     const payload = Buffer.from("hello over file transfer");
     const host = ADDR!.slice(0, ADDR!.lastIndexOf(":"));
@@ -423,7 +423,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   }, 30_000);
 
   it("getClientInfo — returns our own nickname", async () => {
-    const info = await getClientInfo(sharedClient, asClientID(sharedClient.clientID()));
+    const info = await getClientInfo(sharedClient, sharedClient.clientID);
 
     expect(Object.keys(info).length).toBeGreaterThan(0);
     console.log("clientinfo keys:", Object.keys(info).sort().join(", "));
@@ -440,12 +440,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     const target = channels.find((c) => c.name === PASSWORD_CHANNEL);
     expect(target).toBeDefined();
 
-    await moveClient(
-      sharedClient,
-      asClientID(sharedClient.clientID()),
-      target!.id,
-      PASSWORD_CHANNEL_PASSWORD,
-    );
+    await moveClient(sharedClient, sharedClient.clientID, target!.id, PASSWORD_CHANNEL_PASSWORD);
   }, 20_000);
 
   it("reconnects after a dropped connection", async () => {
@@ -467,14 +462,14 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     });
 
     await recovering.connect({ signal: AbortSignal.timeout(30_000) });
-    const firstID = recovering.clientID();
+    const firstID = recovering.clientID;
     expect(firstID).toBeGreaterThan(0);
 
     socket!.close();
 
     const recovered = await new Promise<boolean>((resolve) => {
       const poll = setInterval(() => {
-        if (recovering.status === ClientStatus.Connected && recovering.clientID() !== firstID) {
+        if (recovering.status === ClientStatus.Connected && recovering.clientID !== firstID) {
           clearInterval(poll);
           resolve(true);
         }
@@ -485,7 +480,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
       }, 60_000);
     });
 
-    console.log(`reconnect: ${firstID} -> ${recovering.clientID()}`);
+    console.log(`reconnect: ${firstID} -> ${recovering.clientID}`);
     expect(recovered).toBe(true);
 
     // A reconnect is a fresh session, so it must be usable, not merely
@@ -523,7 +518,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
 
     const frame = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
     for (let i = 0; i < 12; i++) {
-      sharedClient.sendWhisper(frame, [listener.clientID()], 5);
+      sharedClient.sendWhisper(frame, [listener.clientID], 5);
       await new Promise((r) => setTimeout(r, 20));
     }
 
@@ -537,7 +532,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
       });
     });
 
-    const ownID = sharedClient.clientID();
+    const ownID = sharedClient.clientID;
     await sendPrivateMessage(sharedClient, asClientID(ownID), "hello from ts-js-integ");
 
     const msg = await Promise.race([

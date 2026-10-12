@@ -232,7 +232,7 @@ export interface WhoAmI {
   readonly loginName: string;
   /**
    * This connection's unique identifier (`client_unique_identifier`). The voice
-   * protocol sends the field empty; the voice client's `uniqueIdentifier()` has
+   * protocol sends the field empty; the voice client's `uid` has
    * it.
    */
   readonly uid: UID;

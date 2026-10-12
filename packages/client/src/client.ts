@@ -615,15 +615,16 @@ export class Client implements CommandExecutor, AsyncDisposable {
   // ---- API shorthand -------------------------------------------------------
 
   /** This client's id on the server, assigned in the handshake; 0 before it. */
-  clientID(): ClientID {
+  get clientID(): ClientID {
     return asClientID(this.#clid);
   }
 
   /**
    * What the connected server is: version, generation, and the uid hash it
-   * uses. Populated from `initserver`; before connecting it reads as TS3.
+   * uses. Read from `initserver`; before connecting the family is `unknown`
+   * and the uid hash SHA-1.
    */
-  serverCapabilities(): ServerCapabilities {
+  get serverCapabilities(): ServerCapabilities {
     return this.#capabilities;
   }
 
@@ -635,12 +636,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * initserver rather than assuming one. Comparing a hard-coded SHA-1 UID to a
    * TS6 server silently never matches.
    */
-  uniqueIdentifier(): UID {
+  get uid(): UID {
     return this.#identity.uid(this.#capabilities.uidAlgorithm);
   }
 
   /** The channel this client is in, as it last learned; 0 before connecting. */
-  channelID(): ChannelID {
+  get channelID(): ChannelID {
     return this.#clients.get(this.#clid)?.channelID ?? asChannelID(0n);
   }
 

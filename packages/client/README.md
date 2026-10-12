@@ -84,15 +84,16 @@ process.on("SIGINT", async () => {
 
 ### Client Lifecycle
 
-| Method                                        | Description                                    |
-| --------------------------------------------- | ---------------------------------------------- |
-| `new Client(identity, addr, nickname, opts?)` | Create a new client                            |
-| `connect({ signal? })`                        | Connect; resolves once the handshake completes |
-| `disconnect({ signal? })`                     | Leave the server and close the connection      |
-| `clientID()`                                  | Our clid, assigned by the server               |
-| `channelID()`                                 | The channel we are in                          |
-| `serverCapabilities()`                        | Server version, family and uid hash            |
-| `uniqueIdentifier()`                          | Our own uid, hashed as the server does         |
+| Method                                        | Description                                       |
+| --------------------------------------------- | ------------------------------------------------- |
+| `new Client(identity, addr, nickname, opts?)` | Create a new client                               |
+| `connect({ signal? })`                        | Connect; resolves once the handshake completes    |
+| `disconnect({ signal? })`                     | Leave the server and close the connection         |
+| `status`                                      | `"disconnected"`, `"connecting"` or `"connected"` |
+| `clientID`                                    | Our clid, assigned by the server                  |
+| `channelID`                                   | The channel we are in                             |
+| `serverCapabilities`                          | Server version, family and uid hash               |
+| `uid`                                         | Our own uid, hashed as the server does            |
 
 ### Events
 
@@ -159,7 +160,7 @@ const cid = await createChannel(client, {
   isPermanent: true,
 });
 
-await moveClient(client, asClientID(client.clientID()), cid, "channel-password");
+await moveClient(client, client.clientID, cid, "channel-password");
 await sendChannelMessage(client, "hello");
 await kickClient(client, someone, Reason.KickChannel, "take a break");
 
@@ -329,7 +330,7 @@ const client = new Client(identity, "ts.example.com", "Bot", {
 ### Server capabilities
 
 ```typescript
-const caps = client.serverCapabilities();
+const caps = client.serverCapabilities;
 // { version: "6.0.0-beta13.1", major: 6, family: "ts6", uidAlgorithm: "sha256" }
 ```
 

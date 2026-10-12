@@ -29,7 +29,7 @@ async function main(): Promise<void> {
 
   // Register event handlers before connecting
   client.on("connected", () => {
-    console.log(`[example] connected! self clid=${client.clientID()}`);
+    console.log(`[example] connected! self clid=${client.clientID}`);
   });
 
   client.on("disconnected", (err) => {
@@ -53,7 +53,7 @@ async function main(): Promise<void> {
 
   console.log(`[example] connecting to ${ADDR}…`);
   await client.connect({ signal: AbortSignal.timeout(30_000) });
-  console.log(`[example] handshake complete, clid=${client.clientID()}`);
+  console.log(`[example] handshake complete, clid=${client.clientID}`);
 
   // List channels
   try {
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
     const clients = await listClients(client, { times: true }, { timeout: 5_000 });
     console.log(`\n[example] ${clients.length} client(s) online:`);
     for (const cl of clients) {
-      const marker = cl.id === client.clientID() ? " ← (me)" : "";
+      const marker = cl.id === client.clientID ? " ← (me)" : "";
       const idle = cl.idleTimeMs === undefined ? "" : ` idle ${Math.round(cl.idleTimeMs / 1000)}s`;
       console.log(`  [clid=${cl.id}] ${cl.nickname}${idle}${marker}`);
     }

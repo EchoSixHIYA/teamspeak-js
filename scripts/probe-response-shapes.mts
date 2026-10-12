@@ -117,11 +117,11 @@ async function measure(cmd: string): Promise<Shape> {
 }
 
 // Facts later arguments depend on, read through queries already known to work.
-const myClid = me.clientID();
+const myClid = me.clientID;
 const [self] = await me.execCommandWithResponse(`clientinfo clid=${myClid}`, 5000);
 const myDbid = self?.["client_database_id"] ?? "1";
 const myUid = self?.["client_unique_identifier"] ?? "";
-const [victimInfo] = await me.execCommandWithResponse(`clientinfo clid=${victim.clientID()}`, 5000);
+const [victimInfo] = await me.execCommandWithResponse(`clientinfo clid=${victim.clientID}`, 5000);
 const victimDbid = victimInfo?.["client_database_id"] ?? "1";
 const [server] = await me.execCommandWithResponse("serverinfo", 5000);
 const defaultSgid = server?.["virtualserver_default_server_group"] ?? "8";
@@ -263,7 +263,7 @@ const queries: string[] = [
   "version",
   "whoami",
   // Last: banning the victim drops it, which is noise for anything after.
-  `banclient clid=${victim.clientID()} time=1`,
+  `banclient clid=${victim.clientID} time=1`,
 ];
 
 const fmt = (m: Map<string, number>) =>
