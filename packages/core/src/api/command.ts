@@ -8,7 +8,7 @@
  * timeout — which is passed to the executor as it is.
  *
  * Nothing here re-encodes ids or field names by hand at the call site: the
- * branded types in `ids.ts`, the field tables below and the request encoder
+ * branded id types, the field tables below and the request encoder
  * turn parameters into wire form in one place.
  */
 

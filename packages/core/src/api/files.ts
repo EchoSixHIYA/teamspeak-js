@@ -3,7 +3,8 @@
  *
  * These are the control-plane half: they list, move and delete files, and they
  * negotiate an upload or download. The actual bytes travel over a separate TCP
- * connection to the file transfer port, which `transfer.ts` handles.
+ * connection to the file transfer port, which the voice client's
+ * `uploadFileData` and `downloadFileData` handle.
  *
  * Every command here takes a channel password as its `password` option, in
  * cleartext: the voice client sends it as `base64(sha1(password))`, the same

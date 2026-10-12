@@ -4,7 +4,6 @@ export {
   generateIdentity,
   generateIdentitySync,
   uidFromPublicKey,
-  identityPrivateKey,
   uidAlgorithmForVersion,
   hash512,
   importPublicKey,

@@ -1,5 +1,6 @@
 /**
- * Fails when a symbol a package exports has no doc comment.
+ * Fails when a symbol a package exports has no doc comment, or when the
+ * published declarations do not compile.
  *
  * Walks each package's public entry points with the TypeScript compiler API
  * over the built declarations, so it sees exactly what a user imports —
@@ -71,6 +72,32 @@ for (const entry of entries) {
   if (!moduleSymbol) throw new Error(`cannot read ${entry}; run pnpm build first`);
   for (const exported of checker.getExportsOfModule(moduleSymbol))
     visit(exported, exported.getName());
+}
+
+// The declarations must also compile as a user's program sees them, without
+// skipLibCheck: stripInternal can remove a symbol another file still
+// re-exports, which breaks every consumer that type-checks its libraries.
+const strict = ts.createProgram(entries, {
+  noEmit: true,
+  strict: true,
+  types: ["node"],
+  module: ts.ModuleKind.NodeNext,
+  moduleResolution: ts.ModuleResolutionKind.NodeNext,
+  target: ts.ScriptTarget.ES2022,
+  lib: ["lib.es2022.d.ts", "lib.esnext.disposable.d.ts"],
+});
+const broken = ts
+  .getPreEmitDiagnostics(strict)
+  .filter((d) => d.file?.fileName.includes("/packages/"))
+  .map((d) => {
+    const { line } = d.file!.getLineAndCharacterOfPosition(d.start ?? 0);
+    const where = d.file!.fileName.replace(process.cwd() + "/", "");
+    return `${where}:${line + 1}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`;
+  });
+for (const line of broken) console.log(line);
+if (broken.length > 0) {
+  console.log(`\n${broken.length} errors in the published declarations.`);
+  process.exit(1);
 }
 
 for (const line of [...undocumented].sort()) console.log(line);

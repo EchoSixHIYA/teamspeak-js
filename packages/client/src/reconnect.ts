@@ -113,9 +113,11 @@ const PERMANENT_SERVER_ERRORS: ReadonlySet<number> = new Set([
 /**
  * Whether a failure is worth another attempt.
  *
- * Transport failures are retried; so is an unrecognised server error, for the
- * reason given on PERMANENT_SERVER_ERRORS, and a server that stopped. A kick or
- * a ban is not: someone removed the client on purpose.
+ * Transport failures are retried; so is a server that stopped, and a server
+ * error other than the known refusals — a ban, flooding, a wrong server or
+ * channel password, missing permissions — since some, such as 521 "too many
+ * clones" right after a drop, clear by themselves. A kick or a ban is not:
+ * someone removed the client on purpose.
  */
 export function defaultShouldRetry(error: Error | undefined): boolean {
   if (error instanceof RemovedError) {
