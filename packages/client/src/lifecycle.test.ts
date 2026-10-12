@@ -7,6 +7,7 @@ import {
   CommandTimeoutError,
   Codec,
   NotConnectedError,
+  asClientID,
   type Logger,
 } from "@honeybbq/teamspeak-core";
 import { CommandThrottle } from "./throttle.js";
@@ -209,6 +210,29 @@ describe("sending without a connection", () => {
     await client.disconnect({ signal: AbortSignal.timeout(1) });
     expect(() => client.sendVoice(new Uint8Array(4), Codec.OpusVoice)).toThrow(NotConnectedError);
     await expect(client.exec("whoami")).rejects.toBeInstanceOf(NotConnectedError);
+  });
+
+  // The socket is open while connecting, but before crypto init a command
+  // would go out under the public dummy key, a channel password with it.
+  it("refuses everything while the handshake is still running, and sends nothing", async () => {
+    let socket: FakeSocket | undefined;
+    const client = clientOn(() => (socket = new FakeSocket()));
+    const connecting = client.connect();
+    connecting.catch(() => {});
+    await until(() => clientInternals(client).handler.isOpen);
+    const before = socket!.sent.length;
+
+    await expect(client.exec("clientmove clid=1 cid=2 cpw=SECRETHASH")).rejects.toBeInstanceOf(
+      NotConnectedError,
+    );
+    await expect(client.send({ command: "whoami" })).rejects.toBeInstanceOf(NotConnectedError);
+    await expect(client.execNoWait("clientupdate")).rejects.toBeInstanceOf(NotConnectedError);
+    expect(() => client.sendVoice(new Uint8Array(4), Codec.OpusVoice)).toThrow(NotConnectedError);
+    expect(() => client.sendWhisper(new Uint8Array(4), [asClientID(1)], Codec.OpusVoice)).toThrow(
+      NotConnectedError,
+    );
+    expect(socket!.sent.length).toBe(before);
+    await client.disconnect();
   });
 });
 

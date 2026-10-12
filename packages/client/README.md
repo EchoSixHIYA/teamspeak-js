@@ -101,6 +101,10 @@ that does not resolve fails with a `TeamspeakError` whose `cause` is the lookup'
 error. A `connect()` called while `disconnect()` is still saying goodbye waits
 for it to finish, then connects.
 
+Commands, raw `exec`/`execNoWait`, voice and whispers need a connected client:
+until `connect()` resolves, and from the moment `disconnect()` begins, they fail
+with a `NotConnectedError` and send nothing.
+
 ### Events
 
 | Method                        | Description                        |

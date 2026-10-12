@@ -150,6 +150,11 @@ data in a notification. They now return the data.
 exported either: a `CommandExecutor` is handed the request, and a client's
 `send()` encodes it.
 
+Commands, `exec`, `execNoWait`, `sendVoice` and `sendWhisper` fail with a
+`NotConnectedError` unless `client.status` is `"connected"`. They used to need
+only an open socket, so one sent while `connect()` was still running went out
+under the handshake's public key.
+
 ## Errors
 
 ```ts

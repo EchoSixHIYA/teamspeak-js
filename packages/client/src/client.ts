@@ -104,7 +104,10 @@ export interface ClientInternals {
   capabilities: ServerCapabilities;
   /** Mark the attempt in progress connected. */
   markConnected(): void;
-  /** Send a command line without waiting for an answer. */
+  /**
+   * Send a command line without waiting for an answer, on the handshake's
+   * own path: it needs an open socket, not a connected session.
+   */
   execNoWait(command: string): Promise<void>;
   /** Handle a packet as if the current handler had received it. */
   handlePacket(packet: Packet): void;
@@ -324,7 +327,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         self.#capabilities = value;
       },
       markConnected: () => this.#markConnected(),
-      execNoWait: (command) => this.execNoWait(command),
+      execNoWait: (command) => this.#execNoWait(command, undefined, true),
       handlePacket: (packet) => this.#handlePacket(packet),
     };
 
@@ -333,7 +336,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     const cmdMiddlewares: readonly CommandMiddleware[] = options.commandMiddleware ?? [];
     this.#eventMiddlewares = options.eventMiddleware ?? [];
     this.#send = buildCommandChain(cmdMiddlewares, (request, commandOptions = {}) =>
-      this.#exec(encodeRequest(request, prepareClientPassword), commandOptions),
+      this.#exec(encodeRequest(request, prepareClientPassword), commandOptions, false),
     );
     this.#eventChain = buildEventChain([...this.#eventMiddlewares], (event) =>
       this.#deliver(event.name, event.payload),
@@ -446,10 +449,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
     if (wasConnected) {
       try {
-        await this.#exec("clientdisconnect reasonmsg=Shutdown", {
-          signal,
-          timeout: DISCONNECT_TIMEOUT_MS,
-        });
+        // On the internal path: the status already says Disconnected.
+        await this.#exec(
+          "clientdisconnect reasonmsg=Shutdown",
+          { signal, timeout: DISCONNECT_TIMEOUT_MS },
+          true,
+        );
       } catch {
         // A courtesy; the connection closes regardless.
       }
@@ -474,9 +479,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * hatch for a command the typed functions do not cover. The line is sent as
    * given, so its values must already be escaped and any channel password
    * already hashed.
+   *
+   * Rejects with a NotConnectedError unless the client is connected: while it
+   * is still connecting, the session's keys may not exist yet.
    */
   exec(command: string, options: CommandOptions = {}): Promise<Record<string, string>[]> {
-    return this.#exec(command, options);
+    return this.#exec(command, options, false);
   }
 
   /**
@@ -485,17 +493,34 @@ export class Client implements CommandExecutor, AsyncDisposable {
    *
    * Commands are paced by a flood throttle; aborting `signal` while this waits
    * for its turn rejects with the signal's reason and sends nothing. Rejects
-   * with a NotConnectedError when there is no connection to send on.
+   * with a NotConnectedError unless the client is connected.
    */
-  async execNoWait(
+  execNoWait(
     command: string,
     options: { readonly signal?: AbortSignal | undefined } = {},
   ): Promise<void> {
-    const { signal } = options;
+    return this.#execNoWait(command, options.signal, false);
+  }
+
+  /**
+   * Whether a command may go out now. The handshake's own commands (`internal`)
+   * need only an open socket; everything else needs a connected session, so
+   * nothing a caller sends can go out under the public dummy key, or after
+   * disconnect() has begun saying goodbye.
+   */
+  #canSend(internal: boolean): boolean {
+    return this.#handler.isOpen && (internal || this.#status === ClientStatus.Connected);
+  }
+
+  async #execNoWait(
+    command: string,
+    signal: AbortSignal | undefined,
+    internal: boolean,
+  ): Promise<void> {
     signal?.throwIfAborted();
-    if (!this.#handler.isOpen) throw new NotConnectedError();
+    if (!this.#canSend(internal)) throw new NotConnectedError();
     await this.#throttle.wait(signal);
-    if (!this.#handler.isOpen) throw new NotConnectedError();
+    if (!this.#canSend(internal)) throw new NotConnectedError();
     this.#sendLine(command);
   }
 
@@ -517,18 +542,26 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#handler.sendPacket(PacketType.Command, Buffer.from(line), 0);
   }
 
-  #exec(command: string, options: CommandOptions): Promise<Record<string, string>[]> {
-    if (!commandChannel.hasSubscribers) return this.#execUntraced(command, options);
+  #exec(
+    command: string,
+    options: CommandOptions,
+    internal: boolean,
+  ): Promise<Record<string, string>[]> {
+    if (!commandChannel.hasSubscribers) return this.#execUntraced(command, options, internal);
     const trace: CommandTrace = { command: parseCommand(command)?.name ?? "", client: this };
-    return commandChannel.tracePromise(() => this.#execUntraced(command, options), trace);
+    return commandChannel.tracePromise(() => this.#execUntraced(command, options, internal), trace);
   }
 
-  async #execUntraced(command: string, options: CommandOptions): Promise<Record<string, string>[]> {
+  async #execUntraced(
+    command: string,
+    options: CommandOptions,
+    internal: boolean,
+  ): Promise<Record<string, string>[]> {
     const { signal, timeout = DEFAULT_COMMAND_TIMEOUT_MS } = options;
     signal?.throwIfAborted();
     // A command sent on no socket used to vanish and surface 10 seconds later
     // as a timeout, which reads like a slow server rather than a usage error.
-    if (!this.#handler.isOpen) throw new NotConnectedError();
+    if (!this.#canSend(internal)) throw new NotConnectedError();
 
     // Which notifications answer this command, and — for answers that arrive
     // after the `error` — the request field they echo back.
@@ -552,7 +585,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     try {
       const withRc = appendReturnCode(command, rc);
       await Promise.race([this.#throttle.wait(throttleAbort.signal), givenUp]);
-      if (!this.#handler.isOpen) throw new NotConnectedError();
+      if (!this.#canSend(internal)) throw new NotConnectedError();
       this.#sendLine(withRc);
 
       const result = await Promise.race([answered, givenUp]);
@@ -723,19 +756,19 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   /**
    * Send Opus voice directly to specific clients, bypassing channel routing.
-   * Throws a NotConnectedError when there is no connection to send on.
+   * Throws a NotConnectedError unless the client is connected.
    */
   sendWhisper(data: Uint8Array, targetClientIDs: readonly ClientID[], codec: Codec): void {
-    if (!this.#handler.isOpen) throw new NotConnectedError();
+    if (!this.#canSend(false)) throw new NotConnectedError();
     this.#handler.sendWhisperPacket(data, [...targetClientIDs], codec);
   }
 
   /**
    * Send one encoded audio frame to the channel this client is in. Throws a
-   * NotConnectedError when there is no connection to send on.
+   * NotConnectedError unless the client is connected.
    */
   sendVoice(data: Uint8Array, codec: Codec): void {
-    if (!this.#handler.isOpen) throw new NotConnectedError();
+    if (!this.#canSend(false)) throw new NotConnectedError();
     this.#handler.sendVoicePacket(data, codec);
   }
 
