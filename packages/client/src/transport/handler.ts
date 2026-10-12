@@ -1,7 +1,8 @@
-import { createSocket, type Socket as UdpSocket } from "node:dgram";
+import { createSocket } from "node:dgram";
 import { lookup } from "node:dns/promises";
 import { splitHostPort } from "../address.js";
 import type { Crypt } from "../crypto/crypt.js";
+import type { DatagramSocket, SocketFactory } from "../types.js";
 import type { Logger } from "@honeybbq/teamspeak-core";
 import { noopLogger } from "@honeybbq/teamspeak-core";
 import {
@@ -38,15 +39,6 @@ interface ResendPacket {
   nextInterval: number;
 }
 
-/**
- * Creates the UDP socket the client talks through.
- *
- * Receives the resolved address family (4 or 6) and returns a socket of that
- * family. Supplying one lets an application route through a proxy or tunnel,
- * or drive the client from something other than a real socket.
- */
-export type SocketFactory = (family: 4 | 6) => UdpSocket;
-
 export class PacketHandler {
   onPacket: ((p: Packet) => void) | null = null;
   onClosed: ((err: Error | null) => void) | null = null;
@@ -55,7 +47,7 @@ export class PacketHandler {
   readonly #logger: Logger;
   readonly #socketFactory: SocketFactory | undefined;
 
-  #conn: UdpSocket | null = null;
+  #conn: DatagramSocket | null = null;
   #clientID = 0;
   #closed = false;
   #stopPing: (() => void) | null = null;
@@ -98,7 +90,7 @@ export class PacketHandler {
     const { address, family } = await lookup(host);
 
     const family6 = family === 6;
-    const socket = this.#socketFactory
+    const socket: DatagramSocket = this.#socketFactory
       ? this.#socketFactory(family6 ? 6 : 4)
       : createSocket(family6 ? "udp6" : "udp4");
 
@@ -118,7 +110,7 @@ export class PacketHandler {
     });
   }
 
-  start(conn: UdpSocket): void {
+  start(conn: DatagramSocket): void {
     this.#conn = conn;
     this.#closed = false;
     this.#lastMessageReceived = Date.now();
@@ -333,7 +325,7 @@ export class PacketHandler {
   #write(data: Uint8Array): void {
     if (!this.#conn) return;
     try {
-      this.#conn.send(Buffer.from(data), (err) => {
+      this.#conn.send(data, (err) => {
         if (err) this.#logger.warn("udp send error", err);
       });
     } catch (error: unknown) {

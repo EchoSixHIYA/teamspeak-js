@@ -12,8 +12,15 @@ import {
   ClientStatus,
 } from "./types.js";
 import {
+  type ChannelID,
+  type ClientID,
+  type Codec,
   type CommandMiddleware,
   type CommandOptions,
+  type UID,
+  asChannelID,
+  asClientID,
+  asUID,
   type Logger,
   ErrorCode,
   Reason,
@@ -435,10 +442,72 @@ export class Client implements CommandExecutor, AsyncDisposable {
     return unsubscribe;
   }
 
+  /**
+   * An event as an async iterator, for `for await`:
+   *
+   * ```ts
+   * for await (const message of client.events("textMessage", { signal })) { … }
+   * ```
+   *
+   * Events that arrive while the loop body runs are buffered, so none is
+   * missed. Iteration ends when `signal` aborts, when the loop exits early
+   * (`break`, `return`, a throw), and — for every event but `disconnected` —
+   * when the client disconnects.
+   */
+  events<K extends keyof EventMap>(
+    event: K,
+    options: { readonly signal?: AbortSignal | undefined } = {},
+  ): AsyncIterableIterator<EventMap[K]> {
+    const { signal } = options;
+    const buffered: Array<EventMap[K]> = [];
+    let wake: (() => void) | undefined;
+    let ended = signal?.aborted ?? false;
+    const end = (): void => {
+      ended = true;
+      wake?.();
+    };
+
+    const stopListening = this.on(event, ((payload: EventMap[K]) => {
+      buffered.push(payload);
+      wake?.();
+    }) as Listener<K>);
+    const stopOnDisconnect =
+      event === "disconnected" ? undefined : this.on("disconnected", () => end());
+    signal?.addEventListener("abort", end, { once: true });
+    const cleanup = (): void => {
+      ended = true;
+      stopListening();
+      stopOnDisconnect?.();
+      signal?.removeEventListener("abort", end);
+    };
+
+    const iterator: AsyncIterableIterator<EventMap[K]> = {
+      async next(): Promise<IteratorResult<EventMap[K]>> {
+        while (buffered.length === 0 && !ended) {
+          await new Promise<void>((resolve) => (wake = resolve));
+          wake = undefined;
+        }
+        if (buffered.length > 0) return { value: buffered.shift()!, done: false };
+        cleanup();
+        return { value: undefined, done: true };
+      },
+      async return(): Promise<IteratorResult<EventMap[K]>> {
+        cleanup();
+        buffered.length = 0;
+        return { value: undefined, done: true };
+      },
+      [Symbol.asyncIterator]() {
+        return iterator;
+      },
+    };
+    return iterator;
+  }
+
   // ---- API shorthand -------------------------------------------------------
 
-  clientID(): number {
-    return this.clid;
+  /** This client's id on the server, assigned in the handshake; 0 before it. */
+  clientID(): ClientID {
+    return asClientID(this.clid);
   }
 
   /**
@@ -457,32 +526,57 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * initserver rather than assuming one. Comparing a hard-coded SHA-1 UID to a
    * TS6 server silently never matches.
    */
-  uniqueIdentifier(): string {
-    return getUidFromPublicKey(this.#identity.publicKeyBase64(), this.uidAlgorithm);
+  uniqueIdentifier(): UID {
+    return asUID(getUidFromPublicKey(this.#identity.publicKeyBase64(), this.uidAlgorithm));
   }
 
-  channelID(): bigint {
-    const info = this.#clients.get(this.clid);
-    return info?.channelID ?? 0n;
+  /** The channel this client is in, as it last learned; 0 before connecting. */
+  channelID(): ChannelID {
+    return this.#clients.get(this.clid)?.channelID ?? asChannelID(0n);
   }
 
   /** Send Opus voice directly to specific clients, bypassing channel routing. */
-  sendWhisper(data: Uint8Array, targetClientIds: readonly number[], codec: number): void {
-    this.handler.sendWhisperPacket(data, [...targetClientIds], codec);
+  sendWhisper(data: Uint8Array, targetClientIDs: readonly ClientID[], codec: Codec): void {
+    this.handler.sendWhisperPacket(data, [...targetClientIDs], codec);
   }
 
-  sendVoice(data: Uint8Array, codec: number): void {
+  /** Send one encoded audio frame to the channel this client is in. */
+  sendVoice(data: Uint8Array, codec: Codec): void {
     this.handler.sendVoicePacket(data, codec);
   }
 
   // ---- File Transfer -------------------------------------------------------
 
-  uploadFileData(host: string, info: FileUploadInfo, data: Readable): Promise<void> {
-    return uploadFileData(host, info, data, this.#fileTransferSocketFactory);
+  /**
+   * Upload `data` over a negotiated transfer, through the client's
+   * `fileTransferSocketFactory` if it has one.
+   */
+  uploadFileData(
+    host: string,
+    info: FileUploadInfo,
+    data: Readable,
+    options: { readonly signal?: AbortSignal | undefined } = {},
+  ): Promise<void> {
+    return uploadFileData(host, info, data, {
+      ...options,
+      socketFactory: this.#fileTransferSocketFactory,
+    });
   }
 
-  downloadFileData(host: string, info: FileDownloadInfo, dest: Writable): Promise<void> {
-    return downloadFileData(host, info, dest, this.#fileTransferSocketFactory);
+  /**
+   * Download a negotiated transfer into `dest`, through the client's
+   * `fileTransferSocketFactory` if it has one.
+   */
+  downloadFileData(
+    host: string,
+    info: FileDownloadInfo,
+    dest: Writable,
+    options: { readonly signal?: AbortSignal | undefined } = {},
+  ): Promise<void> {
+    return downloadFileData(host, info, dest, {
+      ...options,
+      socketFactory: this.#fileTransferSocketFactory,
+    });
   }
 
   // ---- Internal (package-visible) ------------------------------------------
@@ -571,7 +665,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // Copied: the packet's buffer is reused once this returns, and a listener
     // runs later.
     const data = payload.slice(5);
-    this.#emitServerEvent({ name: "voiceData", payload: { clientId, codec: payload[4]!, data } });
+    this.#emitServerEvent({
+      name: "voiceData",
+      payload: { clientID: asClientID(clientId), codec: payload[4]! as Codec, data },
+    });
   }
 
   #handleCommandLines(s: string): void {
@@ -883,8 +980,8 @@ function kickedEvent(event: {
   readonly reason: number;
   readonly reasonMessage: string;
   readonly invokerName: string;
-  readonly invokerUID: string;
-  readonly invokerID: number;
+  readonly invokerUID: UID;
+  readonly invokerID: ClientID;
 }): KickedEvent {
   return {
     reason: event.reason,

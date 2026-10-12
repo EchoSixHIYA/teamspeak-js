@@ -29,6 +29,7 @@ export type {
   AddrResolver,
   ClientOptions,
   ResolvedAddr,
+  DatagramSocket,
   SocketFactory,
   FileTransferSocketFactory,
 } from "./types.js";
@@ -49,6 +50,7 @@ export * from "./api/voice.js";
 
 // File transfer data
 export { dialFileTransfer, uploadFileData, downloadFileData } from "./transfer.js";
+export type { FileTransferOptions } from "./transfer.js";
 
 // Server capabilities, read from the handshake
 export { parseServerCapabilities, unknownServerCapabilities } from "./capabilities.js";

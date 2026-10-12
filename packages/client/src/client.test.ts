@@ -389,3 +389,57 @@ describe("notification", () => {
     expect(order).toEqual(["poked", "notifyclientpoke hi", "notifyserveredited"]);
   });
 });
+
+describe("events()", () => {
+  it("iterates events in order, buffering those that arrive mid-loop", async () => {
+    const client = connectedClient("Bot", 5);
+    const controller = new AbortController();
+    const seen: string[] = [];
+
+    const loop = (async () => {
+      for await (const poke of client.events("poked", { signal: controller.signal })) {
+        seen.push(poke.message);
+        await new Promise((r) => setTimeout(r, 5));
+        if (seen.length === 3) controller.abort();
+      }
+    })();
+    for (const msg of ["a", "b", "c", "d"]) {
+      client.handler.onPacket?.(commandPacket(`notifyclientpoke invokerid=1 msg=${msg}`));
+    }
+    await loop;
+
+    expect(seen.slice(0, 3)).toEqual(["a", "b", "c"]);
+  });
+
+  it("stops listening when the loop exits early", async () => {
+    const client = connectedClient("Bot", 5);
+    const loop = (async () => {
+      for await (const _poke of client.events("poked")) break;
+    })();
+    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=x"));
+    await loop;
+
+    // Nothing is left listening: a later event has nowhere to go.
+    client.handler.onPacket?.(commandPacket("notifyclientpoke invokerid=1 msg=y"));
+    await settle();
+  });
+
+  it("ends when the client disconnects", async () => {
+    const client = await silentServerClient();
+    const connecting = client.connect();
+    await until(() => client.handler.isOpen);
+    client.clid = 5;
+    client._markConnected();
+    await connecting;
+
+    const loop = (async () => {
+      const seen: string[] = [];
+      for await (const poke of client.events("poked")) seen.push(poke.message);
+      return seen;
+    })();
+    await settle();
+    await client.disconnect({ signal: AbortSignal.timeout(50) });
+
+    await expect(loop).resolves.toEqual([]);
+  });
+});

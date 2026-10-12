@@ -11,6 +11,7 @@
  */
 
 export { isCommandName } from "./command/parser.js";
+export { parseClient } from "./api/parse.js";
 export { parseIconID } from "./command/ids.js";
 export { responseSpec } from "./command/responses.js";
 export type { ResponseSpec } from "./command/responses.js";

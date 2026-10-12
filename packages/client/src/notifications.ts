@@ -6,7 +6,13 @@ import type {
   TextMessage,
   PokeEvent,
 } from "./types.js";
-import { parseUint64, parseUint16, parseInt10 } from "@honeybbq/teamspeak-core/internal";
+import {
+  parseClient,
+  parseUint64,
+  parseUint16,
+  parseInt10,
+} from "@honeybbq/teamspeak-core/internal";
+import { asChannelID, asClientID, asUID, type TextMessageTarget } from "@honeybbq/teamspeak-core";
 
 export type NotificationResult =
   | { kind: "clientEnter"; info: ClientInfo }
@@ -24,7 +30,7 @@ export function handleNotification(
 ): NotificationResult {
   switch (cmd.name) {
     case "notifycliententerview":
-      return handleClientEnterView(cmd, clients, nickname);
+      return handleClientEnterView(cmd, clients);
     case "notifyclientleftview":
       return handleClientLeftView(cmd, selfCLID, clients);
     case "notifyclientmoved":
@@ -38,29 +44,9 @@ export function handleNotification(
   }
 }
 
-function handleClientEnterView(
-  cmd: Command,
-  clients: Map<number, ClientInfo>,
-  _nickname: string,
-): NotificationResult {
-  const clid = parseUint16(cmd.params["clid"] ?? "");
-  const ctid = parseUint64(cmd.params["ctid"] ?? "");
-  const clientType = parseInt10(cmd.params["client_type"] ?? "");
-  const groupsStr = cmd.params["client_servergroups"] ?? "";
-
-  const info: ClientInfo = {
-    id: clid,
-    nickname: cmd.params["client_nickname"] ?? "",
-    uid: cmd.params["client_unique_identifier"] ?? "",
-    channelID: ctid,
-    type: clientType,
-    serverGroups: groupsStr ? groupsStr.split(",") : [],
-  };
-
-  if (clid !== 0) {
-    clients.set(clid, info);
-  }
-
+function handleClientEnterView(cmd: Command, clients: Map<number, ClientInfo>): NotificationResult {
+  const info = parseClient(cmd.params);
+  if (info.id !== 0) clients.set(info.id, info);
   return { kind: "clientEnter", info };
 }
 
@@ -69,7 +55,7 @@ function handleClientLeftView(
   selfCLID: number,
   clients: Map<number, ClientInfo>,
 ): NotificationResult {
-  const clid = parseUint16(cmd.params["clid"] ?? "");
+  const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
   const isSelf = clid !== 0 && clid === selfCLID;
   if (clid !== 0) clients.delete(clid);
   return {
@@ -78,17 +64,17 @@ function handleClientLeftView(
       id: clid,
       reason: parseInt10(cmd.params["reasonid"] ?? ""),
       reasonMessage: cmd.params["reasonmsg"] ?? "",
-      invokerID: parseUint16(cmd.params["invokerid"] ?? ""),
+      invokerID: asClientID(parseUint16(cmd.params["invokerid"] ?? "")),
       invokerName: cmd.params["invokername"] ?? "",
-      invokerUID: cmd.params["invokeruid"] ?? "",
+      invokerUID: asUID(cmd.params["invokeruid"] ?? ""),
     },
     isSelf,
   };
 }
 
 function handleClientMoved(cmd: Command, clients: Map<number, ClientInfo>): NotificationResult {
-  const clid = parseUint16(cmd.params["clid"] ?? "");
-  const ctid = parseUint64(cmd.params["ctid"] ?? "");
+  const clid = asClientID(parseUint16(cmd.params["clid"] ?? ""));
+  const ctid = asChannelID(parseUint64(cmd.params["ctid"] ?? ""));
 
   if (clid !== 0) {
     const existing = clients.get(clid);
@@ -101,24 +87,24 @@ function handleClientMoved(cmd: Command, clients: Map<number, ClientInfo>): Noti
       id: clid,
       targetChannelID: ctid,
       reason: parseInt10(cmd.params["reasonid"] ?? ""),
-      invokerID: parseUint16(cmd.params["invokerid"] ?? ""),
+      invokerID: asClientID(parseUint16(cmd.params["invokerid"] ?? "")),
       invokerName: cmd.params["invokername"] ?? "",
-      invokerUID: cmd.params["invokeruid"] ?? "",
+      invokerUID: asUID(cmd.params["invokeruid"] ?? ""),
     },
     reasonMessage: cmd.params["reasonmsg"] ?? "",
   };
 }
 
 function handleTextMessage(cmd: Command, clients: Map<number, ClientInfo>): NotificationResult {
-  const invokerID = parseUint16(cmd.params["invokerid"] ?? "");
+  const invokerID = asClientID(parseUint16(cmd.params["invokerid"] ?? ""));
   const invokerInfo = clients.get(invokerID);
 
   const message: TextMessage = {
-    targetMode: parseInt10(cmd.params["targetmode"] ?? ""),
-    targetID: parseUint64(cmd.params["target"] ?? ""),
+    targetMode: parseInt10(cmd.params["targetmode"] ?? "") as TextMessageTarget,
+    targetID: asClientID(parseUint16(cmd.params["target"] ?? "")),
     invokerID,
     invokerName: cmd.params["invokername"] ?? "",
-    invokerUID: cmd.params["invokeruid"] ?? invokerInfo?.uid ?? "",
+    invokerUID: asUID(cmd.params["invokeruid"] ?? invokerInfo?.uid ?? ""),
     message: cmd.params["msg"] ?? "",
     invokerGroups: invokerInfo?.serverGroups ?? [],
   };
@@ -130,9 +116,9 @@ function handleClientPoked(cmd: Command): NotificationResult {
   return {
     kind: "poked",
     event: {
-      invokerID: parseUint16(cmd.params["invokerid"] ?? ""),
+      invokerID: asClientID(parseUint16(cmd.params["invokerid"] ?? "")),
       invokerName: cmd.params["invokername"] ?? "",
-      invokerUID: cmd.params["invokeruid"] ?? "",
+      invokerUID: asUID(cmd.params["invokeruid"] ?? ""),
       message: cmd.params["msg"] ?? "",
     },
   };

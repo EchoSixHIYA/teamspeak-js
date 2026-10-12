@@ -44,6 +44,7 @@ import {
 } from "../command/ids.js";
 import type { Permission } from "../permission.js";
 import { Reason } from "../reason.js";
+import { parseClient, parseServerGroups } from "./parse.js";
 
 /** A connected client, as `clientlist` reports one. */
 export interface ClientEntry {
@@ -79,32 +80,6 @@ export interface ClientEntry {
    * (`client_idle_time`), with `times`; undefined without it.
    */
   readonly idleTimeMs: number | undefined;
-}
-
-function parseServerGroups(raw: string): ServerGroupID[] {
-  if (raw === "") return [];
-  return raw.split(",").flatMap((id) => (/^\d+$/.test(id) ? [asServerGroupID(BigInt(id))] : []));
-}
-
-function parseClient(row: Record<string, string>): ClientEntry {
-  return {
-    id: asClientID(num(row, "clid")),
-    nickname: str(row, "client_nickname"),
-    uid: asUID(str(row, "client_unique_identifier")),
-    channelID: asChannelID(big(row, "cid")),
-    type: num(row, "client_type"),
-    serverGroups: parseServerGroups(row["client_servergroups"] ?? ""),
-    isAway: bool(row, "client_away"),
-    isRecording: bool(row, "client_is_recording"),
-    isTalker: bool(row, "client_is_talker"),
-    channelGroupID: asChannelGroupID(big(row, "client_channel_group_id")),
-    createdAt: date(row, "client_created"),
-    lastConnectedAt: date(row, "client_lastconnected"),
-    idleTimeMs:
-      row["client_idle_time"] === undefined
-        ? undefined
-        : durationMs(row, "client_idle_time", MILLISECOND),
-  };
 }
 
 /**

@@ -114,6 +114,18 @@ the cause otherwise — a `TimedOutError`, or a `RemovedError` for a kick, a ban
 or a server stopping. `await using client = new Client(...)` disconnects when
 the scope ends.
 
+`events(name, { signal })` is the same as an async iterator, buffering events
+that arrive while the loop body runs:
+
+```typescript
+for await (const msg of client.events("textMessage", { signal })) {
+  await reply(msg);
+}
+```
+
+`notification` delivers every notification as it arrived, for the ones the SDK
+does not model.
+
 ### Commands
 
 Every command the voice protocol answers is a typed function, grouped by area.
@@ -205,12 +217,12 @@ const info = await initFileUpload(client, cid, "/notes.txt", BigInt(data.length)
 await client.uploadFileData(host, info, Readable.from([data]));
 ```
 
-| Function                                   | Description                       |
-| ------------------------------------------ | --------------------------------- |
-| `initFileUpload(client, ...)`              | Negotiate an upload               |
-| `initFileDownload(client, ...)`            | Negotiate a download              |
-| `client.uploadFileData(host, info, data)`  | Transfer file data to the server  |
-| `client.downloadFileData(host, info, out)` | Receive file data from the server |
+| Function                                                | Description                       |
+| ------------------------------------------------------- | --------------------------------- |
+| `initFileUpload(client, ...)`                           | Negotiate an upload               |
+| `initFileDownload(client, ...)`                         | Negotiate a download              |
+| `client.uploadFileData(host, info, data, { signal? })`  | Transfer file data to the server  |
+| `client.downloadFileData(host, info, out, { signal? })` | Receive file data from the server |
 
 ### Identity
 
@@ -291,7 +303,10 @@ loop keeps trying rather than giving up on the first refusal.
 
 `fileTransferSocketFactory` and `socketFactory` are the only seams into the
 network layer. Without them the SDK always creates its own sockets, so an
-application running behind a proxy has no way through.
+application running behind a proxy has no way through. `socketFactory` returns
+a `DatagramSocket` — a `node:dgram` socket, or anything with the few methods
+it names — and `fileTransferSocketFactory` any `Duplex` stream, such as the
+socket a SOCKS library returns.
 
 ```typescript
 const client = new Client(identity, "ts.example.com", "Bot", {

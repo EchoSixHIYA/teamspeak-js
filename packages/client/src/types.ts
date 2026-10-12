@@ -1,26 +1,43 @@
-import type { CommandMiddleware, Logger } from "@honeybbq/teamspeak-core";
+import type {
+  ChannelID,
+  ClientEntry,
+  ClientID,
+  Codec,
+  CommandMiddleware,
+  Logger,
+  ServerGroupID,
+  TextMessageTarget,
+  UID,
+} from "@honeybbq/teamspeak-core";
+import type { Duplex } from "node:stream";
 import type { ReconnectOptions } from "./reconnect.js";
 
 // ---- Events ---------------------------------------------------------------
 
 export interface TextMessage {
   readonly invokerName: string;
-  readonly invokerUID: string;
+  readonly invokerUID: UID;
   readonly message: string;
-  readonly invokerGroups: readonly string[];
-  readonly targetMode: number;
-  readonly targetID: bigint;
-  readonly invokerID: number;
+  /** The sender's server groups, as this client last saw them. */
+  readonly invokerGroups: readonly ServerGroupID[];
+  /** Private, channel or server; one of `TextMessageTarget`. */
+  readonly targetMode: TextMessageTarget;
+  /**
+   * The client a private message was sent to. Channel and server messages
+   * carry no target, so it is 0 for them.
+   */
+  readonly targetID: ClientID;
+  readonly invokerID: ClientID;
 }
 
 export interface ClientMovedEvent {
   readonly invokerName: string;
-  readonly invokerUID: string;
-  readonly targetChannelID: bigint;
+  readonly invokerUID: UID;
+  readonly targetChannelID: ChannelID;
   /** Why the client moved; compare it with `Reason`. */
   readonly reason: number;
-  readonly id: number;
-  readonly invokerID: number;
+  readonly id: ClientID;
+  readonly invokerID: ClientID;
 }
 
 export interface ClientLeftViewEvent {
@@ -28,11 +45,11 @@ export interface ClientLeftViewEvent {
   readonly reasonMessage: string;
   /** Why the client left; compare it with `Reason`. */
   readonly reason: number;
-  readonly id: number;
+  readonly id: ClientID;
   /** Who kicked or banned the client; empty otherwise. */
   readonly invokerName: string;
-  readonly invokerUID: string;
-  readonly invokerID: number;
+  readonly invokerUID: UID;
+  readonly invokerID: ClientID;
 }
 
 /** This client being kicked from its channel or the server. */
@@ -42,29 +59,30 @@ export interface KickedEvent {
   /** `Reason.KickChannel`, `Reason.KickServer` or `Reason.KickServerBan`. */
   readonly reason: number;
   readonly invokerName: string;
-  readonly invokerUID: string;
-  readonly invokerID: number;
+  readonly invokerUID: UID;
+  readonly invokerID: ClientID;
 }
 
-export interface ClientInfo {
-  readonly nickname: string;
-  readonly uid: string;
-  readonly serverGroups: readonly string[];
-  readonly channelID: bigint;
-  readonly type: number;
-  readonly id: number;
-}
+/**
+ * A client coming into view: the same record `listClients` returns, so one
+ * type describes a client however it was learned of. The fields only
+ * `clientlist -times` reports are undefined here.
+ */
+export type ClientInfo = ClientEntry;
 
 export interface PokeEvent {
   readonly invokerName: string;
-  readonly invokerUID: string;
-  readonly invokerID: number;
+  readonly invokerUID: UID;
+  readonly invokerID: ClientID;
   readonly message: string;
 }
 
 export interface VoiceData {
-  readonly clientId: number;
-  readonly codec: number;
+  /** Who is speaking. */
+  readonly clientID: ClientID;
+  /** How the audio is encoded; one of `Codec`. */
+  readonly codec: Codec;
+  /** One encoded frame, copied: it stays valid after the listener returns. */
   readonly data: Uint8Array;
 }
 
@@ -128,11 +146,34 @@ export type Unsubscribe = (() => void) & Disposable;
 
 // ---- Transport seam ---------------------------------------------------------
 
-/** Creates a UDP socket of the given address family. */
-export type SocketFactory = (family: 4 | 6) => import("node:dgram").Socket;
+/**
+ * The part of a UDP socket the client uses. A `node:dgram` socket is one; so
+ * is anything else with these methods, such as a tunnel or a test double.
+ */
+export interface DatagramSocket {
+  /** Fix the peer, then call `callback`; failure is reported as an `error` event. */
+  connect(port: number, address: string, callback: () => void): void;
+  /** Send one datagram to the peer. */
+  send(data: Uint8Array, callback: (error: Error | null) => void): void;
+  /** Close the socket; it then emits `close`. */
+  close(): void;
+  on(event: "message", listener: (message: Uint8Array) => void): unknown;
+  on(event: "error", listener: (error: Error) => void): unknown;
+  on(event: "close", listener: () => void): unknown;
+  once(event: "error", listener: (error: Error) => void): unknown;
+  off(event: "error", listener: (error: Error) => void): unknown;
+}
 
-/** Creates the TCP socket a file transfer runs over, unconnected. */
-export type FileTransferSocketFactory = (host: string, port: number) => import("node:net").Socket;
+/** Creates the UDP socket the client talks through, for the given address family. */
+export type SocketFactory = (family: 4 | 6) => DatagramSocket;
+
+/**
+ * Opens the connection a file transfer runs over, to `host:port`. A
+ * `node:net` socket is one, as is the socket a SOCKS or HTTP proxy library
+ * returns. It may still be connecting when returned: the transfer waits for
+ * it.
+ */
+export type FileTransferSocketFactory = (host: string, port: number) => Duplex;
 
 // ---- Client status ----------------------------------------------------------
 
