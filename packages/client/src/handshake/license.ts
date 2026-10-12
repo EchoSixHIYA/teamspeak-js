@@ -46,6 +46,14 @@ export class LicenseChain {
   }
 }
 
+/**
+ * The most blocks a license chain may have. Real chains have two or three —
+ * root-issued intermediate, server, ephemeral — and every block costs a
+ * point multiplication to derive, so a server's chain of thousands would hold
+ * the event loop for seconds.
+ */
+export const MAX_LICENSE_BLOCKS = 8;
+
 export function parseLicenses(data: Uint8Array): LicenseChain {
   if (data.length < 1) throw new Error("license too short");
   if (data[0] !== 1) throw new Error("unsupported license version");
@@ -54,6 +62,9 @@ export function parseLicenses(data: Uint8Array): LicenseChain {
   const blocks: LicenseBlock[] = [];
 
   while (remaining.length > 0) {
+    if (blocks.length === MAX_LICENSE_BLOCKS) {
+      throw new Error(`license chain longer than ${MAX_LICENSE_BLOCKS} blocks`);
+    }
     const { block, consumed } = parseLicenseBlock(remaining);
     blocks.push(block);
     remaining = remaining.slice(consumed);
@@ -84,6 +95,7 @@ function parseLicenseBlock(data: Uint8Array): { block: LicenseBlock; consumed: n
   const { payload, payloadRead } = parseBlockPayload(blockType, data, MIN_BLOCK_LEN);
 
   const allLen = MIN_BLOCK_LEN + payloadRead;
+  if (allLen > data.length) throw new Error("license block longer than the license");
   const hashInput = data.slice(1, allLen);
   const hashFull = hash512(Uint8Array.from(hashInput));
   const hash = Uint8Array.from(hashFull.slice(0, 32));
