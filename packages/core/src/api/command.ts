@@ -241,6 +241,13 @@ export function encodeFields<T extends object>(fields: T, names: WireNames<T>): 
 /** An encoder that omits an empty string instead of sending it. */
 export const nonEmpty = (value: string): string | undefined => (value === "" ? undefined : value);
 
+/**
+ * An encoder that omits an id of 0 instead of sending it: where a command
+ * takes an id as a filter or a target, 0 names no channel, client or group,
+ * so it can only mean "any" or "none".
+ */
+export const nonZero = (value: bigint): bigint | undefined => (value === 0n ? undefined : value);
+
 // ---- Units ------------------------------------------------------------------
 
 /** One second, in milliseconds: the unit most durations travel in. */
@@ -392,10 +399,11 @@ export function createdGroupID(
 export function permissionParam(permission: Permission): readonly [string, ParamValue] {
   const value = permission as { readonly id?: unknown; readonly name?: unknown };
   if (typeof value.name === "string" && value.name !== "") return ["permsid", value.name];
-  if (typeof value.id === "number" && Number.isInteger(value.id) && value.id >= 0) {
+  // No permission has id 0: a Permission naming it names none.
+  if (typeof value.id === "number" && Number.isInteger(value.id) && value.id > 0) {
     return ["permid", value.id];
   }
-  throw new TypeError("a permission is permissionByID(id) or permissionByName(name)");
+  throw new TypeError("a permission is permissionByID(id), id above 0, or permissionByName(name)");
 }
 
 /** A channel as returned by `channellist` or `channelinfo`. */

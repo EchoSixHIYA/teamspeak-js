@@ -120,7 +120,10 @@ command that sends content (`createChannel`, `editChannel`, `updateClient`,
 `{ signal, timeout }`.
 
 `initFileUpload` no longer replaces a file already at the path unless passed
-`overwrite: true`; it used to by default.
+`overwrite: true`; it used to by default. `renameFile` sends its
+`targetChannelPassword` only with a `targetChannelID` other than 0, and
+`viewLog` always sends `reverse` and `instance`. A `Permission` with id 0 is
+refused before anything is sent.
 
 The options types are named `…Options` like the rest: `listClientDatabase`
 takes a `ClientDatabasePageOptions`, `listChannelGroupClients` a

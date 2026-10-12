@@ -6,6 +6,7 @@
  */
 
 import {
+  nonZero,
   firstRow,
   exec,
   query,
@@ -239,7 +240,9 @@ export async function listComplaints(
   client: CommandExecutor,
   options: ComplaintListOptions = {},
 ): Promise<Complaint[]> {
-  const params: Params = [["tcldbid", options.targetDatabaseID]];
+  // 0 names no client, so it lists every complaint, as unset does.
+  const target = options.targetDatabaseID;
+  const params: Params = [["tcldbid", target === undefined ? undefined : nonZero(target)]];
   return (await list(client, "complainlist", params, options)).map(parseComplaint);
 }
 
@@ -453,18 +456,21 @@ export interface LogPage {
  * `beginPosition`.
  */
 export interface LogViewOptions extends CommandOptions {
-  /** How many lines to read, at most 100 (`lines`). */
+  /** How many lines to read, at most 100; unset or 0 leaves it to the server (`lines`). */
   readonly lines?: number | undefined;
-  /** Read backwards from `beginPosition`, newest line first (`reverse`). */
+  /** Read backwards from `beginPosition`, newest line first; false by default (`reverse`, always sent). */
   readonly reverse?: boolean | undefined;
-  /** Read the instance log rather than the virtual server's (`instance`). */
+  /** Read the instance log rather than the virtual server's; false by default (`instance`, always sent). */
   readonly instance?: boolean | undefined;
-  /** The byte offset to read from (`begin_pos`). */
+  /**
+   * The byte offset to read from; 0 is the start of the log, and unset leaves
+   * where to start to the server (`begin_pos`).
+   */
   readonly beginPosition?: number | undefined;
 }
 
 const logViewNames: WireNames<LogViewOptions> = {
-  lines: "lines",
+  lines: ["lines", (lines) => (lines === 0 ? undefined : lines)],
   reverse: "reverse",
   instance: "instance",
   beginPosition: "begin_pos",
@@ -475,7 +481,12 @@ export async function viewLog(
   client: CommandExecutor,
   options: LogViewOptions = {},
 ): Promise<LogPage> {
-  const rows = await query(client, "logview", encodeFields(options, logViewNames), options);
+  const fields: LogViewOptions = {
+    ...options,
+    reverse: options.reverse ?? false,
+    instance: options.instance ?? false,
+  };
+  const rows = await query(client, "logview", encodeFields(fields, logViewNames), options);
   const first = firstRow(rows, "logview");
   // One line per row, under the key `l`. This used to read only a `log` field
   // from the first row, which the server does not send; it is still read,

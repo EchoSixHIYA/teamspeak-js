@@ -9,6 +9,7 @@
  */
 
 import {
+  nonZero,
   firstRow,
   exec,
   query,
@@ -128,13 +129,16 @@ const settingNames: WireNames<ChannelSettings> = {
 export interface ChannelCreateOptions extends ChannelSettings {
   /** The channel's name (`channel_name`). */
   readonly name: string;
-  /** The channel to create the new one under; unset or 0 is the top level (`cpid`). */
+  /**
+   * The channel to create the new one under; unset or 0 is the top level, and
+   * either omits the parameter (`cpid`).
+   */
   readonly parentID?: ChannelID | undefined;
 }
 
 const createNames: WireNames<ChannelCreateOptions> = {
   name: "channel_name",
-  parentID: "cpid",
+  parentID: ["cpid", nonZero],
   ...settingNames,
 };
 

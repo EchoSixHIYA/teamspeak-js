@@ -21,16 +21,24 @@ import {
   SECOND,
 } from "./command.js";
 import type { WireNames } from "./command.js";
-import { deleteFile, getFileInfo, initFileUpload, listFiles } from "./files.js";
+import { deleteFile, getFileInfo, initFileUpload, listFiles, renameFile } from "./files.js";
 import {
   addPrivilegeKey,
+  listChannelGroupClients,
   findPermission,
   getPermissionOverview,
   listPrivilegeKeys,
 } from "./groups.js";
 import type { PrivilegeKeyOptions } from "./groups.js";
-import { addBan, banClient, listBans, sendChannelMessage, viewLog } from "./moderation.js";
-import { addTempPassword, listServerGroups } from "./server.js";
+import {
+  addBan,
+  banClient,
+  listBans,
+  listComplaints,
+  sendChannelMessage,
+  viewLog,
+} from "./moderation.js";
+import { addTempPassword, listBindings, listServerGroups } from "./server.js";
 import {
   asChannelGroupID,
   asChannelID,
@@ -569,7 +577,7 @@ describe("other fixes", () => {
     ]);
     const page = await viewLog(client, { lines: 2, reverse: true, beginPosition: 0 });
 
-    expect(sent[0]).toBe("logview lines=2 reverse=1 begin_pos=0");
+    expect(sent[0]).toBe("logview lines=2 reverse=1 instance=0 begin_pos=0");
     expect(page).toEqual({ lines: ["first", "second"], lastPosition: 14982, fileSize: 15302 });
   });
 
@@ -726,5 +734,56 @@ describe("names", () => {
 
   it("names the privilege key types PrivilegeKeyType", () => {
     expect(PrivilegeKeyType).toEqual({ ServerGroup: 0, ChannelGroup: 1 });
+  });
+});
+
+// The same call encodes the same way in the Go SDK.
+describe("parameter parity", () => {
+  it("renames a file with cpw always, and tcid and tcpw only together", async () => {
+    const { client, sent } = recordingClient();
+    const cid = asChannelID(1n);
+    await renameFile(client, cid, "/a", "/b");
+    await renameFile(client, cid, "/a", "/b", { targetChannelPassword: "x" });
+    await renameFile(client, cid, "/a", "/b", { targetChannelID: asChannelID(0n) });
+    await renameFile(client, cid, "/a", "/b", { targetChannelID: asChannelID(2n) });
+
+    const plain = "ftrenamefile cid=1 oldname=\\/a newname=\\/b cpw=";
+    expect(sent).toEqual([plain, plain, plain, `${plain} tcid=2 tcpw=`]);
+  });
+
+  it("views the log with reverse and instance always, lines only when above 0", async () => {
+    const { client, sent } = recordingClient([{ last_pos: "0" }], [{ last_pos: "0" }]);
+    await viewLog(client);
+    await viewLog(client, { lines: 0, instance: true });
+
+    expect(sent).toEqual(["logview reverse=0 instance=0", "logview reverse=0 instance=1"]);
+  });
+
+  it("omits an id of 0 where it filters or targets", async () => {
+    const { client, sent } = recordingClient([{ cid: "9" }]);
+    const zeroDB = asClientDBID(0n);
+    await createChannel(client, { name: "x", parentID: asChannelID(0n) });
+    await listChannelGroupClients(client, {
+      channelID: asChannelID(0n),
+      databaseID: zeroDB,
+      groupID: asChannelGroupID(0n),
+    });
+    await listComplaints(client, { targetDatabaseID: zeroDB });
+    await listBindings(client, { subsystem: "" });
+
+    expect(sent).toEqual([
+      "channelcreate channel_name=x",
+      "channelgroupclientlist",
+      "complainlist",
+      "bindinglist",
+    ]);
+  });
+
+  it("refuses a permission with id 0, which names none", async () => {
+    const { client, sent } = recordingClient();
+    await expect(
+      addChannelPermission(client, asChannelID(1n), permissionByID(asPermissionID(0)), 1),
+    ).rejects.toThrow(TypeError);
+    expect(sent).toEqual([]);
   });
 });

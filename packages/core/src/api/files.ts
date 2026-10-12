@@ -20,7 +20,6 @@ import {
   exec,
   query,
   list,
-  encodeFields,
   str,
   big,
   num,
@@ -28,7 +27,6 @@ import {
   durationMs,
   SECOND,
 } from "./command.js";
-import type { WireNames } from "./command.js";
 import type { CommandExecutor, CommandOptions } from "../command/request.js";
 import type {
   ChannelID,
@@ -162,23 +160,28 @@ export async function createDirectory(
   );
 }
 
-/** Where {@link renameFile} moves a file, and the passwords it needs. Unset fields are omitted. */
+/** Where {@link renameFile} moves a file, and the passwords it needs. */
 export interface FileRenameOptions extends CommandOptions {
-  /** The source channel's password, in cleartext (`cpw`). */
+  /** The source channel's password, in cleartext; "" by default (`cpw`, always sent). */
   readonly password?: string | undefined;
-  /** Move the file into this channel's file area; unset keeps it in the same channel (`tcid`). */
+  /**
+   * Move the file into this channel's file area; unset or 0 keeps it in the
+   * same channel, and omits `tcid` and `tcpw` both (`tcid`).
+   */
   readonly targetChannelID?: ChannelID | undefined;
-  /** The target channel's password, in cleartext (`tcpw`). */
+  /**
+   * The target channel's password, in cleartext; "" by default. Sent, as
+   * `tcpw`, only with a `targetChannelID`.
+   */
   readonly targetChannelPassword?: string | undefined;
 }
 
-const renameNames: WireNames<FileRenameOptions> = {
-  password: "cpw",
-  targetChannelID: "tcid",
-  targetChannelPassword: "tcpw",
-};
-
-/** Rename or move a file, optionally into another channel. */
+/**
+ * Rename or move a file, optionally into another channel.
+ *
+ * `cpw` is always sent, as for every file command; `tcid` and `tcpw` go
+ * together, and only when the file moves to another channel.
+ */
 export async function renameFile(
   client: CommandExecutor,
   cid: ChannelID,
@@ -193,7 +196,13 @@ export async function renameFile(
       ["cid", cid],
       ["oldname", asPath(oldName)],
       ["newname", asPath(newName)],
-      ...encodeFields(options, renameNames),
+      ["cpw", options.password ?? ""],
+      ...(options.targetChannelID === undefined || options.targetChannelID === 0n
+        ? []
+        : ([
+            ["tcid", options.targetChannelID],
+            ["tcpw", options.targetChannelPassword ?? ""],
+          ] as const)),
     ],
     options,
     ["cpw", "tcpw"],

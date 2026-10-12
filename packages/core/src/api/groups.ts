@@ -3,6 +3,7 @@
  */
 
 import {
+  nonZero,
   uint,
   U32,
   firstRow,
@@ -194,10 +195,11 @@ export interface ChannelGroupClientListOptions extends CommandOptions {
   readonly groupID?: ChannelGroupID | undefined;
 }
 
+// A filter of 0 matches nothing in particular, so it is omitted, as unset is.
 const membershipFilterNames: WireNames<ChannelGroupClientListOptions> = {
-  channelID: "cid",
-  databaseID: "cldbid",
-  groupID: "cgid",
+  channelID: ["cid", nonZero],
+  databaseID: ["cldbid", nonZero],
+  groupID: ["cgid", nonZero],
 };
 
 /** One client holding one channel group in one channel. */

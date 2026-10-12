@@ -111,7 +111,9 @@ export class CommandTracker {
       if (params[c.key] !== p.correlation) continue;
 
       if (name === c.failure && (params["status"] ?? "0") !== "0") {
-        const err = new ServerError(parseErrorCode(params["status"]), params["msg"] ?? "");
+        const err = new ServerError(parseErrorCode(params["status"]), params["msg"] ?? "", {
+          extraMessage: params["extra_msg"] || undefined,
+        });
         this.#settle(rc, p, { err, data: [] });
         return;
       }

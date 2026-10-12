@@ -130,6 +130,22 @@ describe("CommandTracker", () => {
       expect(err).toBeInstanceOf(ServerError);
       expect((err as ServerError).code).toBe(2568);
     });
+
+    // As the `error` line's refusals do, and as the Go SDK's does.
+    it("keeps the failure's extra_msg", async () => {
+      const t = ready();
+      const [rc, done] = t.register(upload, "4");
+      t.resolve(rc, null);
+      t.offerCorrelated("notifystatusfiletransfer", {
+        clientftfid: "4",
+        status: "2054",
+        msg: "file already exists",
+        extra_msg: "/a.txt",
+      });
+
+      const { err } = await done;
+      expect((err as ServerError).extraMessage).toBe("/a.txt");
+    });
   });
 
   it("fails every in-flight command on reset", async () => {

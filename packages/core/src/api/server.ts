@@ -8,6 +8,7 @@
  */
 
 import {
+  nonEmpty,
   uint,
   U16,
   firstRow,
@@ -200,7 +201,12 @@ export async function listBindings(
   client: CommandExecutor,
   options: BindingListOptions = {},
 ): Promise<Binding[]> {
-  const rows = await list(client, "bindinglist", [["subsystem", options.subsystem]], options);
+  const rows = await list(
+    client,
+    "bindinglist",
+    [["subsystem", nonEmpty(options.subsystem ?? "")]],
+    options,
+  );
   return rows.map((row) => ({
     subsystem: str(row, "subsystem"),
     ip: str(row, "ip"),
