@@ -7,6 +7,7 @@
  */
 
 import type { PermissionID } from "./command/ids.js";
+import type { PermissionName } from "./permission-name.js";
 
 /**
  * A permission, by its numeric id or by its name.
@@ -23,7 +24,11 @@ export function permissionByID(id: PermissionID): Permission {
   return { id };
 }
 
-/** Name a permission by its name, such as `"i_client_talk_power"`; it is sent as `permsid`. */
-export function permissionByName(name: string): Permission {
+/**
+ * Name a permission by its name, such as
+ * `PermissionName.ClientTalkPower` (`"i_client_talk_power"`); it is sent as
+ * `permsid`. A name the {@link PermissionName} table lacks is accepted too.
+ */
+export function permissionByName(name: PermissionName | (string & {})): Permission {
   return { name };
 }

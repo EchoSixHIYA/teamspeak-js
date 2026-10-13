@@ -181,6 +181,7 @@ import {
   addServerGroupPermission,
   iterateClientDatabase,
   permissionByName,
+  PermissionName,
   asClientID,
   Codec,
   Reason,
@@ -200,7 +201,7 @@ await sendChannelMessage(client, "hello");
 await kickClient(client, someone, Reason.KickChannel, { reasonMessage: "take a break" });
 
 await addServerGroupPermission(client, sgid, {
-  permission: permissionByName("i_client_talk_power"),
+  permission: permissionByName(PermissionName.ClientTalkPower),
   value: 50,
 });
 

@@ -27,6 +27,7 @@ import {
   listChannelGroupClients,
   findPermission,
   getPermissionOverview,
+  listPermissions,
   listPrivilegeKeys,
 } from "./groups.js";
 import type { PrivilegeKeyOptions } from "./groups.js";
@@ -785,5 +786,30 @@ describe("parameter parity", () => {
       addChannelPermission(client, asChannelID(1n), permissionByID(asPermissionID(0)), 1),
     ).rejects.toThrow(TypeError);
     expect(sent).toEqual([]);
+  });
+});
+
+describe("listPermissions", () => {
+  it("numbers the permissions by position over the voice protocol, which sends no permid", async () => {
+    // As both servers' failed_permid confirms, a permission's id there is its
+    // place among the named rows.
+    const { client } = recordingClient([
+      { group_id_end: "0" },
+      { group_id_end: "2" },
+      { group_id_end: "2", permname: "b_serverinstance_help_view", permdesc: "help" },
+      { group_id_end: "2", permname: "b_serverinstance_info_view", permdesc: "info" },
+    ]);
+    expect(await listPermissions(client)).toEqual([
+      { id: 1, name: "b_serverinstance_help_view", description: "help" },
+      { id: 2, name: "b_serverinstance_info_view", description: "info" },
+    ]);
+  });
+
+  it("takes the permid ServerQuery sends", async () => {
+    const { client } = recordingClient([
+      { permid: "1", permname: "b_serverinstance_help_view", permdesc: "" },
+      { permid: "32769", permname: "i_needed_modify_power_serverinstance_help_view", permdesc: "" },
+    ]);
+    expect((await listPermissions(client)).map((p) => p.id)).toEqual([1, 32769]);
   });
 });

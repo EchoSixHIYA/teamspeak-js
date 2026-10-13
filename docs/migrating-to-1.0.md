@@ -145,7 +145,10 @@ numbers. `PermissionLocation`, which `findPermission` and
 `id1` and `id2`:
 
 ```ts
-for (const where of await findPermission(client, permissionByName("i_client_talk_power"))) {
+for (const where of await findPermission(
+  client,
+  permissionByName(PermissionName.ClientTalkPower),
+)) {
   if (where.target === PermissionTarget.ChannelGroup)
     console.log(where.channelID, where.channelGroupID);
 }

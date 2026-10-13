@@ -289,6 +289,10 @@ export interface PermissionInfo {
  *
  * Rows that name no permission — the group markers some servers interleave —
  * are left out.
+ *
+ * ServerQuery sends each permission's id. The voice protocol sends none: there
+ * a permission's id is its place in the list, counting from 1, which `id` is
+ * set to.
  */
 export async function listPermissions(
   client: CommandExecutor,
@@ -297,8 +301,8 @@ export async function listPermissions(
   const rows = await list(client, "permissionlist", [], options);
   return rows
     .filter((row) => row["permname"] !== undefined)
-    .map((row) => ({
-      id: asPermissionID(uint(row, "permid", U32)),
+    .map((row, index) => ({
+      id: asPermissionID(row["permid"] === undefined ? index + 1 : uint(row, "permid", U32)),
       name: str(row, "permname"),
       description: str(row, "permdesc"),
     }));

@@ -55,6 +55,7 @@ describe("exported tables", () => {
     const core = await import("../src/index.js");
     for (const table of [
       core.ErrorCode,
+      core.PermissionName,
       core.Reason,
       core.Codec,
       core.GroupType,

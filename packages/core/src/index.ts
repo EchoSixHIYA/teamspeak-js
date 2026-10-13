@@ -75,6 +75,7 @@ export {
 
 // Permissions, by id or by name.
 export { permissionByID, permissionByName } from "./permission.js";
+export { PermissionName } from "./permission-name.js";
 export type { Permission } from "./permission.js";
 
 export { noopLogger, consoleLogger } from "./types.js";
