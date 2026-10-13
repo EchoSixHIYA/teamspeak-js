@@ -104,3 +104,17 @@ describe("handleNotification", () => {
     },
   );
 });
+
+describe("notification names", () => {
+  // handleNotification dispatches on literal names; each must be one the
+  // table lists, so a typo in either is caught.
+  it("lists every name handleNotification dispatches on", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { NotificationName } = await import("@honeybbq/teamspeak-core");
+    const source = await readFile(new URL("./notifications.ts", import.meta.url), "utf8");
+    const dispatched = [...source.matchAll(/case "(notify\w+)"/g)].map((m) => m[1] as string);
+    expect(dispatched.length).toBeGreaterThan(0);
+    const known = new Set<string>(Object.values(NotificationName));
+    for (const name of dispatched) expect(known.has(name), name).toBe(true);
+  });
+});

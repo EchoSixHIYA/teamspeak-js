@@ -509,7 +509,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * Send a raw command line and return the rows that answer it: the escape
    * hatch for a command the typed functions do not cover. The line is sent as
    * given, so its values must already be escaped and any channel password
-   * already hashed.
+   * already hashed. `CommandName` lists the command names.
    *
    * Rejects with a NotConnectedError unless the client is connected: while it
    * is still connecting, the session's keys may not exist yet.
@@ -520,7 +520,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   /**
    * Send a raw command line without waiting for an answer, for the few
-   * commands the server answers with nothing at all.
+   * commands the server answers with nothing at all. `CommandName` lists
+   * the command names.
    *
    * Commands are paced by a flood throttle; aborting `signal` while this waits
    * for its turn rejects with the signal's reason and sends nothing. Rejects

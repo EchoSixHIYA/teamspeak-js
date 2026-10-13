@@ -9,6 +9,7 @@
  * parameters are passwords and leaves their encoding to the transport.
  */
 
+import type { CommandName } from "../command-name.js";
 import { buildCommandOrdered } from "./command.js";
 
 /** A parameter value as a caller may supply it. */
@@ -16,8 +17,8 @@ export type ParamValue = string | number | bigint | boolean | undefined;
 
 /** A command and its parameters, in the order they are sent. */
 export interface CommandRequest {
-  /** The command's name, such as `clientlist`. */
-  readonly command: string;
+  /** The command's name, such as `clientlist`; {@link CommandName} lists the known ones. */
+  readonly command: CommandName | (string & {});
   /**
    * Its parameters, as wire name and value pairs, in the order they are sent;
    * an undefined value is omitted.

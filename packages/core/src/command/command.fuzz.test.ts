@@ -29,6 +29,16 @@ describe("the command language", () => {
     );
   });
 
+  it("keeps a parameter named after an Object.prototype member", () => {
+    // fast-check found this: a plain object swallowed __proto__=.
+    const params = parseCommand("cmd __proto__= constructor=x")?.params ?? {};
+    expect(Object.entries(params)).toEqual([
+      ["__proto__", ""],
+      ["constructor", "x"],
+    ]);
+    expect(parseCommand("cmd a=1")?.params["toString"]).toBeUndefined();
+  });
+
   it("parses and splits any line without throwing", () => {
     fc.assert(
       fc.property(fc.string({ unit: "binary", maxLength: 400 }), (line) => {

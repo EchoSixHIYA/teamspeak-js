@@ -56,6 +56,9 @@ describe("exported tables", () => {
     for (const table of [
       core.ErrorCode,
       core.PermissionName,
+      core.CommandName,
+      core.NotificationName,
+      core.PropertyName,
       core.Reason,
       core.Codec,
       core.GroupType,

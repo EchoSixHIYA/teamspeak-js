@@ -4,6 +4,7 @@ import type {
   ClientID,
   CommandMiddleware,
   Logger,
+  NotificationName,
   ServerGroupID,
   UID,
 } from "@honeybbq/teamspeak-core";
@@ -120,11 +121,11 @@ export interface VoiceDataEvent {
 
 /**
  * A notification from the server, as it arrived: the escape hatch for one the
- * SDK does not model.
+ * SDK does not model. Match its `name` against `NotificationName`.
  */
 export interface NotificationEvent {
-  /** The notification's name, such as `notifyserveredited`. */
-  readonly name: string;
+  /** The notification's name, such as `notifyserveredited`; `NotificationName` lists the known ones. */
+  readonly name: NotificationName | (string & {});
   /** Its parameters, unescaped. */
   readonly params: Readonly<Record<string, string>>;
 }

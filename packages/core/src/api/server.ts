@@ -102,7 +102,8 @@ export async function listServerGroups(
  *
  * Raw rather than parsed: `serverinfo` carries well over a hundred
  * `virtualserver_*` fields, which ones appear depends on the server version and
- * on the caller's permissions, and a typed subset would drop the rest.
+ * on the caller's permissions, and a typed subset would drop the rest. The
+ * keys are named in `PropertyName`.
  */
 export async function getServerInfo(
   client: CommandExecutor,
@@ -124,7 +125,8 @@ const rawProperties = (settings: Readonly<Record<string, string>>): Params =>
  * wire properties from `serverinfo`, passed through as given rather than
  * enumerated: there are well over a hundred, they are version-dependent, and a
  * value read back from {@link getServerInfo} should be writable straight back.
- * The values are strings, as `getServerInfo` returns them.
+ * The values are strings, as `getServerInfo` returns them. The editable keys
+ * are marked in `PropertyName`.
  */
 export async function editServer(
   client: CommandExecutor,
@@ -139,7 +141,8 @@ export async function editServer(
  *
  * Needs an instance-level permission (`b_serverinstance_*`), which not even the
  * Server Admin group holds by default — expect error 2568 until it is granted.
- * Granted, it works over the voice protocol like any other query.
+ * Granted, it works over the voice protocol like any other query. The keys are
+ * named in `PropertyName`.
  */
 export async function getHostInfo(
   client: CommandExecutor,
@@ -153,7 +156,8 @@ export async function getHostInfo(
  *
  * Needs an instance-level permission (`b_serverinstance_*`), which not even the
  * Server Admin group holds by default — expect error 2568 until it is granted.
- * Granted, it works over the voice protocol like any other query.
+ * Granted, it works over the voice protocol like any other query. The keys are
+ * named in `PropertyName`.
  */
 export async function getInstanceInfo(
   client: CommandExecutor,
@@ -164,7 +168,8 @@ export async function getInstanceInfo(
 
 /**
  * Change the server instance's settings: raw `serverinstance_*` properties,
- * passed through as given, for the same reasons as {@link editServer}.
+ * passed through as given, for the same reasons as {@link editServer}. The
+ * editable keys are marked in `PropertyName`.
  */
 export async function editInstance(
   client: CommandExecutor,

@@ -47,7 +47,9 @@ export function parseCommand(s: string): Command | null {
   const first = parts[0] ?? "";
   if (first === "") return null;
 
-  const params: Record<string, string> = {};
+  // No prototype: a key is whatever the line says, and one named __proto__
+  // must be stored, not swallowed by Object.prototype's setter.
+  const params: Record<string, string> = Object.create(null) as Record<string, string>;
   const name = isCommandName(first) ? first : "";
   const start = name === "" ? 0 : 1;
 

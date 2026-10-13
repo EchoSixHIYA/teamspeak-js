@@ -157,7 +157,15 @@ for await (const msg of client.events("textMessage", { signal })) {
 ```
 
 `notification` delivers every notification as it arrived, for the ones the SDK
-does not model.
+does not model. `NotificationName` names them:
+
+```typescript
+import { NotificationName } from "@honeybbq/teamspeak-client";
+
+client.on("notification", (n) => {
+  if (n.name === NotificationName.ChannelEdited) console.log(n.params);
+});
+```
 
 ### Commands
 
@@ -221,7 +229,8 @@ and only the fields you set are sent: an unset field leaves the setting alone,
 while `""` sends it empty — `editChannel(client, cid, { password: "" })` clears
 a password. A key an options type does not name is never sent. The exceptions
 are `editServer` and `editInstance`, which take the raw `virtualserver_*` and
-`serverinstance_*` properties as `getServerInfo` reports them.
+`serverinstance_*` properties as `getServerInfo` reports them; `PropertyName` names
+the keys.
 
 Results are camelCase too. Timestamps are `Date`s (`undefined` where the server
 sends 0 for "never"), durations are milliseconds with an `Ms` suffix

@@ -65,7 +65,8 @@ const fileTransfer = (answer: string): ResponseSpec => ({
   },
 });
 
-const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
+/** The table behind {@link responseSpec}, by command name; exported for the tests that check it against the name tables. */
+export const RESPONSES: Readonly<Record<string, ResponseSpec>> = {
   banlist: inline("notifybanlist"),
   channelclientpermlist: inline("notifychannelclientpermlist"),
   channelcreate: { notifications: ["notifychannelcreated"], ownRowsOnly: true },

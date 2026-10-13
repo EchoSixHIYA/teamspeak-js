@@ -129,7 +129,8 @@ export async function listClients(
  * Raw rather than parsed: `clientinfo` carries some eighty fields, which ones
  * appear depends on the server version and on the caller's permissions, and a
  * typed subset would drop the rest. Durations here are in the server's units —
- * `client_idle_time` and `connection_connected_time` in milliseconds.
+ * `client_idle_time` and `connection_connected_time` in milliseconds. The keys
+ * are named in `PropertyName`.
  */
 export async function getClientInfo(
   client: CommandExecutor,
