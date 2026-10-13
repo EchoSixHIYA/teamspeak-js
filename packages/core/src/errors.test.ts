@@ -45,7 +45,8 @@ describe("instanceof across copies of the package", () => {
 
     class ServerError extends Error {}
     expect(new ServerError() instanceof core.ServerError).toBe(false);
-    expect((null as unknown as object) instanceof core.TeamspeakError).toBe(false);
+    // What `instanceof` asks for a value that is not an object at all.
+    expect(core.TeamspeakError[Symbol.hasInstance](null)).toBe(false);
   });
 });
 

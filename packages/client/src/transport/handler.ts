@@ -709,8 +709,9 @@ export class PacketHandler {
     let totalSize = 0;
     let currID = nextID;
     let startSeen = false;
-    let complete = false;
 
+    // Ends at the fragment that closes the command, or returns while one is
+    // still missing.
     while (true) {
       const frag = queue.get(currID);
       if (!frag) return null;
@@ -730,18 +731,12 @@ export class PacketHandler {
       const fragmented = (packetFlags(frag) & PacketFlags.Fragmented) !== 0;
       if (!startSeen) {
         startSeen = true;
-        if (!fragmented) {
-          complete = true;
-          break;
-        }
+        if (!fragmented) break;
       } else if (fragmented) {
-        complete = true;
         break;
       }
       currID = (currID + 1) & 0xffff;
     }
-
-    if (!complete) return null;
 
     const combined = new Uint8Array(totalSize);
     let pos = 0;
