@@ -391,7 +391,7 @@ const errorCodeValues = {
   /** Has no message in tsdeclarations. */
   ProvisioningTS3ServerNotFound: 0x1119,
   /** Unknown permissionID. */
-  ProvisioningNoPermission: 0x111,
+  ProvisioningNoPermission: 0x111a,
 } as const;
 /**
  * The error codes a TeamSpeak server reports, by name.

@@ -943,7 +943,7 @@ const errorCodeValues: {
     readonly ProvisioningIOError: 4375;
     readonly ProvisioningInvalidTimeout: 4376;
     readonly ProvisioningTS3ServerNotFound: 4377;
-    readonly ProvisioningNoPermission: 273;
+    readonly ProvisioningNoPermission: 4378;
 };
 
 // @public
