@@ -24,7 +24,12 @@ through every change.
 pnpm install
 pnpm check        # typecheck, lint, format
 pnpm test         # unit tests for every package
+pnpm api:report   # after a deliberate API change: rewrite packages/*/etc/*.api.md
 ```
+
+The public API of each published package is recorded in `packages/*/etc/*.api.md`
+and reviewed like code. CI runs `pnpm api:check`, which fails with a diff when
+the built declarations and the record disagree.
 
 The integration suite runs against a live server. `scripts/ts3-fixture.sh`
 provisions one — channels, permissions, relaxed antiflood — and writes

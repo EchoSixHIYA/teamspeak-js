@@ -1,0 +1,14 @@
+{
+  "extends": "../../api-extractor.base.json",
+  "compiler": {
+    "overrideTsconfig": {
+      "extends": "../../tsconfig.base.json",
+      "compilerOptions": {
+        "paths": {
+          "@honeybbq/teamspeak-core": ["./node_modules/@honeybbq/teamspeak-core/dist/index.d.ts"]
+        }
+      },
+      "files": ["./dist/index.d.ts"]
+    }
+  }
+}

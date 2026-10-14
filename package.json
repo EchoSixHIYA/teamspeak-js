@@ -23,11 +23,14 @@
     "test:integration:both": "pnpm test:integration:ts3 && pnpm test:integration:ts6",
     "changeset": "changeset",
     "version-packages": "changeset version && pnpm install --lockfile-only",
-    "check:docs": "node scripts/check-docs.mts"
+    "check:docs": "node scripts/check-docs.mts",
+    "api:report": "pnpm build && api-extractor run --local -c packages/core/api-extractor.json && api-extractor run --local -c packages/client/api-extractor.json",
+    "api:check": "pnpm build && node scripts/api-check.mts"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@changesets/cli": "^3.0.3",
+    "@microsoft/api-extractor": "7.59.4",
     "@types/node": "^26.1.1",
     "fast-check": "^4.10.2",
     "oxfmt": "^0.71.0",
