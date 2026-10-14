@@ -1,5 +1,31 @@
 # @honeybbq/teamspeak-client
 
+## 1.0.0-beta.4
+
+### Major Changes
+
+- 0649001: `CryptoInitError` is renamed `HandshakeError`, to match the Go SDK's `ErrHandshake`: `connect()` rejects with it when the handshake fails on what the server sent.
+
+### Minor Changes
+
+- baf482f: Add `trace` to `ClientOptions`: hooks called synchronously at each milestone of a client's life, for timing, metrics, logs and progress displays. For every connection attempt, the reconnect loop's included, they report `resolveStart`, `resolveDone` (with every candidate the resolver gave), `connectStart`, `connectDone` (with the local address), `handshakeDone` (with the RSA puzzle's level and duration, the packets sent again, and the server's public key for pinning), `sessionStart` (with the accepted nickname, talk power and the `initserver` parameters without any secret) and `welcomeDone` (with the channel the client landed in and the channels and clients delivered), or `attemptFailed` with the phase (`ConnectPhase`: `open`, `handshake` or `join`); then `disconnectStart`, `disconnectDone` and `sessionEnd` when a session ends, and `reconnectScheduled` and `reconnectStopped` for the reconnect loop. Every attempt ends with exactly one of `sessionStart` and `attemptFailed`, and every session with exactly one `sessionEnd`. `uploadFileData`, `downloadFileData` and `dialFileTransfer` take a `trace` of their own in `FileTransferOptions` (`dialStart`, `dialDone`, `progress`, `done`, `failed`; the transfer key is never reported), and so do the client's methods that forward to them. A hook that throws is reported like a throwing listener and never affects the connection or the transfer. `ServerCapabilities` gains `serverID`, `serverUID`, `hostMessage` and `hostMessageMode`.
+
+### Patch Changes
+
+- 4f7283c: `disconnect()` waited a full second every time. It waited for an error line in answer to its goodbye, but TeamSpeak 3 and 6 answer `clientdisconnect` with a `notifyclientleftview` about the client itself and no error line. That announcement now ends the wait, so a disconnect takes a few milliseconds.
+- 0649001: File transfers, cancellation and a few error details now behave the way the platform's own APIs do:
+
+  - A file transfer that moves no byte for `idleTimeoutMs` (30 seconds unless set; 0 turns it off) fails with a `FileTransferError`. Before, a server that went silent held it until the caller's signal ended it. Writing the transfer key now honours the signal and the dial timeout too.
+  - A download that sends more than the size the server announced fails after that size, without writing the excess, and one that ends short of it fails. Both used to succeed.
+  - `client.events()` rejects with the signal's reason when the signal aborts, as Node's `events.on` does, instead of ending quietly. Calling `next()` again before the previous call settles no longer loses a call. The iterator also stops listening when a disconnect ends it, not only when the loop calls `return()`.
+  - SRV records are tried in the order RFC 2782 gives: by priority, then by weight. Before, the order was the one the DNS answer arrived in.
+  - `Resolver.resolve("")` throws an `InvalidAddressError` rather than a plain `Error`.
+  - An error's `name` is no longer an own enumerable property, so `JSON.stringify(err)` and `Object.keys(err)` treat it as they treat a built-in error's.
+  - Timeouts and the flood throttle measure time with a monotonic clock, so a change of the system clock cannot stall or burst them.
+
+- Updated dependencies [0649001]
+  - @honeybbq/teamspeak-core@1.0.0-beta.4
+
 ## 1.0.0-beta.3
 
 ### Major Changes
