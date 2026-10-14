@@ -113,6 +113,26 @@ describe("CommandTracker", () => {
       expect((await done).data).toEqual([{ clientftfid: "4", ftkey: "mine" }]);
     });
 
+    // A command with no entry in the table (whoami, clientlist, anything sent
+    // through exec) has no spec. A notification another command in flight
+    // declares must pass it by; the Go client once read through the missing
+    // spec and panicked.
+    it("offers a notification past a command without a spec", async () => {
+      const t = ready();
+      const [, bare] = t.register();
+      const [, bareCorrelated] = t.register(undefined, "4");
+      const [rc, done] = t.register(upload, "4");
+      t.resolve(rc, null);
+      let bareSettled = false;
+      void Promise.race([bare, bareCorrelated]).then(() => (bareSettled = true));
+
+      t.offerCorrelated("notifystartupload", { clientftfid: "4", ftkey: "mine" });
+
+      expect((await done).data).toEqual([{ clientftfid: "4", ftkey: "mine" }]);
+      await Promise.resolve();
+      expect(bareSettled).toBe(false);
+    });
+
     // The voice protocol answers a refused upload with `error id=0` and then a
     // status notification; reporting that as success with no key is how the
     // refusal used to vanish.

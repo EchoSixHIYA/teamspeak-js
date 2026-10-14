@@ -31,6 +31,36 @@ describe("handleNotification", () => {
     });
   });
 
+  describe("notifyclientmoved", () => {
+    // A channel id is 0 to 2^64-1 in plain decimal. Anything else names no
+    // channel; it must not throw, which would drop the datagram's other rows.
+    it.each(["-1", "18446744073709551616", "0x10", "1e3", ""])(
+      "reads ctid %j as channel 0",
+      (ctid) => {
+        const cmd = { name: "notifyclientmoved", params: { clid: "7", ctid, reasonid: "1" } };
+
+        const result = handleNotification(cmd, 1, makeClients(), "Bot");
+
+        expect(result.kind).toBe("clientMoved");
+        if (result.kind !== "clientMoved") return;
+        expect(result.event.targetChannelID).toBe(0n);
+      },
+    );
+
+    it("reads the largest channel id as itself", () => {
+      const cmd = {
+        name: "notifyclientmoved",
+        params: { clid: "7", ctid: "18446744073709551615" },
+      };
+
+      const result = handleNotification(cmd, 1, makeClients(), "Bot");
+
+      expect(result.kind === "clientMoved" && result.event.targetChannelID).toBe(
+        18446744073709551615n,
+      );
+    });
+  });
+
   describe("notifyclientpoke", () => {
     it("parses poke with message", () => {
       const cmd = {
