@@ -116,6 +116,12 @@ export class PacketHandler {
   /** The bytes held in both command queues; see MAX_QUEUED_BYTES. */
   #queuedBytes = 0;
   #ackManager = new Map<number, ResendPacket>();
+  /**
+   * The last Init1 packet the client sent, resent until the handshake's final
+   * acknowledgement. Init1 packets are not acknowledged one by one: each step
+   * the client sends replaces it, and only `receivedFinalInitAck` clears it.
+   * Receiving an Init1 does not, as the client may have nothing to answer with.
+   */
   #initPacketCheck: ResendPacket | null = null;
   /**
    * Command packets sent under the dummy key, before crypto init completed:
@@ -253,6 +259,13 @@ export class PacketHandler {
     this.#stopResend = () => clearInterval(resendTimer);
   }
 
+  /**
+   * Stop resending the last Init1 packet the client sent. Until this is called,
+   * the latest step stays pending whatever the server sends in between: a step
+   * the client does not answer, an unknown one or a second RSA challenge, must
+   * not stop the resending of its own. The server's `initivexpand2` command
+   * acknowledges the last step, not an Init1 reply.
+   */
   receivedFinalInitAck(): void {
     this.#initPacketCheck = null;
   }
@@ -774,11 +787,6 @@ export class PacketHandler {
 
   #updatePostReceiveState(p: Packet): void {
     const pType = packetType(p);
-
-    if (pType === PacketType.Init1) {
-      this.#initPacketCheck = null;
-      return;
-    }
 
     if ((pType === PacketType.Ack || pType === PacketType.AckLow) && p.data.length >= 2) {
       const ackID = new DataView(p.data.buffer, p.data.byteOffset).getUint16(0, false);

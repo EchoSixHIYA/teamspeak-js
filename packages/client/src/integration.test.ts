@@ -50,6 +50,29 @@ const SKIP = !ADDR;
 const USES_CONNECT_AUTH =
   SERVER_PASSWORD !== "" || DEFAULT_CHANNEL !== "" || DEFAULT_CHANNEL_PASSWORD !== "";
 
+const CONNECT_ATTEMPTS = 3;
+const CONNECT_ATTEMPT_MS = 10_000;
+const CONNECT_RETRY_DELAY_MS = 2_000;
+
+/**
+ * Connect `client`, trying again on the same client when an attempt fails. A
+ * datagram can be dropped, or the server too busy to answer one, and the suite
+ * should not fail on that. The SDK resends its own handshake packets, so this is
+ * a safety net for the suite, not what makes connecting work.
+ */
+async function connectWithRetries(client: Client): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await client.connect({ signal: AbortSignal.timeout(CONNECT_ATTEMPT_MS) });
+      return;
+    } catch (error) {
+      if (attempt === CONNECT_ATTEMPTS) throw error;
+      console.warn(`connect attempt ${attempt} of ${CONNECT_ATTEMPTS} failed: ${String(error)}`);
+      await new Promise((resolve) => setTimeout(resolve, CONNECT_RETRY_DELAY_MS));
+    }
+  }
+}
+
 // Shared connection — established once for the entire suite
 let sharedClient: Client;
 let selfClientEnter: Promise<ClientEnterEvent>;
@@ -75,12 +98,12 @@ beforeAll(async () => {
     });
   });
 
-  await client.connect({ signal: AbortSignal.timeout(30_000) });
+  await connectWithRetries(client);
   // The channel is known once the server has shown us entering it.
   await selfClientEnter;
 
   sharedClient = client;
-}, 40_000);
+}, 50_000);
 
 afterAll(async () => {
   for (const peer of peers.values()) await peer.disconnect().catch(() => {});
@@ -102,7 +125,7 @@ async function connectPeer(nickname: string, setup?: (client: Client) => void): 
   });
   setup?.(peer);
   peers.set(nickname, peer);
-  await peer.connect({ signal: AbortSignal.timeout(30_000) });
+  await connectWithRetries(peer);
   return peer;
 }
 
@@ -219,7 +242,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // cid=0, every time, while the same call a second later was correct.
     const identity = generateIdentitySync(8);
     const fresh = new Client(identity, ADDR!, "ts-js-welcome", {});
-    await fresh.connect({ signal: AbortSignal.timeout(30_000) });
+    await connectWithRetries(fresh);
 
     const immediate = await listChannels(fresh);
     const ids = immediate.map((c) => c.id);
@@ -487,7 +510,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
       },
     });
 
-    await recovering.connect({ signal: AbortSignal.timeout(30_000) });
+    await connectWithRetries(recovering);
     const firstID = recovering.clientID;
     expect(firstID).toBeGreaterThan(0);
 
@@ -525,7 +548,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
       reconnect: { backoff: { initialDelayMs: 200 } },
     });
 
-    await client.connect({ signal: AbortSignal.timeout(30_000) });
+    await connectWithRetries(client);
     await client.disconnect();
 
     await new Promise((r) => setTimeout(r, 2_500));

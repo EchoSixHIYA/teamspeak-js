@@ -101,8 +101,8 @@ function buildInit1Step4Packet(crypt: Crypt, data: Uint8Array): Uint8Array | nul
   // One challenge per connection attempt, whose Crypt is its own. Each answer
   // costs up to a second of synchronous squarings, and a second would choose a
   // new alpha behind the clientinitiv already sent. The same challenge again
-  // means our answer was lost — the transport does not resend it — so it gets
-  // the same answer, without solving anything; a different one gets none.
+  // means the server did not get our answer, so it gets the same answer,
+  // without solving anything; a different one gets none.
   const answered = answeredChallenges.get(crypt);
   if (answered !== undefined) {
     return Buffer.from(answered.challenge).equals(Buffer.from(data)) ? answered.answer : null;

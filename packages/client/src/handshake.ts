@@ -16,6 +16,7 @@ export function handleHandshakeInitIV(
   const beta = params["beta"] ?? "";
   const omega = params["omega"] ?? "";
 
+  client.handler.receivedFinalInitAck();
   client.crypt.initCrypto(alpha, beta, omega);
   client.logger.info("crypto initialized (P-256 path), sending clientinit");
   sendClientInit(client);
