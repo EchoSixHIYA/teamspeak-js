@@ -71,6 +71,12 @@ jobs:
       # package.json is rewritten by publishConfig, and workspace:* by pack.
       # Every exported symbol, as a user imports it, has a doc comment.
       - run: pnpm check:docs
+      # The public API of each published package is recorded in etc/*.api.md
+      # and reviewed like code. This fails, with a diff, when the built
+      # declarations and the record disagree, so a change to the API cannot
+      # land without showing up in the commit that makes it. To accept a
+      # deliberate change: pnpm api:report
+      - run: pnpm api:check
       - name: Check the packed packages
         run: |
           mkdir -p "$RUNNER_TEMP/packs"

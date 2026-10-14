@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# api-extractor writes the report it just made here, to compare with etc/
+packages/*/temp/
 *.tsbuildinfo
 .DS_Store
 ts3-fixture.env
