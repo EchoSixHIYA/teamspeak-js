@@ -1,5 +1,30 @@
 # @honeybbq/teamspeak-client
 
+## 1.0.0-beta.2
+
+### Minor Changes
+
+- def7d6d: `PermissionName` names every permission TeamSpeak 3.13 and 6 servers list, for `permissionByName`: `permissionByName(PermissionName.ClientTalkPower)`. It is a frozen table and a union type of its values, like `ErrorCode`; `permissionByName` still takes any string, so a permission the table lacks works as before. Seven exist only on TeamSpeak 6 and say so.
+- 3d32e71: `CommandName`, `NotificationName` and `PropertyName` name what TeamSpeak 3.13 and 6 servers send on the wire, so a raw line or a property key no longer has to be spelled from memory: `client.exec(CommandName.ServerGroupList)`, `n.name === NotificationName.ChannelEdited`, `info[PropertyName.VirtualServerName]`. Each is a frozen table and a union type of its values, like `PermissionName`. `NotificationEvent.name` and `CommandRequest.command` accept these names with autocompletion and still take any string, since a server may send names the tables lack.
+
+### Patch Changes
+
+- 4326d90: A line of rows that each named a field of their own made the rows grow with the square of the line: TeamSpeak leaves out of a row the fields unchanged from the one before, so every row took on all the fields of all the rows before it, and one line of a few hundred kilobytes from a server, or from anyone who could forge its first packets, expanded to gigabytes. The rows of a line are now held to a size in proportion to the line itself; past it, rows carry only the fields they were sent with. The rows of a real server's line never come near it.
+
+  After the 16-bit packet id wrapped, a command the server sent again because its acknowledgement was lost, with an id just behind the receive window, was taken for one far ahead of it and dropped unanswered, so the server went on sending it. It is now recognised as already delivered and acknowledged again.
+
+  `parseUint64`, and with it the channel id of `notifyclientmoved`, accepted a sign, a hex prefix and any number of digits. A `ctid` of `-1` made the handler throw a `RangeError`, which dropped the other rows of the same datagram and could fail a connection still being set up. Only plain decimal digits from 0 to 2^64-1 are read now; anything else reads as 0, as it does everywhere else.
+
+- a27c5d7: A connection attempt could hang until its timeout when the server dropped a packet of the handshake, which it does under load: only the first packet was ever sent again. Every handshake step is now resent until the server answers the last one.
+- 3d32e71: A parameter named `__proto__` was lost when a line was parsed, because the parameters went into a plain object, whose `__proto__` setter swallowed it. They now go into an object with no prototype, so every key the server sends is kept as sent.
+- def7d6d: `listPermissions` gave every permission the id 0 over the voice protocol, whose `notifypermissionlist` sends no `permid`. There a permission's id is its place in the list, counting from 1 — the `failed_permid` of refused commands confirms it on TeamSpeak 3 and 6 — and `id` is now that. Over ServerQuery the id the server sends is used.
+- Updated dependencies [4326d90]
+- Updated dependencies [3d32e71]
+- Updated dependencies [def7d6d]
+- Updated dependencies [def7d6d]
+- Updated dependencies [3d32e71]
+  - @honeybbq/teamspeak-core@1.0.0-beta.2
+
 ## 1.0.0-beta.1
 
 ### Major Changes
