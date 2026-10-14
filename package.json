@@ -25,7 +25,8 @@
     "version-packages": "changeset version && pnpm install --lockfile-only",
     "check:docs": "node scripts/check-docs.mts",
     "api:report": "pnpm build && api-extractor run --local -c packages/core/api-extractor.json && api-extractor run --local -c packages/client/api-extractor.json",
-    "api:check": "pnpm build && node scripts/api-check.mts"
+    "api:check": "pnpm build && node scripts/api-check.mts",
+    "docs": "typedoc"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
@@ -37,6 +38,7 @@
     "oxlint": "^1.59.0",
     "publint": "^0.3.25",
     "tsx": "^4.21.0",
+    "typedoc": "0.28.20",
     "typescript": "^7.0.2",
     "typescript-api": "npm:typescript@^5.9.3",
     "vite": "^8.0.8",

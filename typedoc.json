@@ -1,0 +1,30 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  // Users import @honeybbq/teamspeak-client, which does
+  // `export * from "@honeybbq/teamspeak-core"`. The entry point is therefore
+  // the client's index.ts alone, and tsconfig.typedoc.json maps the core
+  // package to its source. TypeDoc then sees core's declarations as part of the
+  // client module: every symbol (Client, listChannels, ErrorCode,
+  // PermissionName, ...) appears once, on one site, and {@link}s between the
+  // two packages resolve. The "packages" strategy would instead give one
+  // module per package and list the client's `export *` as external
+  // re-exports, so a user would have to know which package holds what.
+  // The mapping also means no build is needed before running typedoc.
+  "name": "teamspeak-js",
+  "entryPoints": ["packages/client/src/index.ts"],
+  "tsconfig": "tsconfig.typedoc.json",
+  "readme": "packages/client/README.md",
+  "projectDocuments": ["docs/migrating-to-1.0.md", "docs/voice-protocol-responses.md"],
+  // Project documents would otherwise wrap the one entry point in an "index"
+  // module and prefix every page with "index.".
+  "alwaysCreateEntryPointModule": false,
+  "out": "docs-site",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "excludeNotDocumented": false,
+  "githubPages": true,
+  // ClientStatus is `typeof clientStatusValues`; that helper const is private to
+  // the client's types.ts, and its members are documented on ClientStatus.
+  "intentionallyNotExported": ["clientStatusValues"],
+  "treatWarningsAsErrors": true
+}

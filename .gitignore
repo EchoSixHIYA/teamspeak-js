@@ -5,3 +5,4 @@ packages/*/temp/
 *.tsbuildinfo
 .DS_Store
 ts3-fixture.env
+docs-site/

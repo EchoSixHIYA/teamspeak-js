@@ -97,10 +97,10 @@ async function list(
   }
 }
 
-/** Default page size for {@link pages}. */
+/** Default page size for a paged walk. */
 const DEFAULT_PAGE_SIZE = 100;
 
-/** How {@link pages} walks a paged command. */
+/** How a paged command is walked, as by {@link iterateClientDatabase}. */
 export interface PagingOptions extends CommandOptions {
   /**
    * How many rows to ask for per page; 100 by default. The server may cap a

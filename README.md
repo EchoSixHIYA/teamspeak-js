@@ -7,6 +7,8 @@ TeamSpeak SDKs for TypeScript, in one repository and released together.
 | [`@honeybbq/teamspeak-client`](packages/client) | A clean-room client that connects over the voice protocol, the way the TeamSpeak application does |
 | [`@honeybbq/teamspeak-core`](packages/core)     | What the clients share: the command language, ids, errors, and the typed commands                 |
 
+Browse the [API reference](https://honeybbq.github.io/teamspeak-js/).
+
 Install the client and nothing else; it pulls in the core and re-exports all of
 it. 1.0 is in beta, so for now that means `npm install @honeybbq/teamspeak-client@beta`.
 

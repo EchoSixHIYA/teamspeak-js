@@ -15,6 +15,8 @@ Works with TeamSpeak 3 and TeamSpeak 6 servers. No proprietary SDK, no copied co
 
 </div>
 
+**[API reference](https://honeybbq.github.io/teamspeak-js/)**
+
 Upgrading from 0.x? See the [migration guide](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/migrating-to-1.0.md).
 
 ## Features
