@@ -1,5 +1,19 @@
 # @honeybbq/teamspeak-core
 
+## 1.0.0-beta.3
+
+### Major Changes
+
+- b13a0bc: Node 22.12 or newer is required; Node 20 reached its end of life in April 2026.
+
+### Minor Changes
+
+- b13a0bc: The event types are now part of core, so a future ServerQuery client shares them; the client package exports them as before.
+
+### Patch Changes
+
+- b13a0bc: `listChannels` now returns the fields its type declares. It used to send a bare `channellist`, so the topic was always empty and the permanent, default and password flags, the codec, the client limit and the icon were always zero or false. It now asks for all of them. Each channel also gains five fields: `isSemiPermanent`, `maxFamilyClients`, `totalClients`, `totalFamilyClients` and `neededSubscribePower`. The description and unique identifier are still not part of `channellist`; `getChannelInfo` has them.
+
 ## 1.0.0-beta.2
 
 ### Minor Changes

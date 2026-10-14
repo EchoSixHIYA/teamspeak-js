@@ -1,6 +1,6 @@
 {
   "name": "@honeybbq/teamspeak-client",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.3",
   "description": "A clean-room TeamSpeak client for Node.js, speaking the voice protocol the way the TeamSpeak application does",
   "keywords": [
     "client",
