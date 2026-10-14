@@ -34,6 +34,13 @@ jobs:
           done
           echo "$GITHUB_REF_NAME ($GITHUB_SHA) is not on main or a release/* branch" >&2
           exit 1
+      # The release notes are written after npm has published, so a changelog
+      # without a section for the tag has to stop the release here, first.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Check the changelogs have a section for the tag
+        run: node scripts/release-notes.mts "$GITHUB_REF_NAME" > /dev/null
 
   ci:
     name: CI
@@ -107,8 +114,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      # The notes are the packages' changelogs, which need no dependencies
+      # installed. Fails, and so stops the release, when a changelog has no
+      # section for the tag.
+      - name: Write the release notes
+        run: node scripts/release-notes.mts "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
       - name: Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          generate_release_notes: true
+          body_path: ${{ runner.temp }}/release-notes.md
+          generate_release_notes: false
           prerelease: ${{ contains(github.ref_name, '-') }}

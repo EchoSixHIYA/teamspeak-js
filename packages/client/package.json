@@ -10,6 +10,10 @@
     "ts6",
     "voip"
   ],
+  "homepage": "https://github.com/HoneyBBQ/teamspeak-js/tree/main/packages/client#readme",
+  "bugs": {
+    "url": "https://github.com/HoneyBBQ/teamspeak-js/issues"
+  },
   "license": "MIT",
   "author": "honeybbq",
   "repository": {
