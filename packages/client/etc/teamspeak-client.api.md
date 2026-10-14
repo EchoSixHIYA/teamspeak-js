@@ -45,6 +45,21 @@ export class AlreadyConnectedError extends TeamspeakError {
     static readonly kind: string;
 }
 
+// Warning: (ae-forgotten-export) The symbol "AttemptInfo" needs to be exported by the entry point index.d.ts
+//
+// @public
+export interface AttemptFailedInfo extends AttemptInfo {
+    readonly durationMs: number;
+    readonly error: unknown;
+    readonly phase: ConnectPhase;
+}
+
+// @public
+interface AttemptInfo {
+    readonly attempt: number;
+    readonly reconnect: boolean;
+}
+
 // @public
 export function backoffDelay(policy: Readonly<BackoffPolicy>, attempt: number): number;
 
@@ -95,6 +110,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
 // @public
 export interface ClientOptions {
     readonly commandMiddleware?: readonly CommandMiddleware[] | undefined;
+    readonly connectTrace?: ConnectTrace | undefined;
     readonly defaultChannel?: string | undefined;
     readonly defaultChannelPassword?: string | undefined;
     readonly eventMiddleware?: readonly EventMiddleware[] | undefined;
@@ -136,6 +152,38 @@ export class ConnectionTimeoutError extends TeamspeakError {
     constructor();
     // (undocumented)
     static readonly kind: string;
+}
+
+// Warning: (ae-forgotten-export) The symbol "connectPhaseValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const ConnectPhase: typeof connectPhaseValues;
+
+// @public
+export type ConnectPhase = (typeof ConnectPhase)[keyof typeof ConnectPhase];
+
+// @public
+const connectPhaseValues: {
+    readonly Open: "open";
+    readonly Handshake: "handshake";
+    readonly Join: "join";
+};
+
+// @public
+export interface ConnectStartInfo extends AttemptInfo {
+    readonly target: string;
+}
+
+// @public
+export interface ConnectTrace {
+    readonly attemptFailed?: (info: AttemptFailedInfo) => void;
+    readonly connectStart?: (info: ConnectStartInfo) => void;
+    readonly handshakeDone?: (info: HandshakeDoneInfo) => void;
+    readonly reconnectScheduled?: (info: ReconnectScheduledInfo) => void;
+    readonly resolveDone?: (info: ResolveDoneInfo) => void;
+    readonly resolveStart?: (info: ResolveStartInfo) => void;
+    readonly sessionStart?: (info: SessionStartInfo) => void;
+    readonly welcomeDone?: (info: WelcomeDoneInfo) => void;
 }
 
 // @public
@@ -214,6 +262,11 @@ export function generateIdentitySync(targetLevel: number): Identity;
 export function getChannelDescription(client: Client, cid: ChannelID, options?: CommandOptions): Promise<string>;
 
 // @public
+export interface HandshakeDoneInfo extends AttemptInfo {
+    readonly durationMs: number;
+}
+
+// @public
 export class Identity {
     export(): string;
     get offset(): bigint;
@@ -266,6 +319,13 @@ export interface ReconnectOptions {
 }
 
 // @public
+export interface ReconnectScheduledInfo {
+    readonly attempt: number;
+    readonly cause: unknown;
+    readonly delayMs: number;
+}
+
+// @public
 export class RemovedError extends TeamspeakError {
     constructor(reason: number, reasonMessage: string, invokerName: string);
     readonly invokerName: string;
@@ -280,6 +340,20 @@ export interface ResolvedAddr {
     readonly addr: string;
     readonly expiry?: Date | undefined;
     readonly source?: string | undefined;
+}
+
+// @public
+export interface ResolveDoneInfo extends AttemptInfo {
+    readonly addr: string;
+    readonly durationMs: number;
+    readonly error: unknown;
+    readonly source: string;
+    readonly target: string;
+}
+
+// @public
+export interface ResolveStartInfo extends AttemptInfo {
+    readonly addr: string;
 }
 
 // @public
@@ -307,6 +381,13 @@ export type ServerEventName = "textMessage" | "clientEnter" | "clientLeave" | "c
 
 // @public
 export type ServerFamily = "ts3" | "ts6" | "unknown";
+
+// @public
+export interface SessionStartInfo extends AttemptInfo {
+    readonly capabilities: ServerCapabilities;
+    readonly clientID: ClientID;
+    readonly durationMs: number;
+}
 
 // @public
 export type SocketFactory = (family: 4 | 6) => DatagramSocket;
@@ -337,6 +418,11 @@ export function unsubscribeChannel(client: Client, cid: ChannelID, options?: Com
 
 // @public
 export function uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: FileTransferOptions): Promise<void>;
+
+// @public
+export interface WelcomeDoneInfo extends AttemptInfo {
+    readonly durationMs: number;
+}
 
 
 export * from "@honeybbq/teamspeak-core";

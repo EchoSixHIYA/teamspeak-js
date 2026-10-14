@@ -25,6 +25,7 @@
   "githubPages": true,
   // ClientStatus is `typeof clientStatusValues`; that helper const is private to
   // the client's types.ts, and its members are documented on ClientStatus.
-  "intentionallyNotExported": ["clientStatusValues"],
+  // ConnectPhase follows the same pattern, in trace.ts.
+  "intentionallyNotExported": ["clientStatusValues", "connectPhaseValues"],
   "treatWarningsAsErrors": true
 }

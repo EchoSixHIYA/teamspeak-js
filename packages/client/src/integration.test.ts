@@ -15,6 +15,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createSocket } from "node:dgram";
 import { generateIdentitySync } from "./crypto/identity.js";
 import { Client, ClientStatus } from "./client.js";
+import type { ConnectTrace } from "./trace.js";
 import { Readable, Writable } from "node:stream";
 import { listChannels, getChannelInfo, createChannel } from "@honeybbq/teamspeak-core";
 import {
@@ -607,4 +608,84 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
 
     expect(msg).toBe("hello from ts-js-integ");
   }, 15_000);
+
+  it("connectTrace — reports every milestone of a connection, in order", async () => {
+    const calls: Array<{ name: string; info: { durationMs?: number; clientID?: number } }> = [];
+    const record =
+      (name: string) =>
+      (info: object): void => {
+        calls.push({ name, info });
+      };
+    const trace: ConnectTrace = {
+      resolveStart: record("resolveStart"),
+      resolveDone: record("resolveDone"),
+      connectStart: record("connectStart"),
+      handshakeDone: record("handshakeDone"),
+      sessionStart: record("sessionStart"),
+      welcomeDone: record("welcomeDone"),
+      attemptFailed: record("attemptFailed"),
+      reconnectScheduled: record("reconnectScheduled"),
+    };
+    const traced = new Client(generateIdentitySync(8), ADDR!, "ts-js-trace", {
+      serverPassword: SERVER_PASSWORD,
+      defaultChannel: DEFAULT_CHANNEL,
+      defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
+      connectTrace: trace,
+    });
+    try {
+      await traced.connect({ signal: AbortSignal.timeout(CONNECT_ATTEMPT_MS) });
+      // The welcome sequence ends shortly after the session starts.
+      for (let i = 0; i < 100 && !calls.some((c) => c.name === "welcomeDone"); i++) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(calls.map((c) => c.name)).toEqual([
+        "resolveStart",
+        "resolveDone",
+        "connectStart",
+        "handshakeDone",
+        "sessionStart",
+        "welcomeDone",
+      ]);
+      for (const name of ["resolveDone", "handshakeDone", "sessionStart", "welcomeDone"]) {
+        expect(calls.find((c) => c.name === name)!.info.durationMs).toBeGreaterThanOrEqual(0);
+      }
+      expect(calls.find((c) => c.name === "sessionStart")!.info.clientID).toBe(traced.clientID);
+    } finally {
+      await traced.disconnect();
+    }
+  }, 30_000);
+
+  it("connectTrace — reports a failed attempt to a closed port", async () => {
+    // Bind a UDP socket to learn a free port, then close it: nothing listens.
+    const probe = createSocket("udp4");
+    await new Promise<void>((resolve) => probe.bind(0, "127.0.0.1", resolve));
+    const port = probe.address().port;
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+    const failures: Array<{ phase: string; error: unknown }> = [];
+    const started: string[] = [];
+    const closed = new Client(generateIdentitySync(8), `127.0.0.1:${port}`, "ts-js-closed", {
+      connectTrace: {
+        resolveStart: () => started.push("resolveStart"),
+        sessionStart: () => started.push("sessionStart"),
+        attemptFailed: (info) => failures.push({ phase: info.phase, error: info.error }),
+      },
+    });
+    const signal = AbortSignal.timeout(1_000);
+    const outcome = await closed.connect({ signal }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(outcome).toBeDefined();
+    expect(started).toEqual(["resolveStart"]);
+    expect(failures).toHaveLength(1);
+    expect(["open", "handshake"]).toContain(failures[0]!.phase);
+    // The attempt's error is the one connect() rejects with: the abort reason,
+    // or the socket's own refusal when the loopback reports the closed port first.
+    expect(failures[0]!.error).toBe(outcome);
+    if (outcome !== signal.reason) {
+      expect((outcome as { code?: string }).code).toBe("ECONNREFUSED");
+    }
+  }, 10_000);
 });

@@ -12,6 +12,7 @@ import type {
 } from "@honeybbq/teamspeak-core";
 import type { Duplex } from "node:stream";
 import type { ReconnectOptions } from "./reconnect.js";
+import type { ConnectTrace } from "./trace.js";
 
 // ---- Events ---------------------------------------------------------------
 
@@ -201,6 +202,13 @@ export interface ClientOptions {
    * session. An explicit `disconnect()` never reconnects regardless.
    */
   readonly reconnect?: ReconnectOptions | undefined;
+  /**
+   * Hooks called at each milestone of every connection attempt, for timing,
+   * metrics and progress. The object is copied when the client is made, so
+   * changing it afterwards has no effect. See {@link ConnectTrace} for the
+   * rules a hook follows.
+   */
+  readonly connectTrace?: ConnectTrace | undefined;
   /**
    * Creates the TCP socket a file transfer runs over.
    *

@@ -43,6 +43,20 @@ export * from "./api/voice.js";
 export { dialFileTransfer, uploadFileData, downloadFileData } from "./transfer.js";
 export type { FileTransferOptions } from "./transfer.js";
 
+// Tracing a connection attempt
+export { ConnectPhase } from "./trace.js";
+export type {
+  ConnectTrace,
+  ResolveStartInfo,
+  ResolveDoneInfo,
+  ConnectStartInfo,
+  HandshakeDoneInfo,
+  SessionStartInfo,
+  WelcomeDoneInfo,
+  AttemptFailedInfo,
+  ReconnectScheduledInfo,
+} from "./trace.js";
+
 // Server capabilities, read from the handshake
 export { unknownServerCapabilities } from "./capabilities.js";
 export type { ServerCapabilities, ServerFamily } from "./capabilities.js";

@@ -18,6 +18,7 @@ export function handleHandshakeInitIV(
 
   client.handler.receivedFinalInitAck();
   client.crypt.initCrypto(alpha, beta, omega);
+  client.markHandshakeDone();
   client.logger.info("crypto initialized (P-256 path), sending clientinit");
   sendClientInit(client);
 }
@@ -37,6 +38,7 @@ export function handleHandshakeExpand2(
 
   const privateKey = sendClientEkPacket(client, beta);
   cryptoInit2(client.crypt, license, omega, proof, beta, privateKey);
+  client.markHandshakeDone();
   sendClientInit(client);
 }
 

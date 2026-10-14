@@ -354,6 +354,33 @@ Connection auth options:
 - `defaultChannel`: default channel name requested during `clientinit`
 - `defaultChannelPassword`: plain-text password for `defaultChannel`; sent as the TeamSpeak protocol hash
 
+### Tracing a connection
+
+`connectTrace` takes hooks that are called at each milestone of every connection attempt: the one `connect()` starts and each one the reconnect loop makes. Use it for timing, metrics or a progress display. The milestones come in this order: `resolveStart`, `resolveDone`, `connectStart`, `handshakeDone`, `sessionStart`, `welcomeDone`. An attempt that never gets a session ends with `attemptFailed` instead, which says in which phase (`"open"`, `"handshake"` or `"join"`) and why. `reconnectScheduled` fires when the reconnect loop has decided to retry and is about to wait. Every attempt ends with exactly one of `sessionStart` and `attemptFailed`.
+
+```ts
+const client = new Client(identity, "ts.example.com", "Bot", {
+  connectTrace: {
+    resolveDone: (i) => console.log(`resolved to ${i.target} in ${i.durationMs.toFixed(0)} ms`),
+    handshakeDone: (i) => console.log(`encrypted session after ${i.durationMs.toFixed(0)} ms`),
+    sessionStart: (i) => console.log(`joined as ${i.clientID} after ${i.durationMs.toFixed(0)} ms`),
+    welcomeDone: (i) => console.log(`channel list received after ${i.durationMs.toFixed(0)} ms`),
+    attemptFailed: (i) => console.log(`attempt ${i.attempt} failed while ${i.phase}:`, i.error),
+    reconnectScheduled: (i) => console.log(`retry ${i.attempt} in ${i.delayMs} ms`),
+  },
+});
+```
+
+The rules for a hook:
+
+- It runs synchronously, at the moment of the milestone, and the client waits for it. Keep it quick and hand slow work to your own task.
+- What it returns is ignored. A promise it returns is not awaited.
+- It must not call `connect()` or `disconnect()`. To give up on an attempt, abort the signal you passed to `connect()`; to leave once connected, call `disconnect()` from a `connected` listener.
+- It may read `client.status`, `client.clientID` and the like. `sessionStart` runs before `connect()` resolves and before `connected` is delivered.
+- If it throws, or the promise it returns rejects, the error is reported the way a throwing event listener's is, as an uncaught exception, and the connection carries on as if nothing happened.
+
+The object is copied when the client is made, so changing it afterwards has no effect.
+
 ### Diagnostics
 
 The client logs nothing unless given a `logger`. For tracing, it publishes on
