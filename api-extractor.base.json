@@ -4,7 +4,11 @@
   "apiReport": {
     "enabled": true,
     "reportFolder": "<projectFolder>/etc/",
-    "reportTempFolder": "<projectFolder>/temp/"
+    "reportTempFolder": "<projectFolder>/temp/",
+    // The tables (ErrorCode, PermissionName, ...) are typed as typeof an
+    // unexported object; without this their members, the wire values, would
+    // be missing from the report.
+    "includeForgottenExports": true
   },
   "docModel": { "enabled": false },
   "dtsRollup": { "enabled": false },

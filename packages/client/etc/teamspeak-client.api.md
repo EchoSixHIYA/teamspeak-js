@@ -134,6 +134,13 @@ export const ClientStatus: typeof clientStatusValues;
 export type ClientStatus = (typeof ClientStatus)[keyof typeof ClientStatus];
 
 // @public
+const clientStatusValues: {
+    readonly Disconnected: "disconnected";
+    readonly Connecting: "connecting";
+    readonly Connected: "connected";
+};
+
+// @public
 export const commandChannel: TracingChannel<CommandTrace>;
 
 // @public
