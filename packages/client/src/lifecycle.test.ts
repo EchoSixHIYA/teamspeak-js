@@ -46,7 +46,14 @@ function clientOn(socket: () => FakeSocket, options: ClientOptions = {}): Client
 }
 
 function packet(type: PacketType, data: Uint8Array): Packet {
-  return { typeFlagged: type, id: 1, clientID: 0, generationID: 0, data, receivedAt: Date.now() };
+  return {
+    typeFlagged: type,
+    id: 1,
+    clientID: 0,
+    generationID: 0,
+    data,
+    receivedAt: performance.now(),
+  };
 }
 
 /** A client that has completed a handshake against a socket that answers nothing. */
@@ -280,8 +287,29 @@ describe("events()", () => {
     clientInternals(client).handler.onPacket?.(packet(PacketType.Command, poke));
     await settle();
 
-    controller.abort();
-    await expect(iterator.next()).resolves.toEqual({ value: undefined, done: true });
+    const reason = new Error("stop");
+    const pending = iterator.next();
+    controller.abort(reason);
+    // That call took the first buffered event; the abort discards the other.
+    await expect(pending).resolves.toMatchObject({ done: false });
+    await expect(iterator.next()).rejects.toBe(reason);
+    await expect(iterator.next()).rejects.toBe(reason);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});
+
+describe("events() abort", () => {
+  it("rejects the pending next() with the signal's reason, and removes the listener", async () => {
+    const { client } = await connected();
+    const controller = new AbortController();
+    const iterator = client.events("poked", { signal: controller.signal });
+    const first = iterator.next();
+    const second = iterator.next();
+    const reason = new Error("stop");
+    controller.abort(reason);
+    await expect(first).rejects.toBe(reason);
+    await expect(second).rejects.toBe(reason);
+    await expect(iterator.next()).rejects.toBe(reason);
     await client.disconnect({ signal: AbortSignal.timeout(1) });
   });
 });
@@ -311,7 +339,7 @@ describe("voice delivery", () => {
   });
 
   it("reports the drops since the last warning, not since the start", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.useFakeTimers({ toFake: ["Date", "performance"] });
     try {
       const counts: unknown[] = [];
       const logger: Logger = {
@@ -399,7 +427,7 @@ describe("the idle timeout", () => {
     seconds: number,
     datagramFor: (client: Client, id: number) => Uint8Array,
   ): Promise<{ client: Client; dropped: Array<Error | undefined> }> {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date", "performance"] });
     try {
       const { client, socket } = await connected();
       const dropped: Array<Error | undefined> = [];
@@ -462,7 +490,10 @@ describe("one session after another", () => {
 
     const first = await Promise.race([
       iterator.next(),
-      new Promise((resolve) => setTimeout(() => resolve("still open"), 30)),
+      (async () => {
+        for (let i = 0; i < 5; i++) await settle();
+        return "still open";
+      })(),
     ]);
     expect(first).toBe("still open");
     await client.disconnect();

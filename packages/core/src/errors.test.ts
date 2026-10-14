@@ -71,3 +71,25 @@ describe("exported tables", () => {
     }).toThrow(TypeError);
   });
 });
+
+describe("error names", () => {
+  it("are on the prototype, not an own enumerable property", async () => {
+    const { ServerError, TeamspeakError, CommandTimeoutError, NotConnectedError, NoDataError } =
+      await import("./errors.js");
+    const errors = [
+      new TeamspeakError("x"),
+      new ServerError(1, "bad"),
+      new CommandTimeoutError("c"),
+      new NotConnectedError(),
+      new NoDataError("c"),
+    ];
+    for (const err of errors) {
+      expect(Object.keys(err)).not.toContain("name");
+      expect(Object.hasOwn(err, "name")).toBe(false);
+      expect(err.name).toBe((err.constructor as unknown as { kind: string }).kind);
+      expect(JSON.parse(JSON.stringify(err))).not.toHaveProperty("name");
+    }
+    const server = new ServerError(1, "bad");
+    expect(String(server)).toBe("ServerError: TeamSpeak server error: bad (code 1)");
+  });
+});

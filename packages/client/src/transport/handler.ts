@@ -103,7 +103,7 @@ export class PacketHandler {
   #closed = false;
   #stopPing: (() => void) | null = null;
   #stopResend: (() => void) | null = null;
-  #lastMessageReceived = Date.now();
+  #lastMessageReceived = performance.now();
 
   #packetCounter = new Uint16Array(9);
   #generationCounter = new Uint32Array(9);
@@ -223,7 +223,7 @@ export class PacketHandler {
       return;
     }
     this.#conn = conn;
-    this.#lastMessageReceived = Date.now();
+    this.#lastMessageReceived = performance.now();
 
     conn.on("message", (msg) => {
       if (this.#closed) return;
@@ -445,8 +445,8 @@ export class PacketHandler {
 
     const rp: ResendPacket = {
       packet: p,
-      firstSend: Date.now(),
-      lastSend: Date.now(),
+      firstSend: performance.now(),
+      lastSend: performance.now(),
       retryCount: 0,
       nextInterval: RESEND_BASE_INTERVAL_MS,
     };
@@ -460,7 +460,8 @@ export class PacketHandler {
         if (err) this.#logger.warn("udp send error", err);
       });
     } catch (error: unknown) {
-      const normalized = error instanceof Error ? error : new Error(String(error));
+      const normalized =
+        error instanceof Error ? error : new Error(String(error), { cause: error });
       // dgram can throw synchronously for an invalid family/address pair. A
       // malformed remote target must close this session, never escape from an
       // async socket callback and terminate the gateway process.
@@ -490,7 +491,7 @@ export class PacketHandler {
       clientID: 0,
       generationID: this.#resolveGeneration(parsed.id, parsed.typeFlagged & 0x0f),
       data: new Uint8Array(0),
-      receivedAt: Date.now(),
+      receivedAt: performance.now(),
     };
 
     const decrypted = this.#decryptPacketData(p, header, ciphertext, tag);
@@ -498,7 +499,7 @@ export class PacketHandler {
     p.data = decrypted.plaintext;
     // Only a packet that decrypted shows the server is there: anyone can send
     // datagrams that do not, and they must not keep a dead session alive.
-    this.#lastMessageReceived = Date.now();
+    this.#lastMessageReceived = performance.now();
 
     const pType = packetType(p);
 
@@ -831,7 +832,7 @@ export class PacketHandler {
   }
 
   #checkResends(): void {
-    const now = Date.now();
+    const now = performance.now();
 
     if (now - this.#lastMessageReceived > PACKET_TIMEOUT_MS) {
       this.#logger.warn("idle timeout");
@@ -909,7 +910,7 @@ function applyProtocolFlags(pType: PacketType, flags: number): number {
 }
 
 function hasOldNewerPacket(queue: Map<number, Packet>, nextID: number): boolean {
-  const now = Date.now();
+  const now = performance.now();
   for (const [id, pkg] of queue) {
     const diff = (id - nextID + 0x10000) & 0xffff;
     if (diff < 0x8000 && now - pkg.receivedAt > 5_000) {

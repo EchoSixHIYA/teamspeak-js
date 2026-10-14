@@ -25,7 +25,7 @@ function commandPacket(text: string): Packet {
     clientID: 0,
     generationID: 0,
     data: new TextEncoder().encode(text),
-    receivedAt: Date.now(),
+    receivedAt: performance.now(),
   };
 }
 
@@ -424,10 +424,12 @@ describe("events()", () => {
     const loop = (async () => {
       for await (const poke of client.events("poked", { signal: controller.signal })) {
         seen.push(poke.message);
-        await new Promise((r) => setTimeout(r, 5));
+        await settle();
         if (seen.length === 3) controller.abort();
       }
-    })();
+    })().catch((error: unknown) => {
+      expect((error as Error).name).toBe("AbortError");
+    });
     for (const msg of ["a", "b", "c", "d"]) {
       clientInternals(client).handler.onPacket?.(
         commandPacket(`notifyclientpoke invokerid=1 msg=${msg}`),
@@ -436,6 +438,35 @@ describe("events()", () => {
     await loop;
 
     expect(seen.slice(0, 3)).toEqual(["a", "b", "c"]);
+  });
+
+  it("answers concurrent next() calls in order, none lost", async () => {
+    const client = connectedClient("Bot", 5);
+    const iterator = client.events("poked");
+    const first = iterator.next();
+    const second = iterator.next();
+    const third = iterator.next();
+    for (const msg of ["a", "b", "c"]) {
+      clientInternals(client).handler.onPacket?.(
+        commandPacket(`notifyclientpoke invokerid=1 msg=${msg}`),
+      );
+    }
+    const values = (await Promise.all([first, second, third])).map(
+      (r) => (r.value as { message: string }).message,
+    );
+    expect(values).toEqual(["a", "b", "c"]);
+    await iterator.return?.();
+  });
+
+  it("ends every pending next() when the iterator is returned", async () => {
+    const client = connectedClient("Bot", 5);
+    const iterator = client.events("poked");
+    const pending = [iterator.next(), iterator.next()];
+    await iterator.return?.();
+    await expect(Promise.all(pending)).resolves.toEqual([
+      { value: undefined, done: true },
+      { value: undefined, done: true },
+    ]);
   });
 
   it("stops listening when the loop exits early", async () => {
@@ -468,6 +499,29 @@ describe("events()", () => {
     await client.disconnect({ signal: AbortSignal.timeout(50) });
 
     await expect(loop).resolves.toEqual([]);
+  });
+
+  it("lets go of the signal when a disconnect ends it, though for-await never calls return()", async () => {
+    const { getEventListeners } = await import("node:events");
+    const client = await silentServerClient();
+    const connecting = client.connect();
+    await until(() => clientInternals(client).handler.isOpen);
+    clientInternals(client).clid = 5;
+    clientInternals(client).markConnected();
+    await connecting;
+
+    const controller = new AbortController();
+    const loop = (async () => {
+      for await (const _poke of client.events("poked", { signal: controller.signal })) {
+        // nothing arrives
+      }
+    })();
+    await settle();
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(1);
+    await client.disconnect({ signal: AbortSignal.timeout(50) });
+    await loop;
+
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
   });
 });
 

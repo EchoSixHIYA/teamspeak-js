@@ -2,14 +2,14 @@ import { describe, it, expect } from "vitest";
 import { randomBytes } from "node:crypto";
 import { Crypt } from "./crypt.js";
 import { generateIdentitySync } from "./identity.js";
-import { CryptoInitError } from "../errors.js";
+import { HandshakeError } from "../errors.js";
 
 const identity = generateIdentitySync(0);
 
 describe("Crypt", () => {
   it("derives no session key before crypto init", () => {
     const crypt = new Crypt(identity);
-    expect(() => crypt.getKeyNonce(true, 1, 0, 2, false)).toThrow(CryptoInitError);
+    expect(() => crypt.getKeyNonce(true, 1, 0, 2, false)).toThrow(HandshakeError);
     // The dummy key is still there for the handshake.
     expect(crypt.getKeyNonce(true, 1, 0, 2, true)[0]).toHaveLength(16);
   });

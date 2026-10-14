@@ -10,7 +10,7 @@ import { clientInternals } from "../client.js";
 import { afterAll, describe, expect, it } from "vitest";
 import { randomBytes } from "node:crypto";
 import { Client } from "../client.js";
-import { CryptoInitError } from "../errors.js";
+import { HandshakeError } from "../errors.js";
 import { generateIdentitySync } from "../crypto/identity.js";
 import { MAX_DECOMPRESSED_SIZE, Qlz, QuickLZError } from "./quicklz.js";
 import { MAX_DATAGRAM_SIZE, MAX_QUEUED_BYTES } from "./handler.js";
@@ -275,7 +275,7 @@ describe("the receive path", () => {
     expect(escaped).toEqual([]);
   }, 120_000);
 
-  it("fails the connection with a CryptoInitError on an absurd RSA challenge", async () => {
+  it("fails the connection with a HandshakeError on an absurd RSA challenge", async () => {
     let socket: FakeSocket | undefined;
     const client = new Client(identity, "127.0.0.1:9987", "Bot", {
       socketFactory: () => (socket = new FakeSocket()),
@@ -289,7 +289,7 @@ describe("the receive path", () => {
     new DataView(step3.buffer).setUint32(129, 0xffffffff, false);
     socket!.deliver(init1Packet(step3));
 
-    await expect(connecting).rejects.toBeInstanceOf(CryptoInitError);
+    await expect(connecting).rejects.toBeInstanceOf(HandshakeError);
     expect(client.status).toBe("disconnected");
   });
 

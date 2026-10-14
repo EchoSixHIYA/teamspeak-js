@@ -23,10 +23,19 @@ export class TeamspeakError extends Error {
    * package. Every SDK error class declares its own.
    */
   static readonly kind: string = "TeamspeakError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "TeamspeakError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
-    this.name = "TeamspeakError";
     const kinds: string[] = [];
     for (let c: unknown = new.target; typeof c === "function"; c = Object.getPrototypeOf(c)) {
       if (Object.hasOwn(c, "kind")) kinds.push((c as unknown as { kind: string }).kind);
@@ -59,8 +68,22 @@ export class TeamspeakError extends Error {
 export class ServerError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
   static override readonly kind: string = "ServerError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "ServerError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
-  /** The server's error code. A server may report one {@link ErrorCode} does not name. */
+  /**
+   * The protocol's numeric error code, as in `error id=…`: compare it with
+   * {@link ErrorCode}. It is not a Node-style string code such as `ENOENT`.
+   * A server may report one {@link ErrorCode} does not name.
+   */
   readonly code: number;
   /** The server's own text, such as "invalid channel password". */
   readonly serverMessage: string;
@@ -79,7 +102,6 @@ export class ServerError extends TeamspeakError {
   ) {
     const extra = details.extraMessage ? ` (${details.extraMessage})` : "";
     super(`TeamSpeak server error: ${serverMessage}${extra} (code ${code})`);
-    this.name = "ServerError";
     this.code = code;
     this.serverMessage = serverMessage;
     this.extraMessage = details.extraMessage;
@@ -94,13 +116,22 @@ export class ServerError extends TeamspeakError {
 export class CommandTimeoutError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
   static override readonly kind: string = "CommandTimeoutError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "CommandTimeoutError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   /** The name of the command that timed out; never its parameters. */
   readonly command: string;
 
   constructor(command: string) {
     super(`command timeout: ${command}`);
-    this.name = "CommandTimeoutError";
     this.command = command;
   }
 }
@@ -115,10 +146,19 @@ export class CommandTimeoutError extends TeamspeakError {
 export class NotConnectedError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
   static override readonly kind: string = "NotConnectedError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "NotConnectedError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   constructor(options?: ErrorOptions) {
     super("not connected", options);
-    this.name = "NotConnectedError";
   }
 }
 
@@ -133,13 +173,22 @@ export class NotConnectedError extends TeamspeakError {
 export class NoDataError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
   static override readonly kind: string = "NoDataError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "NoDataError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   /** The name of the command that answered with nothing. */
   readonly command: string;
 
   constructor(command: string, message = `the server answered ${command} with no data`) {
     super(message);
-    this.name = "NoDataError";
     this.command = command;
   }
 }

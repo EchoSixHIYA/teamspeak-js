@@ -211,7 +211,7 @@ when two copies of the package are installed, minified or not: each class
 names itself in a fixed static `kind`, which instances carry. A subclass of
 your own that declares no `kind` matches only its own instances across
 copies. A handshake that fails on what
-the server sent rejects with a `CryptoInitError`; `parseIdentity` throws only
+the server sent rejects with a `HandshakeError`; `parseIdentity` throws only
 an `InvalidIdentityError`. `EAXTagMismatchError` and
 `FakeSignatureMismatchError` are no longer exported: a packet that fails them
 is dropped, and they never reached a caller. An address that

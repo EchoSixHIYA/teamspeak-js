@@ -197,13 +197,6 @@ export interface ConnectStartInfo extends AttemptInfo {
 }
 
 // @public
-export class CryptoInitError extends TeamspeakError {
-    constructor(message: string, options?: ErrorOptions);
-    // (undocumented)
-    static readonly kind: string;
-}
-
-// @public
 export interface DatagramSocket {
     address?(): {
         readonly address: string;
@@ -293,6 +286,7 @@ export interface FileTransferFailedInfo {
 
 // @public
 export interface FileTransferOptions {
+    readonly idleTimeoutMs?: number | undefined;
     readonly signal?: AbortSignal | undefined;
     readonly socketFactory?: FileTransferSocketFactory | undefined;
     readonly trace?: FileTransferTrace | undefined;
@@ -337,6 +331,13 @@ export interface HandshakeDoneInfo extends AttemptInfo {
     readonly puzzleLevel: number;
     readonly resends: number;
     readonly serverPublicKey: string;
+}
+
+// @public
+export class HandshakeError extends TeamspeakError {
+    constructor(message: string, options?: ErrorOptions);
+    // (undocumented)
+    static readonly kind: string;
 }
 
 // @public

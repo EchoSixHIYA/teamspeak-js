@@ -4,10 +4,19 @@ import { Reason, TeamspeakError } from "@honeybbq/teamspeak-core";
 export class AlreadyConnectedError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
   static override readonly kind: string = "AlreadyConnectedError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "AlreadyConnectedError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   constructor() {
     super("already connecting or connected");
-    this.name = "AlreadyConnectedError";
   }
 }
 
@@ -22,13 +31,22 @@ export class AlreadyConnectedError extends TeamspeakError {
 export class InvalidAddressError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
   static override readonly kind: string = "InvalidAddressError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "InvalidAddressError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   /** The address as given. */
   readonly address: string;
 
   constructor(address: string, reason: string) {
     super(`invalid address ${JSON.stringify(address)}: ${reason}`);
-    this.name = "InvalidAddressError";
     this.address = address;
   }
 }
@@ -40,10 +58,19 @@ export class InvalidAddressError extends TeamspeakError {
 export class EAXTagMismatchError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
   static override readonly kind: string = "EAXTagMismatchError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "EAXTagMismatchError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   constructor() {
     super("EAX tag mismatch");
-    this.name = "EAXTagMismatchError";
   }
 }
 
@@ -54,10 +81,19 @@ export class EAXTagMismatchError extends TeamspeakError {
 export class FakeSignatureMismatchError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
   static override readonly kind: string = "FakeSignatureMismatchError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "FakeSignatureMismatchError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   constructor() {
     super("fake signature mismatch");
-    this.name = "FakeSignatureMismatchError";
   }
 }
 
@@ -65,10 +101,19 @@ export class FakeSignatureMismatchError extends TeamspeakError {
 export class FileTransferError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
   static override readonly kind: string = "FileTransferError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "FileTransferError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
-    this.name = "FileTransferError";
   }
 }
 
@@ -77,13 +122,22 @@ export class FileTransferError extends TeamspeakError {
  * Init1 step, public key, license or proof. `connect()` rejects with it, the
  * underlying failure as its `cause`.
  */
-export class CryptoInitError extends TeamspeakError {
+export class HandshakeError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
-  static override readonly kind: string = "CryptoInitError";
+  static override readonly kind: string = "HandshakeError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "HandshakeError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
-    this.name = "CryptoInitError";
   }
 }
 
@@ -91,10 +145,19 @@ export class CryptoInitError extends TeamspeakError {
 export class InvalidIdentityError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
   static override readonly kind: string = "InvalidIdentityError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "InvalidIdentityError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   constructor(message = "invalid identity format", options?: ErrorOptions) {
     super(message, options);
-    this.name = "InvalidIdentityError";
   }
 }
 
@@ -105,10 +168,19 @@ export class InvalidIdentityError extends TeamspeakError {
 export class ConnectionTimeoutError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
   static override readonly kind: string = "ConnectionTimeoutError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "ConnectionTimeoutError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   constructor() {
     super("connection timed out: the server stopped answering");
-    this.name = "ConnectionTimeoutError";
   }
 }
 
@@ -120,6 +192,16 @@ export class ConnectionTimeoutError extends TeamspeakError {
 export class RemovedError extends TeamspeakError {
   /** {@inheritDoc TeamspeakError.kind} */
   static override readonly kind: string = "RemovedError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "RemovedError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
 
   /** Why: `Reason.KickServer`, `KickServerBan`, `ServerStop` or `ServerShutdown`. */
   readonly reason: number;
@@ -133,7 +215,6 @@ export class RemovedError extends TeamspeakError {
     if (invokerName) message += ` by ${invokerName}`;
     if (reasonMessage) message += `: ${reasonMessage}`;
     super(message);
-    this.name = "RemovedError";
     this.reason = reason;
     this.reasonMessage = reasonMessage;
     this.invokerName = invokerName;

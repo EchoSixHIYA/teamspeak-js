@@ -17,7 +17,7 @@ export class CommandThrottle {
   static readonly TOKEN_MAX = 8.0; // bucket capacity
 
   #tokens = 5.0;
-  #lastUpdate = Date.now();
+  #lastUpdate = performance.now();
   readonly #waiters: Waiter[] = [];
   #timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -51,7 +51,7 @@ export class CommandThrottle {
   }
 
   #refill(): void {
-    const now = Date.now();
+    const now = performance.now();
     const elapsed = (now - this.#lastUpdate) / 1000;
     this.#tokens = Math.min(
       this.#tokens + elapsed * CommandThrottle.TOKEN_RATE,

@@ -14,9 +14,13 @@ import type { FileTransferSocketFactory } from "./types.js";
 import { FileTransferError } from "./errors.js";
 import { callHook } from "./hooks.js";
 import { joinHostPort } from "./address.js";
+import { abortable } from "./abort.js";
 
 /** How long dialing may take before it fails, unless a signal says otherwise. */
 const DIAL_TIMEOUT_MS = 10_000;
+
+/** How long a transfer may go without moving a byte, unless `idleTimeoutMs` says otherwise. */
+const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
 
 /** How many bytes move between two calls of the `progress` hook, at least. */
 const PROGRESS_STEP_BYTES = 64 * 1024;
@@ -108,6 +112,14 @@ export interface FileTransferOptions {
    * the call starts. See {@link FileTransferTrace}.
    */
   readonly trace?: FileTransferTrace | undefined;
+  /**
+   * The longest, in milliseconds, the transfer may go without moving a byte,
+   * the write of the transfer key included. When it passes, the transfer
+   * rejects with a {@link FileTransferError} whose `cause` is a `TimeoutError`
+   * and the connection is destroyed. `undefined` means the default, 30 000;
+   * `0` turns the limit off.
+   */
+  readonly idleTimeoutMs?: number | undefined;
 }
 
 /** What a transfer's hooks share: the trace, when the call began, and what has moved. */
@@ -115,6 +127,46 @@ interface TransferTrace {
   readonly trace: FileTransferTrace | undefined;
   readonly startedAt: number;
   bytes: number;
+}
+
+/**
+ * Watches a transfer for going idle. `touch()` says a byte moved; when none
+ * does for the whole limit, `signal` aborts with a `TimeoutError`.
+ */
+interface IdleGuard {
+  readonly signal: AbortSignal;
+  readonly limitMs: number;
+  touch(): void;
+  stop(): void;
+}
+
+function newIdleGuard(options: FileTransferOptions): IdleGuard {
+  const limitMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+  if (!Number.isFinite(limitMs) || limitMs < 0) {
+    throw new RangeError("idleTimeoutMs must be a finite number of milliseconds, 0 or more");
+  }
+  const controller = new AbortController();
+  if (limitMs === 0) {
+    return { signal: controller.signal, limitMs, touch() {}, stop() {} };
+  }
+  const timer = setTimeout(
+    () => controller.abort(new DOMException(`no data moved for ${limitMs} ms`, "TimeoutError")),
+    limitMs,
+  );
+  return {
+    signal: controller.signal,
+    limitMs,
+    touch: () => timer.refresh(),
+    stop: () => clearTimeout(timer),
+  };
+}
+
+/** The error a transfer fails with when `idle` expired, else `error` as it is. */
+function idleOr(idle: IdleGuard, error: unknown): unknown {
+  if (!idle.signal.aborted) return error;
+  return new FileTransferError(`file transfer stalled: no data moved for ${idle.limitMs} ms`, {
+    cause: idle.signal.reason,
+  });
 }
 
 function newTransferTrace(options: FileTransferOptions): TransferTrace {
@@ -145,11 +197,15 @@ export async function dialFileTransfer(
   options: FileTransferOptions = {},
 ): Promise<Duplex> {
   const t = newTransferTrace(options);
+  const idle = newIdleGuard(options);
   try {
-    return await dial(host, port, key, options, t);
+    return await dial(host, port, key, options, t, idle);
   } catch (error) {
-    reportFailed(t, error, "dial");
-    throw error;
+    const failure = idleOr(idle, error);
+    reportFailed(t, failure, "dial");
+    throw failure;
+  } finally {
+    idle.stop();
   }
 }
 
@@ -159,8 +215,15 @@ async function dial(
   key: string,
   options: FileTransferOptions,
   t: TransferTrace,
+  idle: IdleGuard,
 ): Promise<Duplex> {
   const { signal, socketFactory } = options;
+  // One budget for the connection and the key write: a peer that accepts the
+  // connection and never reads would otherwise hold the write forever.
+  const timeout = AbortSignal.timeout(DIAL_TIMEOUT_MS);
+  const dialSignal = AbortSignal.any(
+    signal ? [signal, timeout, idle.signal] : [timeout, idle.signal],
+  );
   const addr = joinHostPort(host, String(port));
   callHook(t.trace?.dialStart, t.trace, () => ({ addr }));
   signal?.throwIfAborted();
@@ -171,18 +234,28 @@ async function dial(
   const swallow = (): void => {};
   socket.on("error", swallow);
   try {
-    await connected(socket, signal);
-    await new Promise<void>((resolve, reject) => {
-      socket.write(key, (err) =>
-        err
-          ? reject(
-              new FileTransferError(`failed to send transfer key: ${err.message}`, { cause: err }),
-            )
-          : resolve(),
-      );
-    });
+    await abortable(connected(socket), dialSignal);
+    idle.touch();
+    await abortable(
+      new Promise<void>((resolve, reject) => {
+        socket.write(key, (err) =>
+          err
+            ? reject(
+                new FileTransferError(`failed to send transfer key: ${err.message}`, {
+                  cause: err,
+                }),
+              )
+            : resolve(),
+        );
+      }),
+      dialSignal,
+    );
+    idle.touch();
   } catch (error) {
     socket.destroy();
+    if (timeout.aborted && error === timeout.reason) {
+      throw new FileTransferError("file transfer connection timed out", { cause: error });
+    }
     throw error;
   } finally {
     socket.off("error", swallow);
@@ -202,17 +275,50 @@ async function dial(
  * A pass-through that counts what moves and reports it to `progress`. It never
  * fails the pipeline: a hook's error is reported, not thrown.
  */
-function countingStream(t: TransferTrace, total: number): Transform {
+function countingStream(t: TransferTrace, total: number, idle: IdleGuard): Transform {
   let reported = 0;
   return new Transform({
     transform(chunk: Buffer | string, _encoding, callback) {
       t.bytes += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
+      idle.touch();
       if (t.bytes - reported >= PROGRESS_STEP_BYTES) {
         reported = t.bytes;
         const bytes = t.bytes;
         callHook(t.trace?.progress, t.trace, () => ({ bytes, total }));
       }
       callback(null, chunk);
+    },
+  });
+}
+
+/**
+ * Passes exactly `expected` bytes. One more byte fails the transfer, and is
+ * not passed on; a stream that ends before `expected` fails it too.
+ */
+function exactSize(expected: number): Transform {
+  let received = 0;
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      const room = expected - received;
+      if (chunk.length > room) {
+        this.push(chunk.subarray(0, room));
+        received = expected;
+        callback(
+          new FileTransferError(`file transfer sent more than the announced ${expected} bytes`),
+        );
+        return;
+      }
+      received += chunk.length;
+      callback(null, chunk);
+    },
+    flush(callback) {
+      callback(
+        received === expected
+          ? null
+          : new FileTransferError(
+              `file transfer ended after ${received} of the announced ${expected} bytes`,
+            ),
+      );
     },
   });
 }
@@ -231,18 +337,28 @@ async function transfer(
   ) => Promise<void>,
 ): Promise<void> {
   const t = newTransferTrace(options);
-  let socket: Duplex;
+  const idle = newIdleGuard(options);
   try {
-    socket = await dial(host, port, key, options, t);
-  } catch (error) {
-    reportFailed(t, error, "dial");
-    throw error;
-  }
-  try {
-    await move(socket, countingStream(t, total), options.signal ? { signal: options.signal } : {});
-  } catch (error) {
-    reportFailed(t, error, "transfer");
-    throw error;
+    let socket: Duplex;
+    try {
+      socket = await dial(host, port, key, options, t, idle);
+    } catch (error) {
+      const failure = idleOr(idle, error);
+      reportFailed(t, failure, "dial");
+      throw failure;
+    }
+    try {
+      const signal = options.signal ? AbortSignal.any([options.signal, idle.signal]) : idle.signal;
+      await move(socket, countingStream(t, total, idle), { signal });
+    } catch (error) {
+      // A pipeline aborted by the caller's signal rejects as the signal says;
+      // one aborted by the idle limit is the transfer's own failure.
+      const failure = idleOr(idle, error);
+      reportFailed(t, failure, "transfer");
+      throw failure;
+    }
+  } finally {
+    idle.stop();
   }
   const bytes = t.bytes;
   callHook(t.trace?.progress, t.trace, () => ({ bytes, total }));
@@ -257,18 +373,15 @@ async function transfer(
  * `connect`; a stream from elsewhere that is already writable is taken as
  * connected.
  */
-function connected(socket: Duplex, signal: AbortSignal | undefined): Promise<void> {
+function connected(socket: Duplex): Promise<void> {
   const pending = (socket as { pending?: boolean }).pending;
   if (pending === false || (pending === undefined && socket.writable)) return Promise.resolve();
 
   return new Promise<void>((resolve, reject) => {
-    const timeout = AbortSignal.timeout(DIAL_TIMEOUT_MS);
     const done = (error?: unknown): void => {
       socket.off("connect", onConnect);
       socket.off("ready", onConnect);
       socket.off("error", onError);
-      signal?.removeEventListener("abort", onAbort);
-      timeout.removeEventListener("abort", onTimeout);
       if (error === undefined) resolve();
       else reject(error);
     };
@@ -279,13 +392,9 @@ function connected(socket: Duplex, signal: AbortSignal | undefined): Promise<voi
           cause: error,
         }),
       );
-    const onAbort = (): void => done(signal!.reason);
-    const onTimeout = (): void => done(new FileTransferError("file transfer connection timed out"));
     socket.once("connect", onConnect);
     socket.once("ready", onConnect);
     socket.once("error", onError);
-    signal?.addEventListener("abort", onAbort, { once: true });
-    timeout.addEventListener("abort", onTimeout, { once: true });
   });
 }
 
@@ -319,7 +428,8 @@ export function downloadFileData(
     info.fileTransferKey,
     Number(info.size),
     options,
-    (socket, counter, pipeOptions) => pipeline(socket, counter, dest, pipeOptions),
+    (socket, counter, pipeOptions) =>
+      pipeline(socket, exactSize(Number(info.size)), counter, dest, pipeOptions),
   );
 }
 

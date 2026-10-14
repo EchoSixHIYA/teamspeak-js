@@ -3,6 +3,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { createServer, type Server } from "node:net";
 import { Duplex, PassThrough, Readable, Writable } from "node:stream";
 import type { FileDownloadInfo, FileUploadInfo } from "@honeybbq/teamspeak-core";
+import { FileTransferError } from "./errors.js";
 import {
   dialFileTransfer,
   downloadFileData,
@@ -126,6 +127,102 @@ describe("upload and download", () => {
     await expect(dialFileTransfer("h", 1, "k", { socketFactory: () => stream })).resolves.toBe(
       stream,
     );
+  });
+});
+
+describe("file transfer limits", () => {
+  const info: FileDownloadInfo = {
+    clientFileTransferID: asClientFileTransferID(1),
+    serverFileTransferID: asServerFileTransferID(1),
+    fileTransferKey: "key",
+    port: 0,
+    size: 5n,
+  } as FileDownloadInfo;
+
+  async function download(
+    send: (socket: import("node:net").Socket) => void,
+    size: bigint,
+    options: { idleTimeoutMs?: number } = {},
+  ): Promise<{ error: unknown; written: string }> {
+    const server = await listen(send);
+    const chunks: string[] = [];
+    const dest = new Writable({
+      write(chunk: Buffer, _e, callback) {
+        chunks.push(chunk.toString());
+        callback();
+      },
+    });
+    let error: unknown;
+    try {
+      await downloadFileData("127.0.0.1", { ...info, port: port(server), size }, dest, options);
+    } catch (e) {
+      error = e;
+    }
+    server.close();
+    return { error, written: chunks.join("") };
+  }
+
+  it("fails a download that sends more than the announced size, writing none of the excess", async () => {
+    const { error, written } = await download((socket) => socket.end("hello-and-more"), 5n);
+    expect(error).toBeInstanceOf(FileTransferError);
+    expect((error as Error).message).toMatch(/more than the announced 5 bytes/);
+    expect(written.length).toBeLessThanOrEqual(5);
+    expect("hello".startsWith(written)).toBe(true);
+  });
+
+  it("fails a download that ends short", async () => {
+    const { error, written } = await download((socket) => socket.end("hel"), 5n);
+    expect(error).toBeInstanceOf(FileTransferError);
+    expect((error as Error).message).toMatch(/ended after 3 of the announced 5 bytes/);
+    expect(written).toBe("hel");
+  });
+
+  it("completes a download of exactly the announced size", async () => {
+    const { error, written } = await download((socket) => socket.end("hello"), 5n);
+    expect(error).toBeUndefined();
+    expect(written).toBe("hello");
+  });
+
+  it("fails a transfer that goes idle, with a TimeoutError cause, and destroys the socket", async () => {
+    let serverSide: import("node:net").Socket | undefined;
+    const { error } = await download(
+      (socket) => {
+        serverSide = socket;
+        socket.resume(); // so the peer closing is seen
+        socket.write("he"); // and then nothing
+      },
+      5n,
+      { idleTimeoutMs: 50 },
+    );
+    expect(error).toBeInstanceOf(FileTransferError);
+    expect(((error as Error).cause as Error).name).toBe("TimeoutError");
+    await vi.waitFor(() => expect(serverSide?.destroyed).toBe(true));
+  });
+
+  it("applies the idle limit to the key write", async () => {
+    // A peer that never reads: the write never completes.
+    const stuck = new Duplex({ read() {}, write() {} });
+    const error = await dialFileTransfer("h", 1, "k", {
+      socketFactory: () => stuck,
+      idleTimeoutMs: 30,
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(FileTransferError);
+    expect(((error as Error).cause as Error).name).toBe("TimeoutError");
+    expect(stuck.destroyed).toBe(true);
+  });
+
+  it("lets the signal end a key write that never completes", async () => {
+    const stuck = new Duplex({ read() {}, write() {} });
+    const controller = new AbortController();
+    const reason = new Error("enough");
+    const pending = dialFileTransfer("h", 1, "k", {
+      socketFactory: () => stuck,
+      signal: controller.signal,
+      idleTimeoutMs: 0,
+    });
+    controller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+    expect(stuck.destroyed).toBe(true);
   });
 });
 

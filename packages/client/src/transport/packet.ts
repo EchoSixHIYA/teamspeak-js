@@ -24,7 +24,7 @@ export interface Packet {
   clientID: number;
   generationID: number;
   data: Uint8Array;
-  receivedAt: number; // Date.now()
+  receivedAt: number; // performance.now(), a monotonic clock
 }
 
 export function packetType(p: Packet): PacketType {

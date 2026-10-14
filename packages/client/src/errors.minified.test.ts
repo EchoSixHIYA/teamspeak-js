@@ -37,7 +37,7 @@ const kinds = [
   "NotConnectedError",
   "NoDataError",
   "AlreadyConnectedError",
-  "CryptoInitError",
+  "HandshakeError",
   "RemovedError",
 ] as const;
 
@@ -73,4 +73,22 @@ describe("instanceof across minified copies", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 60_000);
+});
+
+describe("client error names", () => {
+  it("are on the prototype, not own properties", () => {
+    const errors = [
+      new client.AlreadyConnectedError(),
+      new client.InvalidAddressError("a", "b"),
+      new client.FileTransferError("x"),
+      new client.HandshakeError("x"),
+      new client.InvalidIdentityError(),
+      new client.ConnectionTimeoutError(),
+      new client.RemovedError(1, "", ""),
+    ];
+    for (const err of errors) {
+      expect(Object.keys(err)).not.toContain("name");
+      expect(err.name).toBe((err.constructor as unknown as { kind: string }).kind);
+    }
+  });
 });

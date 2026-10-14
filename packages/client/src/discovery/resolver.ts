@@ -3,6 +3,7 @@ import { createConnection } from "node:net";
 import type { ResolvedAddr } from "../types.js";
 import { isIpAddress, joinHostPort, splitHostPort } from "../address.js";
 import { abortable } from "../abort.js";
+import { InvalidAddressError } from "../errors.js";
 
 const TS_DNS_DEFAULT_PORT = 41144;
 const NICKNAME_LOOKUP_URL = "https://named.myteamspeak.com/lookup";
@@ -48,7 +49,7 @@ export class Resolver {
     inputAddr: string,
     options: { readonly signal?: AbortSignal | undefined } = {},
   ): Promise<ResolvedAddr[]> {
-    if (!inputAddr) throw new Error("empty address");
+    if (!inputAddr) throw new InvalidAddressError(inputAddr, "empty address");
     const budget = AbortSignal.timeout(RESOLVE_BUDGET_MS);
     const signal = options.signal ? AbortSignal.any([options.signal, budget]) : budget;
     try {
@@ -127,7 +128,7 @@ export class Resolver {
     try {
       const srvs = await abortable(resolveSrv(`_ts3._udp.${host}`), signal);
       if (!srvs || srvs.length === 0) return null;
-      return srvs.map((srv) => ({
+      return orderSrvRecords(srvs).map((srv) => ({
         addr: joinHostPort(srv.name.replace(/\.$/, ""), String(srv.port)),
         source: "SRV",
       }));
@@ -145,7 +146,7 @@ export class Resolver {
       try {
         const srvs = await abortable(resolveSrv(`_tsdns._tcp.${domain}`), signal);
         if (!srvs || srvs.length === 0) continue;
-        for (const srv of srvs) {
+        for (const srv of orderSrvRecords(srvs)) {
           const tsdnsAddr = joinHostPort(srv.name.replace(/\.$/, ""), String(srv.port));
           const result = await queryTSDNS(tsdnsAddr, queryHost, signal);
           if (result) return result;
@@ -174,6 +175,58 @@ export class Resolver {
 }
 
 // ---- Helpers ----------------------------------------------------------------
+
+/** The part of an SRV record that decides the order they are tried in. */
+interface SrvRecord {
+  readonly priority: number;
+  readonly weight: number;
+}
+
+/**
+ * Put SRV records in the order RFC 2782 has a client try them: by priority,
+ * lowest first, and within a priority by weighted random selection, so a
+ * record of weight 2 is first twice as often as one of weight 1. Records of
+ * weight 0 follow the others of their priority, in the order given. Node's
+ * `resolveSrv` returns the records unsorted.
+ *
+ * @param random Returns a number in [0, 1); injected to make the order testable.
+ * @internal
+ */
+export function orderSrvRecords<T extends SrvRecord>(
+  records: readonly T[],
+  random: () => number = Math.random,
+): T[] {
+  const byPriority = new Map<number, T[]>();
+  for (const record of records) {
+    const group = byPriority.get(record.priority);
+    if (group) group.push(record);
+    else byPriority.set(record.priority, [record]);
+  }
+  const ordered: T[] = [];
+  for (const priority of [...byPriority.keys()].sort((a, b) => a - b)) {
+    const group = byPriority.get(priority)!;
+    const weighted = group.filter((r) => r.weight > 0);
+    const unweighted = group.filter((r) => r.weight <= 0);
+    let sum = weighted.reduce((total, r) => total + r.weight, 0);
+    while (weighted.length > 0) {
+      const target = random() * sum;
+      let running = 0;
+      let pick = weighted.length - 1;
+      for (let i = 0; i < weighted.length; i++) {
+        running += weighted[i]!.weight;
+        if (running > target) {
+          pick = i;
+          break;
+        }
+      }
+      const [chosen] = weighted.splice(pick, 1);
+      ordered.push(chosen!);
+      sum -= chosen!.weight;
+    }
+    ordered.push(...unweighted);
+  }
+  return ordered;
+}
 
 /** @internal Ask the nickname service for `nickname`'s address. */
 export async function resolveNickname(

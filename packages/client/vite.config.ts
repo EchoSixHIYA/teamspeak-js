@@ -13,7 +13,7 @@ export default defineConfig({
       // this package, where the application can neither dedupe nor update it.
       external: [/^node:/, /^@noble\//, /^@honeybbq\//],
     },
-    target: "node20",
+    target: "node22",
     sourcemap: true,
     // Readable output: class names stay in stack traces and inspect().
     minify: false,

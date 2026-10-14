@@ -11,7 +11,7 @@ export default defineConfig({
       formats: ["es"],
       fileName: (_format, name) => `${name}.js`,
     },
-    target: "node20",
+    target: "node22",
     sourcemap: true,
     // Readable output: class names stay in stack traces and inspect().
     minify: false,

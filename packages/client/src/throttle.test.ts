@@ -1,30 +1,35 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { CommandThrottle } from "./throttle.js";
 
 describe("CommandThrottle", () => {
+  afterEach(() => vi.useRealTimers());
+
   it("allows immediate calls when tokens are available", async () => {
+    vi.useFakeTimers();
     const t = new CommandThrottle();
-    const start = Date.now();
-    await t.wait();
-    await t.wait();
-    await t.wait();
-    await t.wait();
-    await t.wait();
-    // 5 calls should succeed instantly (initial tokens = 5)
-    expect(Date.now() - start).toBeLessThan(100);
+    const start = performance.now();
+    // 5 calls succeed without the clock moving (initial tokens = 5)
+    for (let i = 0; i < 5; i++) await t.wait();
+    expect(performance.now() - start).toBe(0);
   });
 
   it("throttles when bucket is exhausted", async () => {
+    vi.useFakeTimers();
     const t = new CommandThrottle();
     // Exhaust initial 5 tokens
     for (let i = 0; i < 5; i++) await t.wait();
-    const start = Date.now();
-    // One more token should require ~250ms at rate 4/s
-    await t.wait();
-    expect(Date.now() - start).toBeGreaterThan(50);
+    let released = false;
+    void t.wait().then(() => (released = true));
+
+    // One more token takes 250 ms at rate 4/s.
+    await vi.advanceTimersByTimeAsync(200);
+    expect(released).toBe(false);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(released).toBe(true);
   });
 
   it("respects AbortSignal", async () => {
+    vi.useFakeTimers();
     const t = new CommandThrottle();
     // Exhaust tokens
     for (let i = 0; i < 5; i++) await t.wait();
@@ -32,7 +37,9 @@ describe("CommandThrottle", () => {
     const controller = new AbortController();
     setTimeout(() => controller.abort(new Error("aborted")), 50);
 
-    await expect(t.wait(controller.signal)).rejects.toThrow("aborted");
+    const waiting = expect(t.wait(controller.signal)).rejects.toThrow("aborted");
+    await vi.advanceTimersByTimeAsync(50);
+    await waiting;
   });
 
   // Each waiter used to poll on its own timer, so a later one could take the

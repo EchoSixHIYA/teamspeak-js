@@ -8,6 +8,8 @@ import { FakeSocket, sessionPacket } from "./testing/fake-server.js";
 const identity = generateIdentitySync(0);
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
 async function until(condition: () => boolean): Promise<void> {
   for (let i = 0; i < 400 && !condition(); i++) await sleep(2);
   expect(condition()).toBe(true);
@@ -93,7 +95,9 @@ describe("the reconnect loop", () => {
     await byHand;
 
     await until(() => logs.some((l) => l.startsWith("reconnect loop ended")));
-    await sleep(200);
+    // The loop has ended; nothing is left for it to do, so let any stray
+    // deliveries run and see that no attempt follows.
+    for (let i = 0; i < 5; i++) await settle();
     expect(sockets).toHaveLength(2);
     expect(client.status).toBe("connected");
     await client.disconnect({ signal: AbortSignal.timeout(1) });

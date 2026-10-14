@@ -42,7 +42,7 @@ describe("the handshake's resends", () => {
   let handler: PacketHandler | undefined;
 
   beforeEach(() => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date", "performance"] });
   });
 
   afterEach(() => {

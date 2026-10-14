@@ -29,7 +29,7 @@ export type {
 export {
   AlreadyConnectedError,
   FileTransferError,
-  CryptoInitError,
+  HandshakeError,
   InvalidAddressError,
   InvalidIdentityError,
   RemovedError,

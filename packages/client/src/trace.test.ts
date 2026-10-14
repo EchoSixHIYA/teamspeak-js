@@ -4,7 +4,7 @@ import { Client, clientInternals, onSentLine } from "./client.js";
 import { unknownServerCapabilities } from "./capabilities.js";
 import { generateIdentitySync } from "./crypto/identity.js";
 import { ConnectPhase, type ClientTrace } from "./trace.js";
-import { ConnectionTimeoutError, CryptoInitError, InvalidAddressError } from "./errors.js";
+import { ConnectionTimeoutError, HandshakeError, InvalidAddressError } from "./errors.js";
 import { NotConnectedError, asChannelID } from "@honeybbq/teamspeak-core";
 import {
   FakeSocket,
@@ -348,19 +348,19 @@ describe("a failed attempt", () => {
     expectFailedIn(calls, ConnectPhase.Handshake, (e) => expect(e).toBeInstanceOf(Error));
   });
 
-  it("in handshake, on a CryptoInitError", async () => {
+  it("in handshake, on a HandshakeError", async () => {
     const { trace, calls } = recordingTrace();
     const { client, sockets } = makeClient({ trace: trace });
     const connecting = client.connect();
     await until(() => clientInternals(client).handler.isOpen);
     deliverInitIV(client, sockets[0]!, "bm90IGEga2V5");
-    await expect(connecting).rejects.toBeInstanceOf(CryptoInitError);
-    expectFailedIn(calls, ConnectPhase.Handshake, (e) => expect(e).toBeInstanceOf(CryptoInitError));
+    await expect(connecting).rejects.toBeInstanceOf(HandshakeError);
+    expectFailedIn(calls, ConnectPhase.Handshake, (e) => expect(e).toBeInstanceOf(HandshakeError));
     expect(calls.map((c) => c.name)).not.toContain("handshakeDone");
   });
 
   it("in handshake, on the idle timeout", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date", "performance"] });
     const { trace, calls } = recordingTrace();
     const { client } = makeClient({ trace: trace });
     const connecting = client.connect();
@@ -785,7 +785,7 @@ describe("what each milestone knows", () => {
   });
 
   it("reports the puzzle, the resends and the server's public key at handshakeDone", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date", "performance"] });
     const { trace, calls } = recordingTrace();
     const { client, sockets } = makeClient({ trace });
     const connecting = client.connect();

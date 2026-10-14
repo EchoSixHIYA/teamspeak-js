@@ -31,7 +31,7 @@ import {
   TeamspeakError,
   noopLogger,
 } from "@honeybbq/teamspeak-core";
-import { AlreadyConnectedError, CryptoInitError, RemovedError } from "./errors.js";
+import { AlreadyConnectedError, HandshakeError, RemovedError } from "./errors.js";
 import { abortable, abortReason } from "./abort.js";
 import { Identity, Crypt } from "./crypto/index.js";
 import { RESOLVE_BUDGET_MS, Resolver } from "./discovery/resolver.js";
@@ -825,11 +825,20 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * ```
    *
    * Events that arrive while the loop body runs are buffered, so none is
-   * missed — except voice, of which at most 256 frames are buffered; the rest
-   * are dropped, as for a listener that falls behind. Iteration ends when
-   * `signal` aborts, when the loop exits early (`break`, `return`, a throw),
-   * and — for every event but `disconnected` — when the client disconnects.
-   * An abort stops listening at once and discards whatever is buffered.
+   * missed. The buffer is unbounded: an iterator that is not consumed as fast
+   * as events arrive holds every one of them in memory until it is read, so
+   * stop iterating (or abort `signal`) when you stop reading. Voice is the
+   * exception: at most 256 `voiceData` frames are buffered, and the rest are
+   * dropped, as for a listener that falls behind.
+   *
+   * Iteration ends when the loop exits early (`break`, `return`, a throw), and
+   * — for every event but `disconnected` — when the client disconnects. When
+   * `signal` aborts, listening stops at once, whatever is buffered is
+   * discarded, and the pending and every later `next()` reject with the
+   * signal's reason, as `events.on` in Node does.
+   *
+   * `next()` may be called again before an earlier call has settled; the calls
+   * are answered in order.
    */
   events<K extends keyof EventMap>(
     event: K,
@@ -837,55 +846,72 @@ export class Client implements CommandExecutor, AsyncDisposable {
   ): AsyncIterableIterator<EventMap[K]> {
     const { signal } = options;
     const buffered: Array<EventMap[K]> = [];
-    let wake: (() => void) | undefined;
+    // The next() calls waiting for an event, oldest first.
+    const waiting: Array<{
+      resolve: (result: IteratorResult<EventMap[K]>) => void;
+      reject: (reason: unknown) => void;
+    }> = [];
     let ended = false;
+    let aborted = false;
+
+    const finishWaiting = (): void => {
+      for (const waiter of waiting.splice(0)) {
+        waiter.resolve({ value: undefined, done: true });
+      }
+    };
 
     const stopListening = this.on(event, ((payload: EventMap[K]) => {
       if (ended) return;
+      const waiter = waiting.shift();
+      if (waiter) {
+        waiter.resolve({ value: payload, done: false });
+        return;
+      }
       if (event === "voiceData" && buffered.length >= MAX_PENDING_DELIVERIES) {
         this.#dropVoice();
         return;
       }
       buffered.push(payload);
-      wake?.();
     }) as Listener<K>);
     // Ends after what is already buffered, which arrived before the disconnect.
     const stopOnDisconnect =
       event === "disconnected"
         ? undefined
         : this.on("disconnected", () => {
-            ended = true;
-            stopListening();
-            wake?.();
+            cleanup();
+            finishWaiting();
           });
     const cleanup = (): void => {
       ended = true;
       stopListening();
       stopOnDisconnect?.();
       signal?.removeEventListener("abort", abort);
-      wake?.();
     };
     const abort = (): void => {
+      aborted = true;
       buffered.length = 0;
       cleanup();
+      const reason = abortReason(signal!);
+      for (const waiter of waiting.splice(0)) waiter.reject(reason);
     };
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });
 
     const iterator: AsyncIterableIterator<EventMap[K]> = {
-      async next(): Promise<IteratorResult<EventMap[K]>> {
-        while (buffered.length === 0 && !ended) {
-          await new Promise<void>((resolve) => (wake = resolve));
-          wake = undefined;
+      next(): Promise<IteratorResult<EventMap[K]>> {
+        if (aborted) return Promise.reject(abortReason(signal!));
+        if (buffered.length > 0) return Promise.resolve({ value: buffered.shift()!, done: false });
+        if (ended) {
+          cleanup();
+          return Promise.resolve({ value: undefined, done: true });
         }
-        if (buffered.length > 0) return { value: buffered.shift()!, done: false };
-        cleanup();
-        return { value: undefined, done: true };
+        return new Promise((resolve, reject) => waiting.push({ resolve, reject }));
       },
-      async return(): Promise<IteratorResult<EventMap[K]>> {
+      return(): Promise<IteratorResult<EventMap[K]>> {
         buffered.length = 0;
         cleanup();
-        return { value: undefined, done: true };
+        finishWaiting();
+        return Promise.resolve({ value: undefined, done: true });
       },
       [Symbol.asyncIterator]() {
         return iterator;
@@ -1179,15 +1205,15 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   /**
    * A datagram from the server could not be handled. During the handshake that
-   * is the connection failing, reported as a CryptoInitError with the cause;
+   * is the connection failing, reported as a HandshakeError with the cause;
    * once connected, one bad packet is not worth the session, so it is dropped.
    */
   #handleReceiveError(error: unknown): void {
     if (this.#status !== ClientStatus.Connected) {
       this.#failConnection(
-        error instanceof CryptoInitError
+        error instanceof HandshakeError
           ? error
-          : new CryptoInitError("the handshake failed on a malformed packet", { cause: error }),
+          : new HandshakeError("the handshake failed on a malformed packet", { cause: error }),
       );
       return;
     }
@@ -1456,7 +1482,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
    */
   #dropVoice(): void {
     this.#voiceDropped++;
-    const now = Date.now();
+    const now = performance.now();
     if (now - this.#voiceDropWarnedAt < VOICE_DROP_WARN_INTERVAL_MS) return;
     this.#voiceDropWarnedAt = now;
     // The count since the last warning, so each one says how bad it is now.
@@ -1647,7 +1673,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
           err = this.#lastDrop ?? new TeamspeakError("connection closed");
         } catch (retryErr) {
           if (retryErr instanceof AlreadyConnectedError) return;
-          err = retryErr instanceof Error ? retryErr : new TeamspeakError(String(retryErr));
+          err =
+            retryErr instanceof Error
+              ? retryErr
+              : new TeamspeakError(String(retryErr), { cause: retryErr });
         }
       }
       this.#logger.warn("reconnect attempts exhausted", { attempts: policy.maxAttempts });
@@ -1680,7 +1709,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#status = ClientStatus.Disconnected;
     this.#handler.close();
     void this.#announceDisconnected(
-      error instanceof Error ? error : new TeamspeakError(String(error)),
+      error instanceof Error ? error : new TeamspeakError(String(error), { cause: error }),
     );
   }
 }

@@ -1,5 +1,5 @@
 import { createHash, createECDH, randomBytes } from "node:crypto";
-import { CryptoInitError, FakeSignatureMismatchError } from "../errors.js";
+import { HandshakeError, FakeSignatureMismatchError } from "../errors.js";
 import type { Identity } from "./identity.js";
 import { identityPrivateKey, importPublicKey } from "./identity.js";
 import { EAX } from "./eax.js";
@@ -70,7 +70,7 @@ export class Crypt {
 
   solveRsaChallenge(data: Uint8Array, offset: number, level: number): Uint8Array {
     if (!Number.isInteger(level) || level < 0 || level > MAX_RSA_CHALLENGE_LEVEL) {
-      throw new CryptoInitError(`RSA challenge level ${level} out of range`);
+      throw new HandshakeError(`RSA challenge level ${level} out of range`);
     }
 
     const xBytes = data.slice(offset, offset + 64);
@@ -78,7 +78,7 @@ export class Crypt {
 
     let y = bytesToBigInt(xBytes);
     const n = bytesToBigInt(nBytes);
-    if (n === 0n) throw new CryptoInitError("RSA challenge modulus is zero");
+    if (n === 0n) throw new HandshakeError("RSA challenge modulus is zero");
 
     for (let i = 0; i < level; i++) {
       y = (y * y) % n;
@@ -96,7 +96,7 @@ export class Crypt {
     try {
       sharedSecret = this.#getSharedSecret(importPublicKey(omegaBytes));
     } catch (error) {
-      throw new CryptoInitError("the server's public key is invalid", { cause: error });
+      throw new HandshakeError("the server's public key is invalid", { cause: error });
     }
 
     this.setSharedSecret(alphaBytes, betaBytes, sharedSecret);
@@ -138,7 +138,7 @@ export class Crypt {
     // Before crypto init there is no IV, and a key derived from the empty one
     // is a key anyone can compute.
     if (!this.#cryptoInitComplete) {
-      throw new CryptoInitError("no session key before crypto init completes");
+      throw new HandshakeError("no session key before crypto init completes");
     }
 
     const cacheKey = makeCacheKey(fromServer, packetType, generationID);

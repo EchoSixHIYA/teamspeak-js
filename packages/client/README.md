@@ -150,7 +150,11 @@ deliveries are waiting, voice frames are dropped (and counted in a warning at
 most every ten seconds) rather than queued without bound.
 
 `events(name, { signal })` is the same as an async iterator, buffering events
-that arrive while the loop body runs:
+that arrive while the loop body runs. The buffer is unbounded (voice excepted,
+as above), so stop iterating when you stop reading. Aborting `signal` stops
+listening and makes the pending and later `next()` calls reject with the
+signal's reason, as Node's `events.on` does; `break`ing out of the loop, or a
+disconnect, ends it normally:
 
 ```typescript
 for await (const msg of client.events("textMessage", { signal })) {
@@ -279,12 +283,26 @@ await client.uploadFileData(host, info, Readable.from([data]));
 An upload does not replace a file already at the path unless passed
 `{ overwrite: true }`.
 
-| Function                                                | Description                       |
-| ------------------------------------------------------- | --------------------------------- |
-| `initFileUpload(client, ...)`                           | Negotiate an upload               |
-| `initFileDownload(client, ...)`                         | Negotiate a download              |
-| `client.uploadFileData(host, info, data, { signal? })`  | Transfer file data to the server  |
-| `client.downloadFileData(host, info, out, { signal? })` | Receive file data from the server |
+| Function                                             | Description                       |
+| ---------------------------------------------------- | --------------------------------- |
+| `initFileUpload(client, ...)`                        | Negotiate an upload               |
+| `initFileDownload(client, ...)`                      | Negotiate a download              |
+| `client.uploadFileData(host, info, data, options?)`  | Transfer file data to the server  |
+| `client.downloadFileData(host, info, out, options?)` | Receive file data from the server |
+
+The transfer functions take `FileTransferOptions`:
+
+| Option          | Description                                                                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `signal`        | An `AbortSignal` that abandons the transfer; it rejects with the signal's reason                                                   |
+| `socketFactory` | Opens the connection instead of a direct TCP dial, to route it through a proxy or tunnel                                           |
+| `trace`         | Hooks called at each milestone of the transfer (`dialStart`, `dialDone`, `progress`, `done`, `failed`); none sees the transfer key |
+| `idleTimeoutMs` | The longest, in milliseconds, a transfer may go without moving a byte, the key write included. Default 30 000; `0` disables it     |
+
+A transfer that goes idle for `idleTimeoutMs` fails with a `FileTransferError`
+whose `cause` is a `TimeoutError`, and its connection is destroyed. A download
+that sends more bytes than the negotiated size, or ends short of it, fails with
+a `FileTransferError` too; bytes past the announced size are never written.
 
 ### Identity
 

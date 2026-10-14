@@ -29,7 +29,8 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./internal": "./src/internal.ts"
+    "./internal": "./src/internal.ts",
+    "./package.json": "./package.json"
   },
   "publishConfig": {
     "types": "./dist/index.d.ts",
@@ -41,9 +42,11 @@
       "./internal": {
         "types": "./dist/internal.d.ts",
         "default": "./dist/internal.js"
-      }
+      },
+      "./package.json": "./package.json"
     },
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json",
