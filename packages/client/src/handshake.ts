@@ -18,7 +18,7 @@ export function handleHandshakeInitIV(
 
   client.handler.receivedFinalInitAck();
   client.crypt.initCrypto(alpha, beta, omega);
-  client.markHandshakeDone();
+  client.markHandshakeDone(omega);
   client.logger.info("crypto initialized (P-256 path), sending clientinit");
   sendClientInit(client);
 }
@@ -38,7 +38,7 @@ export function handleHandshakeExpand2(
 
   const privateKey = sendClientEkPacket(client, beta);
   cryptoInit2(client.crypt, license, omega, proof, beta, privateKey);
-  client.markHandshakeDone();
+  client.markHandshakeDone(omega);
   sendClientInit(client);
 }
 
@@ -59,7 +59,7 @@ export function handleInitServer(client: ClientInternals, params: Record<string,
   client.capabilities = parseServerCapabilities(params);
 
   client.logger.info("connected to server", { selfId: client.clid });
-  client.markConnected();
+  client.markConnected(params);
 
   // Inform the server about mute state
   setImmediate(() => {

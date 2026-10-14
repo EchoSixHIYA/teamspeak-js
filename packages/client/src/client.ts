@@ -1,6 +1,8 @@
 import {
   type EventMap,
   type ClientOptions,
+  type DatagramSocket,
+  type ResolvedAddr,
   type EventMiddleware,
   type AddrResolver,
   type Listener,
@@ -9,7 +11,9 @@ import {
   type Unsubscribe,
   ClientStatus,
 } from "./types.js";
-import { ConnectPhase, type ConnectTrace } from "./trace.js";
+import { ConnectPhase, type ClientTrace } from "./trace.js";
+import { callHook } from "./hooks.js";
+import { puzzleOf } from "./handshake/crypt-handshake.js";
 import {
   type ChannelID,
   type ClientEnterEvent,
@@ -36,7 +40,7 @@ import { PacketType } from "./transport/packet.js";
 import type { Packet } from "./transport/packet.js";
 import { CommandTracker, appendReturnCode } from "./commands.js";
 import { encodeRequest, parseServerError } from "@honeybbq/teamspeak-core/internal";
-import { uploadFileData, downloadFileData } from "./transfer.js";
+import { uploadFileData, downloadFileData, type FileTransferOptions } from "./transfer.js";
 import { buildCommandChain, buildEventChain } from "./events.js";
 import { processInit1 } from "./handshake/crypt-handshake.js";
 import {
@@ -104,9 +108,12 @@ export interface ClientInternals {
   clid: number;
   capabilities: ServerCapabilities;
   /** Mark the attempt in progress connected. */
-  markConnected(): void;
-  /** The shared secret exists: the attempt moves from its handshake to joining. */
-  markHandshakeDone(): void;
+  markConnected(initServer?: Readonly<Record<string, string>>): void;
+  /**
+   * The shared secret exists: the attempt moves from its handshake to joining.
+   * `serverPublicKey` is the server's `omega`, as it sent it.
+   */
+  markHandshakeDone(serverPublicKey?: string): void;
   /**
    * Send a command line without waiting for an answer, on the handshake's
    * own path: it needs an open socket, not a connected session.
@@ -157,16 +164,29 @@ interface AttemptTrace {
   /** When the socket was about to be opened. */
   connectStartedAt: number;
   phase: ConnectPhase;
+  /** The `host:port` being dialled; empty until the address is resolved. */
+  target: string;
   sessionStarted: boolean;
   welcomeDone: boolean;
+  /** The channel rows the welcome sequence has delivered so far. */
+  channels: number;
 }
 
-/** A hook's error, reported as an uncaught exception, as a throwing listener's is. */
-function reportHookError(error: unknown): void {
-  queueMicrotask(() => {
-    throw error;
-  });
+/** A session that began with `sessionStart`, until its `sessionEnd`. */
+interface TracedSession {
+  readonly clientID: ClientID;
+  readonly startedAt: number;
+  readonly attempt: number;
+  readonly reconnect: boolean;
 }
+
+/** The `initserver` parameters a trace never sees, because they could carry a secret. */
+const SECRET_INITSERVER_PARAMS: ReadonlySet<string> = new Set([
+  "client_server_password",
+  "client_default_channel_password",
+  "client_default_token",
+  "client_key_offset",
+]);
 
 /**
  * One connection attempt, settled once by the handshake or its failure.
@@ -289,7 +309,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
   #socketFactory: SocketFactory | undefined;
   #fileTransferSocketFactory: FileTransferSocketFactory | undefined;
   /** A copy of the caller's trace, so changing theirs later changes nothing. */
-  #connectTrace: ConnectTrace | undefined;
+  #trace: ClientTrace | undefined;
+  /** The session in progress, for its `sessionEnd`; cleared when that has been reported. */
+  #session: TracedSession | undefined;
   /** Undefined when the client does not reconnect. */
   #reconnectOptions: ReconnectOptions | undefined;
   /**
@@ -310,6 +332,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * the new one instead.
    */
   #leaving: Promise<void> | undefined;
+  /** Ends a disconnect()'s wait for its goodbye to be answered, while it waits. */
+  #goodbyeAnswered: (() => void) | undefined;
   /** How many times disconnect() was called, so a waiting connect() sees one. */
   #disconnects = 0;
   /**
@@ -349,8 +373,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#socketFactory = options.socketFactory;
     this.#fileTransferSocketFactory = options.fileTransferSocketFactory;
     this.#reconnectOptions = options.reconnect;
-    this.#connectTrace =
-      options.connectTrace === undefined ? undefined : { ...options.connectTrace };
+    this.#trace = options.trace === undefined ? undefined : { ...options.trace };
 
     this.#crypt = new Crypt(identity);
     this.#handler = this.#newHandler();
@@ -388,8 +411,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
       set capabilities(value) {
         self.#capabilities = value;
       },
-      markConnected: () => this.#markConnected(),
-      markHandshakeDone: () => this.#markHandshakeDone(),
+      markConnected: (initServer) => this.#markConnected(initServer),
+      markHandshakeDone: (serverPublicKey) => this.#markHandshakeDone(serverPublicKey),
       execNoWait: (command) => this.#execNoWait(command, undefined, true),
       handlePacket: (packet) => this.#handlePacket(packet),
     };
@@ -470,16 +493,19 @@ export class Client implements CommandExecutor, AsyncDisposable {
       startedAt: performance.now(),
       connectStartedAt: 0,
       phase: ConnectPhase.Open,
+      target: "",
       sessionStarted: false,
       welcomeDone: false,
+      channels: 0,
     };
     attempt.trace = trace;
     attempt.onFail = (error) =>
-      this.#callHook(this.#connectTrace?.attemptFailed, () => ({
+      this.#callHook(this.#trace?.attemptFailed, () => ({
         attempt: trace.attempt,
         reconnect: trace.reconnect,
         phase: trace.phase,
         error,
+        target: trace.target,
         durationMs: performance.now() - trace.startedAt,
       }));
 
@@ -490,7 +516,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
       try {
-        this.#callHook(this.#connectTrace?.resolveStart, () => ({
+        this.#callHook(this.#trace?.resolveStart, () => ({
           attempt: trace.attempt,
           reconnect: trace.reconnect,
           addr: this.#addr,
@@ -498,13 +524,15 @@ export class Client implements CommandExecutor, AsyncDisposable {
         const resolveStarted = performance.now();
         const resolution = await this.#resolveAddr(attempt.signal);
         const targetAddr = resolution.target;
+        trace.target = targetAddr;
         if (!attempt.settled) {
-          this.#callHook(this.#connectTrace?.resolveDone, () => ({
+          this.#callHook(this.#trace?.resolveDone, () => ({
             attempt: trace.attempt,
             reconnect: trace.reconnect,
             addr: this.#addr,
             target: targetAddr,
             source: resolution.source,
+            candidates: resolution.candidates,
             error: resolution.error,
             durationMs: performance.now() - resolveStarted,
           }));
@@ -512,7 +540,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         if (!attempt.settled) {
           this.#logger.info("connecting to server", { address: targetAddr });
           trace.connectStartedAt = performance.now();
-          this.#callHook(this.#connectTrace?.connectStart, () => ({
+          this.#callHook(this.#trace?.connectStart, () => ({
             attempt: trace.attempt,
             reconnect: trace.reconnect,
             target: targetAddr,
@@ -577,20 +605,35 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#logger.info("disconnecting from server");
 
     if (wasConnected) {
-      try {
-        // On the internal path: the status already says Disconnected.
-        await this.#exec(
-          "clientdisconnect reasonmsg=Shutdown",
-          { signal, timeout: DISCONNECT_TIMEOUT_MS },
-          true,
-        );
-      } catch {
-        // A courtesy; the connection closes regardless.
-      }
+      this.#callHook(this.#trace?.disconnectStart, () => ({}));
+      const goodbyeStarted = performance.now();
+      // The server answers clientdisconnect with a notifyclientleftview about
+      // this client, and no error line; either one ends the wait. A goodbye
+      // that is not answered in time is a courtesy lost: the connection
+      // closes regardless.
+      const left = new Promise<boolean>((resolve) => {
+        this.#goodbyeAnswered = () => resolve(true);
+      });
+      // On the internal path: the status already says Disconnected.
+      const answered = this.#exec(
+        "clientdisconnect reasonmsg=Shutdown",
+        { signal, timeout: DISCONNECT_TIMEOUT_MS },
+        true,
+      ).then(
+        () => true,
+        () => false,
+      );
+      const acknowledged = await Promise.race([answered, left]);
+      this.#goodbyeAnswered = undefined;
+      this.#callHook(this.#trace?.disconnectDone, () => ({
+        acknowledged,
+        durationMs: performance.now() - goodbyeStarted,
+      }));
     }
 
     this.#handler.close();
     this.#cmdTrack.reset(new NotConnectedError());
+    this.#endSession(undefined);
     // Announced here; #handleConnectionClosed stays quiet once the status is
     // already Disconnected, so listeners hear about it once.
     await this.#announceDisconnected(undefined);
@@ -912,7 +955,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     host: string,
     info: FileUploadInfo,
     data: Readable,
-    options: { readonly signal?: AbortSignal | undefined } = {},
+    options: Pick<FileTransferOptions, "signal" | "trace"> = {},
   ): Promise<void> {
     return uploadFileData(host, info, data, {
       ...options,
@@ -928,7 +971,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     host: string,
     info: FileDownloadInfo,
     dest: Writable,
-    options: { readonly signal?: AbortSignal | undefined } = {},
+    options: Pick<FileTransferOptions, "signal" | "trace"> = {},
   ): Promise<void> {
     return downloadFileData(host, info, dest, {
       ...options,
@@ -938,7 +981,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   // ---- Internal (package-visible) ------------------------------------------
 
-  #markConnected(): void {
+  #markConnected(initServer: Readonly<Record<string, string>> = {}): void {
     // Only the attempt in progress can complete: never one that disconnect()
     // or a failure has already ended.
     if (this.#status !== ClientStatus.Connecting || this.#attempt.settled) return;
@@ -949,28 +992,75 @@ export class Client implements CommandExecutor, AsyncDisposable {
     const trace = this.#attempt.trace;
     if (trace !== undefined) {
       trace.sessionStarted = true;
-      this.#callHook(this.#connectTrace?.sessionStart, () => ({
+      this.#session = {
+        clientID: asClientID(this.#clid),
+        startedAt: performance.now(),
         attempt: trace.attempt,
         reconnect: trace.reconnect,
-        clientID: asClientID(this.#clid),
-        capabilities: this.#capabilities,
-        durationMs: performance.now() - trace.connectStartedAt,
-      }));
+      };
+      this.#callHook(this.#trace?.sessionStart, () => {
+        const safe: Record<string, string> = {};
+        for (const [key, value] of Object.entries(initServer)) {
+          if (!SECRET_INITSERVER_PARAMS.has(key)) safe[key] = value;
+        }
+        const talkPower = Number.parseInt(initServer["client_talk_power"] ?? "", 10);
+        return {
+          attempt: trace.attempt,
+          reconnect: trace.reconnect,
+          clientID: asClientID(this.#clid),
+          nickname: initServer["acn"] ?? this.#nickname,
+          talkPower: Number.isNaN(talkPower) ? 0 : talkPower,
+          initServer: Object.freeze(safe),
+          capabilities: this.#capabilities,
+          durationMs: performance.now() - trace.connectStartedAt,
+        };
+      });
     }
     this.#emit("connected", undefined);
   }
 
-  #markHandshakeDone(): void {
+  /** The socket is open: the attempt's handshake begins. */
+  #markConnectDone(socket: DatagramSocket): void {
+    const trace = this.#attempt.trace;
+    if (trace === undefined || this.#attempt.settled || trace.phase !== ConnectPhase.Open) return;
+    trace.phase = ConnectPhase.Handshake;
+    this.#callHook(this.#trace?.connectDone, () => {
+      let localAddr = "";
+      try {
+        const local = socket.address?.();
+        if (local !== undefined) localAddr = joinHostPort(local.address, String(local.port));
+      } catch {
+        // A socket that cannot say where it is bound has no local address to report.
+      }
+      return {
+        attempt: trace.attempt,
+        reconnect: trace.reconnect,
+        target: trace.target,
+        localAddr,
+        durationMs: performance.now() - trace.connectStartedAt,
+      };
+    });
+  }
+
+  #markHandshakeDone(serverPublicKey = ""): void {
     const trace = this.#attempt.trace;
     if (trace === undefined || this.#attempt.settled || trace.phase !== ConnectPhase.Handshake) {
       return;
     }
     trace.phase = ConnectPhase.Join;
-    this.#callHook(this.#connectTrace?.handshakeDone, () => ({
-      attempt: trace.attempt,
-      reconnect: trace.reconnect,
-      durationMs: performance.now() - trace.connectStartedAt,
-    }));
+    this.#callHook(this.#trace?.handshakeDone, () => {
+      const puzzle = puzzleOf(this.#crypt);
+      return {
+        attempt: trace.attempt,
+        reconnect: trace.reconnect,
+        durationMs: performance.now() - trace.connectStartedAt,
+        puzzleLevel: puzzle.level,
+        puzzleDurationMs: puzzle.durationMs,
+        // The handler is this attempt's own, so its count starts at the socket.
+        resends: this.#handler.resends,
+        serverPublicKey,
+      };
+    });
   }
 
   #markWelcomeDone(): void {
@@ -978,29 +1068,36 @@ export class Client implements CommandExecutor, AsyncDisposable {
     if (trace === undefined || !trace.sessionStarted || trace.welcomeDone) return;
     if (this.#status !== ClientStatus.Connected) return;
     trace.welcomeDone = true;
-    this.#callHook(this.#connectTrace?.welcomeDone, () => ({
+    this.#callHook(this.#trace?.welcomeDone, () => ({
       attempt: trace.attempt,
       reconnect: trace.reconnect,
+      channelID: this.channelID,
+      channels: trace.channels,
+      clients: this.#clients.size,
       durationMs: performance.now() - trace.connectStartedAt,
+    }));
+  }
+
+  /** Report the end of the session in progress, once. */
+  #endSession(error: unknown): void {
+    const session = this.#session;
+    if (session === undefined) return;
+    this.#session = undefined;
+    this.#callHook(this.#trace?.sessionEnd, () => ({
+      clientID: session.clientID,
+      error,
+      durationMs: performance.now() - session.startedAt,
+      attempt: session.attempt,
+      reconnect: session.reconnect,
     }));
   }
 
   /**
    * Call a trace hook, if there is one, and never let it touch the
-   * connection: a throw, or the rejection of a promise it returns, is
-   * reported as a throwing event listener's is. The info is built only when
-   * there is a hook.
+   * connection: see callHook. The info is built only when there is a hook.
    */
   #callHook<I>(hook: ((info: I) => unknown) | undefined, info: () => I): void {
-    if (hook === undefined) return;
-    try {
-      const result = hook.call(this.#connectTrace, info());
-      if (result !== null && typeof result === "object" && "then" in result) {
-        Promise.resolve(result).then(undefined, reportHookError);
-      }
-    } catch (error) {
-      reportHookError(error);
-    }
+    callHook(hook, this.#trace, info);
   }
 
   // ---- Private -------------------------------------------------------------
@@ -1015,6 +1112,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
     };
     handler.onClosed = (err) => {
       if (handler === this.#handler) this.#handleConnectionClosed(err);
+    };
+    handler.onOpen = (socket) => {
+      if (handler === this.#handler) this.#markConnectDone(socket);
     };
     handler.onReceiveError = (error) => {
       if (handler === this.#handler) this.#handleReceiveError(error);
@@ -1033,9 +1133,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#capabilities = unknownServerCapabilities();
   }
 
-  async #resolveAddr(
-    signal: AbortSignal,
-  ): Promise<{ target: string; source: string; error: unknown }> {
+  async #resolveAddr(signal: AbortSignal): Promise<{
+    target: string;
+    source: string;
+    candidates: readonly ResolvedAddr[];
+    error: unknown;
+  }> {
     // Parsed, not tested for a colon: an IPv6 literal has colons and no port.
     const { host, port } = splitHostPort(this.#addr);
     const fallback = joinHostPort(host, port);
@@ -1056,14 +1159,19 @@ export class Client implements CommandExecutor, AsyncDisposable {
         lookup,
       );
       const first = resolved[0];
-      return { target: first?.addr ?? fallback, source: first?.source ?? "", error: undefined };
+      return {
+        target: first?.addr ?? fallback,
+        source: first?.source ?? "",
+        candidates: resolved,
+        error: undefined,
+      };
     } catch (error) {
       signal.throwIfAborted();
       const reason = budget.signal.aborted ? budget.signal.reason : error;
       this.#logger.warn("address resolution failed, falling back to direct", {
         error: String(reason),
       });
-      return { target: fallback, source: "", error: reason };
+      return { target: fallback, source: "", candidates: [], error: reason };
     } finally {
       clearTimeout(timer);
     }
@@ -1177,6 +1285,21 @@ export class Client implements CommandExecutor, AsyncDisposable {
       this.#cmdTrack.signalWelcomeComplete();
       this.#markWelcomeDone();
       return;
+    }
+
+    if (cmd.name === "channellist") {
+      const trace = this.#attempt.trace;
+      if (trace !== undefined && !trace.welcomeDone) trace.channels++;
+    }
+
+    // The server answers our goodbye by announcing that we left, not with an
+    // error line; that announcement is what disconnect() waits for.
+    if (
+      cmd.name === "notifyclientleftview" &&
+      this.#goodbyeAnswered !== undefined &&
+      cmd.params["clid"] === String(this.#clid)
+    ) {
+      this.#goodbyeAnswered();
     }
 
     if (cmd.name.startsWith("notify")) {
@@ -1431,6 +1554,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // Never undefined for a drop: undefined means disconnect() only.
     const cause = err ?? new TeamspeakError("connection closed");
     this.#lastDrop = cause;
+    this.#endSession(cause);
 
     // Announced first, then retried: a caller watching `disconnected` should
     // hear about the drop even when a reconnect is already on its way, because
@@ -1461,24 +1585,32 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
     const stop = new AbortController();
     this.#stopReconnecting = stop;
+    // The attempts the loop has made, and why it stopped, for `reconnectStopped`.
+    let made = 0;
+    let stoppedBy: { readonly cause: unknown } | undefined;
     try {
       for (let attempt = 1; policy.maxAttempts === 0 || attempt <= policy.maxAttempts; attempt++) {
-        if (this.#stopped) return;
+        if (this.#stopped) {
+          stoppedBy = { cause: undefined };
+          return;
+        }
         let retry: boolean;
         try {
           retry = shouldRetry(err, attempt);
         } catch (error) {
           this.#logger.error("shouldRetry threw; not reconnecting", { error: String(error) });
+          stoppedBy = { cause: err };
           return;
         }
         if (!retry) {
           this.#logger.info("not retrying", { attempt, reason: err.message });
+          stoppedBy = { cause: err };
           return;
         }
 
         const delay = backoffDelay(policy, attempt);
         this.#logger.info("reconnecting", { attempt, delayMs: delay });
-        this.#callHook(this.#connectTrace?.reconnectScheduled, () => ({
+        this.#callHook(this.#trace?.reconnectScheduled, () => ({
           attempt,
           delayMs: delay,
           cause: err,
@@ -1486,7 +1618,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
         // A timer that keeps the process alive: an application that does
         // nothing but stay connected would otherwise exit during the wait.
         await sleep(delay, stop.signal);
-        if (this.#stopped) return;
+        if (this.#stopped) {
+          stoppedBy = { cause: undefined };
+          return;
+        }
         // Connected, or connecting, by hand during the wait: nothing is left to
         // retry, and an attempt now would only fail with AlreadyConnectedError.
         if (this.#status !== ClientStatus.Disconnected) {
@@ -1495,6 +1630,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         }
 
         try {
+          made++;
           await this.#connect(
             { signal: AbortSignal.timeout(RECONNECT_ATTEMPT_TIMEOUT_MS) },
             attempt,
@@ -1515,7 +1651,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
         }
       }
       this.#logger.warn("reconnect attempts exhausted", { attempts: policy.maxAttempts });
+      stoppedBy = { cause: err };
     } finally {
+      if (stoppedBy !== undefined) {
+        const { cause } = stoppedBy;
+        this.#callHook(this.#trace?.reconnectStopped, () => ({ attempts: made, cause }));
+      }
       this.#reconnecting = false;
       if (this.#stopReconnecting === stop) this.#stopReconnecting = undefined;
     }

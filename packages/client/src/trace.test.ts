@@ -1,14 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomBytes } from "node:crypto";
-import { Client, clientInternals } from "./client.js";
+import { Client, clientInternals, onSentLine } from "./client.js";
+import { unknownServerCapabilities } from "./capabilities.js";
 import { generateIdentitySync } from "./crypto/identity.js";
-import { ConnectPhase, type ConnectTrace } from "./trace.js";
+import { ConnectPhase, type ClientTrace } from "./trace.js";
 import { ConnectionTimeoutError, CryptoInitError, InvalidAddressError } from "./errors.js";
-import { NotConnectedError } from "@honeybbq/teamspeak-core";
+import { NotConnectedError, asChannelID } from "@honeybbq/teamspeak-core";
 import {
   FakeSocket,
   completeCryptoInit,
   dummyPacket,
+  init1Packet,
   sessionPacket,
 } from "./testing/fake-server.js";
 import type { ClientOptions } from "./types.js";
@@ -34,7 +36,7 @@ interface Recorded {
 
 /** A trace with every hook set, recording each call in order. */
 function recordingTrace(): {
-  trace: ConnectTrace;
+  trace: ClientTrace;
   calls: Recorded[];
   names: () => string[];
 } {
@@ -44,15 +46,20 @@ function recordingTrace(): {
     (info: object): void => {
       calls.push({ name, info: info as Record<string, unknown> });
     };
-  const trace: ConnectTrace = {
+  const trace: ClientTrace = {
     resolveStart: record("resolveStart"),
     resolveDone: record("resolveDone"),
     connectStart: record("connectStart"),
+    connectDone: record("connectDone"),
     handshakeDone: record("handshakeDone"),
     sessionStart: record("sessionStart"),
     welcomeDone: record("welcomeDone"),
     attemptFailed: record("attemptFailed"),
+    disconnectStart: record("disconnectStart"),
+    disconnectDone: record("disconnectDone"),
+    sessionEnd: record("sessionEnd"),
     reconnectScheduled: record("reconnectScheduled"),
+    reconnectStopped: record("reconnectStopped"),
   };
   return { trace, calls, names: () => calls.map((c) => c.name) };
 }
@@ -109,7 +116,7 @@ afterEach(() => {
 describe("a successful attempt", () => {
   it("reports the milestones in order, sessionStart before connect() resolves", async () => {
     const { trace, calls, names } = recordingTrace();
-    const { client, sockets } = makeClient({ connectTrace: trace });
+    const { client, sockets } = makeClient({ trace: trace });
     let resolved = false;
     const connecting = client.connect().then(() => {
       resolved = true;
@@ -123,6 +130,7 @@ describe("a successful attempt", () => {
       "resolveStart",
       "resolveDone",
       "connectStart",
+      "connectDone",
       "handshakeDone",
       "sessionStart",
     ]);
@@ -161,7 +169,7 @@ describe("a successful attempt", () => {
     let seenID: number | undefined;
     let clientRef: Client | undefined;
     const { client, sockets } = makeClient({
-      connectTrace: {
+      trace: {
         sessionStart: (info) => {
           order.push("sessionStart");
           seenStatus = clientRef!.status;
@@ -189,7 +197,7 @@ describe("a successful attempt", () => {
   it("reports the resolver's source, and falls back to the address with the error", async () => {
     const sourced = recordingTrace();
     const first = makeClient({
-      connectTrace: sourced.trace,
+      trace: sourced.trace,
       resolver: {
         resolve: async () => [{ addr: "127.0.0.1:1234", source: "SRV" }],
       },
@@ -207,7 +215,7 @@ describe("a successful attempt", () => {
     const failure = new Error("no such name");
     const fell = recordingTrace();
     const second = makeClient({
-      connectTrace: fell.trace,
+      trace: fell.trace,
       resolver: {
         resolve: async () => {
           throw failure;
@@ -227,7 +235,7 @@ describe("a successful attempt", () => {
 
   it("fires welcomeDone at most once, and never before sessionStart", async () => {
     const { trace, names } = recordingTrace();
-    const { client, sockets } = makeClient({ connectTrace: trace });
+    const { client, sockets } = makeClient({ trace: trace });
     const connecting = client.connect();
     await until(() => clientInternals(client).handler.isOpen);
     deliverInitIV(client, sockets[0]!);
@@ -268,7 +276,7 @@ describe("a failed attempt", () => {
   it("in open, when the address is invalid once resolved", async () => {
     const { trace, calls } = recordingTrace();
     const { client } = makeClient({
-      connectTrace: trace,
+      trace: trace,
       resolver: { resolve: async () => [{ addr: "127.0.0.1:99999" }] },
     });
     await expect(client.connect()).rejects.toBeInstanceOf(InvalidAddressError);
@@ -278,7 +286,7 @@ describe("a failed attempt", () => {
   it("in open, when the signal aborts the address lookup", async () => {
     const { trace, calls } = recordingTrace();
     const { client } = makeClient({
-      connectTrace: trace,
+      trace: trace,
       resolver: { resolve: () => new Promise(() => {}) },
     });
     const controller = new AbortController();
@@ -295,7 +303,7 @@ describe("a failed attempt", () => {
     const { trace, calls } = recordingTrace();
     let socket: SlowSocket | undefined;
     const client = new Client(identity, "127.0.0.1:9987", "Bot", {
-      connectTrace: trace,
+      trace: trace,
       socketFactory: () => (socket = new SlowSocket()),
     });
     const controller = new AbortController();
@@ -323,7 +331,7 @@ describe("a failed attempt", () => {
       }
     }
     const client = new Client(identity, "127.0.0.1:9987", "Bot", {
-      connectTrace: trace,
+      trace: trace,
       socketFactory: () => new FailingSocket(),
     });
     await expect(client.connect()).rejects.toBe(boom);
@@ -332,7 +340,7 @@ describe("a failed attempt", () => {
 
   it("in handshake, when the socket closes before the shared secret", async () => {
     const { trace, calls } = recordingTrace();
-    const { client, sockets } = makeClient({ connectTrace: trace });
+    const { client, sockets } = makeClient({ trace: trace });
     const connecting = client.connect();
     await until(() => clientInternals(client).handler.isOpen);
     sockets[0]!.close();
@@ -342,7 +350,7 @@ describe("a failed attempt", () => {
 
   it("in handshake, on a CryptoInitError", async () => {
     const { trace, calls } = recordingTrace();
-    const { client, sockets } = makeClient({ connectTrace: trace });
+    const { client, sockets } = makeClient({ trace: trace });
     const connecting = client.connect();
     await until(() => clientInternals(client).handler.isOpen);
     deliverInitIV(client, sockets[0]!, "bm90IGEga2V5");
@@ -354,7 +362,7 @@ describe("a failed attempt", () => {
   it("in handshake, on the idle timeout", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
     const { trace, calls } = recordingTrace();
-    const { client } = makeClient({ connectTrace: trace });
+    const { client } = makeClient({ trace: trace });
     const connecting = client.connect();
     connecting.catch(() => {});
     await until(() => clientInternals(client).handler.isOpen);
@@ -367,7 +375,7 @@ describe("a failed attempt", () => {
 
   it("in handshake, when disconnect() ends it", async () => {
     const { trace, calls } = recordingTrace();
-    const { client } = makeClient({ connectTrace: trace });
+    const { client } = makeClient({ trace: trace });
     const connecting = client.connect();
     await until(() => clientInternals(client).handler.isOpen);
     await client.disconnect();
@@ -380,7 +388,7 @@ describe("a failed attempt", () => {
   it("in open, when disconnect() ends it during the lookup", async () => {
     const { trace, calls } = recordingTrace();
     const { client } = makeClient({
-      connectTrace: trace,
+      trace: trace,
       resolver: { resolve: () => new Promise(() => {}) },
     });
     const connecting = client.connect();
@@ -392,7 +400,7 @@ describe("a failed attempt", () => {
 
   it("in join, when the server refuses before initserver", async () => {
     const { trace, calls } = recordingTrace();
-    const { client, sockets } = makeClient({ connectTrace: trace });
+    const { client, sockets } = makeClient({ trace: trace });
     const connecting = client.connect();
     await until(() => clientInternals(client).handler.isOpen);
     deliverInitIV(client, sockets[0]!);
@@ -404,7 +412,7 @@ describe("a failed attempt", () => {
 
   it("with exactly one attemptFailed even when the failure is reported twice", async () => {
     const { trace, calls } = recordingTrace();
-    const { client, sockets } = makeClient({ connectTrace: trace });
+    const { client, sockets } = makeClient({ trace: trace });
     const connecting = client.connect();
     await until(() => clientInternals(client).handler.isOpen);
     deliverInitIV(client, sockets[0]!);
@@ -422,7 +430,7 @@ describe("reconnecting", () => {
   it("reports reconnectScheduled, and numbers the attempts it makes", async () => {
     const { trace, calls, names } = recordingTrace();
     const { client, sockets } = makeClient({
-      connectTrace: trace,
+      trace: trace,
       reconnect: { backoff: { initialDelayMs: 20, maxDelayMs: 20, jitter: 0 } },
     });
     const connecting = client.connect();
@@ -449,7 +457,7 @@ describe("reconnecting", () => {
   it("reports a failed reconnection attempt, then schedules the next", async () => {
     const { trace, calls } = recordingTrace();
     const { client, sockets } = makeClient({
-      connectTrace: trace,
+      trace: trace,
       reconnect: { backoff: { initialDelayMs: 20, maxDelayMs: 20, jitter: 0 } },
     });
     const connecting = client.connect();
@@ -501,7 +509,7 @@ describe("a hook that fails", () => {
   it("is reported, whether it throws or rejects, and the connection completes", async () => {
     const boom = new Error("hook boom");
     const rejection = new Error("hook rejection");
-    const trace: ConnectTrace = {
+    const trace: ClientTrace = {
       resolveStart: () => {
         throw boom;
       },
@@ -512,7 +520,7 @@ describe("a hook that fails", () => {
         throw boom;
       },
     };
-    const { client, sockets } = makeClient({ connectTrace: trace });
+    const { client, sockets } = makeClient({ trace: trace });
     const connected: string[] = [];
     client.on("connected", () => connected.push("connected"));
     const errors = await collecting(async () => {
@@ -537,7 +545,7 @@ describe("a hook that fails", () => {
     process.on("uncaughtException", listener);
     try {
       const { client, sockets } = makeClient({
-        connectTrace: {
+        trace: {
           sessionStart: () => {
             throw boom;
           },
@@ -558,7 +566,7 @@ describe("a hook that fails", () => {
 
   it("does not turn a failure into another one", async () => {
     const { client } = makeClient({
-      connectTrace: {
+      trace: {
         attemptFailed: () => {
           throw new Error("hook boom");
         },
@@ -574,12 +582,14 @@ describe("a hook that fails", () => {
 
 // Not supported (the documented rule forbids it), but it must not break the
 // client either.
+// Calling disconnect() from a hook is not supported (the rule is to use a
+// `connected` listener). These tests only pin that it does no harm.
 describe("disconnect() from a hook", () => {
   it("is safe from sessionStart: the attempt stays a success and the client ends disconnected", async () => {
     const calls: string[] = [];
     let leaving: Promise<void> | undefined;
     const { client, sockets } = makeClient({
-      connectTrace: {
+      trace: {
         sessionStart: () => {
           calls.push("sessionStart");
           leaving = clientRef!.disconnect({ signal: AbortSignal.timeout(1) });
@@ -605,7 +615,7 @@ describe("disconnect() from a hook", () => {
     const calls: Array<[string, unknown]> = [];
     let leaving: Promise<void> | undefined;
     const { client, sockets } = makeClient({
-      connectTrace: {
+      trace: {
         handshakeDone: () => {
           leaving = client.disconnect({ signal: AbortSignal.timeout(1) });
         },
@@ -624,12 +634,13 @@ describe("disconnect() from a hook", () => {
   }, 5_000);
 });
 
+// Not supported either; see above.
 describe("disconnect() from other hooks", () => {
   it("is safe from resolveStart: the attempt fails once, in open", async () => {
     const calls: Array<[string, unknown]> = [];
     let leaving: Promise<void> | undefined;
     const { client } = makeClient({
-      connectTrace: {
+      trace: {
         resolveStart: () => {
           leaving = client.disconnect({ signal: AbortSignal.timeout(1) });
         },
@@ -647,7 +658,7 @@ describe("disconnect() from other hooks", () => {
     let leaving: Promise<void> | undefined;
     const events: string[] = [];
     const { client } = makeClient({
-      connectTrace: {
+      trace: {
         attemptFailed: () => {
           leaving = client.disconnect({ signal: AbortSignal.timeout(1) });
         },
@@ -664,7 +675,7 @@ describe("disconnect() from other hooks", () => {
 });
 
 describe("without a trace", () => {
-  it("connects with no connectTrace", async () => {
+  it("connects with no trace", async () => {
     const { client, sockets } = makeClient();
     const connecting = client.connect();
     await handshake(client, sockets);
@@ -675,7 +686,7 @@ describe("without a trace", () => {
 
   it("connects with a trace that has no hooks, and copies it", async () => {
     const trace: { sessionStart?: () => void } = {};
-    const { client, sockets } = makeClient({ connectTrace: trace });
+    const { client, sockets } = makeClient({ trace: trace });
     // Added after construction: the client holds a copy, so this is never called.
     trace.sessionStart = () => {
       throw new Error("must not run");
@@ -689,7 +700,7 @@ describe("without a trace", () => {
 
   it("works through the internals seam used by other tests", async () => {
     const { trace, names } = recordingTrace();
-    const { client } = makeClient({ connectTrace: trace });
+    const { client } = makeClient({ trace: trace });
     const connecting = client.connect();
     await until(() => clientInternals(client).handler.isOpen);
     completeCryptoInit(clientInternals(client).crypt);
@@ -701,9 +712,408 @@ describe("without a trace", () => {
       "resolveStart",
       "resolveDone",
       "connectStart",
+      "connectDone",
       "handshakeDone",
       "sessionStart",
     ]);
     await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});
+
+// ---- The fuller milestones, and the end of a session ---------------------------
+
+/** An Init1 step 4 packet, which carries the RSA puzzle: x, n and the level. */
+function puzzlePacket(level: number): Uint8Array {
+  const data = new Uint8Array(1 + 64 + 64 + 4 + 100);
+  data[0] = 3;
+  data[64] = 5; // x
+  data[128] = 7; // n
+  new DataView(data.buffer).setUint32(129, level, false);
+  return init1Packet(data);
+}
+
+describe("what each milestone knows", () => {
+  it("reports the candidates, the local address and the target on a failure", async () => {
+    const { trace, calls } = recordingTrace();
+    class BoundSocket extends FakeSocket {
+      address(): { address: string; port: number } {
+        return { address: "127.0.0.1", port: 50123 };
+      }
+    }
+    const candidates = [
+      { addr: "127.0.0.1:1111", source: "SRV" },
+      { addr: "127.0.0.1:2222", source: "Direct" },
+    ];
+    const client = new Client(identity, "127.0.0.1:9987", "Bot", {
+      trace,
+      socketFactory: () => new BoundSocket(),
+      resolver: { resolve: async () => candidates },
+    });
+    const connecting = client.connect();
+    await until(() => clientInternals(client).handler.isOpen);
+    const done = calls.find((c) => c.name === "resolveDone")!.info;
+    expect(done["candidates"]).toEqual(candidates);
+    expect(done["target"]).toBe("127.0.0.1:1111");
+    expect(calls.find((c) => c.name === "connectDone")!.info).toMatchObject({
+      target: "127.0.0.1:1111",
+      localAddr: "127.0.0.1:50123",
+    });
+    await client.disconnect();
+    await expect(connecting).rejects.toBeInstanceOf(NotConnectedError);
+    expect(calls.find((c) => c.name === "attemptFailed")!.info["target"]).toBe("127.0.0.1:1111");
+  });
+
+  it("leaves target empty and the local address empty when it cannot know them", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client } = makeClient({
+      trace,
+      resolver: { resolve: () => new Promise(() => {}) },
+    });
+    const connecting = client.connect();
+    await settle();
+    await client.disconnect();
+    await expect(connecting).rejects.toBeInstanceOf(NotConnectedError);
+    expect(calls.find((c) => c.name === "attemptFailed")!.info["target"]).toBe("");
+
+    const bare = recordingTrace();
+    const second = makeClient({ trace: bare.trace });
+    const again = second.client.connect();
+    await until(() => clientInternals(second.client).handler.isOpen);
+    expect(bare.calls.find((c) => c.name === "connectDone")!.info["localAddr"]).toBe("");
+    await second.client.disconnect();
+    await again.catch(() => {});
+  });
+
+  it("reports the puzzle, the resends and the server's public key at handshakeDone", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    const { trace, calls } = recordingTrace();
+    const { client, sockets } = makeClient({ trace });
+    const connecting = client.connect();
+    await until(() => clientInternals(client).handler.isOpen);
+    sockets[0]!.deliver(puzzlePacket(3));
+    // Nothing is acknowledged: the Init1 packet goes out again.
+    vi.advanceTimersByTime(1_200);
+    const omega = identity.publicKey();
+    deliverInitIV(client, sockets[0]!, omega);
+    deliverSession(client, sockets[0]!, "initserver aclid=7 virtualserver_version=3.13.7");
+    await connecting;
+    const info = calls.find((c) => c.name === "handshakeDone")!.info;
+    expect(info["puzzleLevel"]).toBe(3);
+    expect(info["puzzleDurationMs"]).toBeGreaterThanOrEqual(0);
+    expect(info["resends"]).toBeGreaterThanOrEqual(1);
+    expect(info["serverPublicKey"]).toBe(omega);
+    vi.useRealTimers();
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("reports puzzle level 0 and no resends when the server sent no puzzle", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client, sockets } = makeClient({ trace });
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    expect(calls.find((c) => c.name === "handshakeDone")!.info).toMatchObject({
+      puzzleLevel: 0,
+      puzzleDurationMs: 0,
+      resends: 0,
+    });
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("reports the accepted nickname, talk power and initserver without its secrets", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client, sockets } = makeClient({ trace });
+    const connecting = client.connect();
+    await until(() => clientInternals(client).handler.isOpen);
+    deliverInitIV(client, sockets[0]!);
+    deliverSession(
+      client,
+      sockets[0]!,
+      "initserver aclid=7 acn=Bot\\s2 client_talk_power=75 virtualserver_name=My\\sServer " +
+        "virtualserver_version=3.13.7 virtualserver_id=4 " +
+        "client_server_password=hunter2 client_default_channel_password=hunter3 " +
+        "client_default_token=tok client_key_offset=99",
+    );
+    await connecting;
+    const info = calls.find((c) => c.name === "sessionStart")!.info;
+    expect(info["nickname"]).toBe("Bot 2");
+    expect(info["talkPower"]).toBe(75);
+    const initServer = info["initServer"] as Record<string, string>;
+    expect(initServer["virtualserver_name"]).toBe("My Server");
+    expect(initServer["aclid"]).toBe("7");
+    for (const secret of [
+      "client_server_password",
+      "client_default_channel_password",
+      "client_default_token",
+      "client_key_offset",
+    ]) {
+      expect(initServer).not.toHaveProperty(secret);
+    }
+    expect(Object.isFrozen(initServer)).toBe(true);
+    expect(
+      JSON.stringify(
+        calls.map((c) => c.info),
+        (_, v) => (typeof v === "bigint" ? String(v) : v),
+      ),
+    ).not.toContain("hunter");
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("reports the capability fields", async () => {
+    const { client, sockets } = makeClient();
+    const connecting = client.connect();
+    await until(() => clientInternals(client).handler.isOpen);
+    deliverInitIV(client, sockets[0]!);
+    deliverSession(
+      client,
+      sockets[0]!,
+      "initserver aclid=7 virtualserver_version=3.13.7 virtualserver_id=4 " +
+        "virtualserver_unique_identifier=abc= virtualserver_hostmessage=Hello " +
+        "virtualserver_hostmessage_mode=2",
+    );
+    await connecting;
+    expect(client.serverCapabilities).toMatchObject({
+      serverID: 4n,
+      serverUID: "abc=",
+      hostMessage: "Hello",
+      hostMessageMode: 2,
+    });
+    expect(unknownServerCapabilities()).toMatchObject({
+      serverID: 0n,
+      serverUID: "",
+      hostMessage: "",
+      hostMessageMode: 0,
+    });
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+
+  it("reports where the client landed and what the welcome delivered", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client, sockets } = makeClient({ trace });
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    deliverSession(
+      client,
+      sockets[0]!,
+      "channellist cid=1 channel_name=A|cid=2 channel_name=B|cid=5 channel_name=C",
+    );
+    deliverSession(
+      client,
+      sockets[0]!,
+      "notifycliententerview clid=7 ctid=5 client_nickname=Bot client_unique_identifier=x",
+    );
+    deliverSession(
+      client,
+      sockets[0]!,
+      "notifycliententerview clid=9 ctid=2 client_nickname=Other client_unique_identifier=y",
+    );
+    deliverSession(client, sockets[0]!, "channellistfinished");
+    await until(() => calls.some((c) => c.name === "welcomeDone"));
+    expect(calls.find((c) => c.name === "welcomeDone")!.info).toMatchObject({
+      channelID: asChannelID(5n),
+      channels: 3,
+      clients: 2,
+    });
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+  });
+});
+
+describe("the end of a session", () => {
+  /** Answer the goodbye the client sends, so that it is acknowledged. */
+  function acknowledgeGoodbye(client: Client, socket: FakeSocket): () => Promise<void> {
+    let returnCode: string | undefined;
+    onSentLine((_, text) => {
+      if (text.startsWith("clientdisconnect")) returnCode = /return_code=(\S+)/.exec(text)?.[1];
+    });
+    return async () => {
+      await until(() => returnCode !== undefined);
+      deliverSession(client, socket, `error id=0 msg=ok return_code=${returnCode}`);
+      onSentLine(undefined);
+    };
+  }
+
+  it("goes disconnectStart, disconnectDone, sessionEnd, disconnected; acknowledged", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client, sockets } = makeClient({ trace });
+    const order: string[] = [];
+    client.on("disconnected", () => order.push("disconnected"));
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    await settle();
+    calls.length = 0;
+    const answer = acknowledgeGoodbye(client, sockets[0]!);
+
+    const leaving = client.disconnect();
+    await answer();
+    await leaving;
+    expect(calls.map((c) => c.name)).toEqual(["disconnectStart", "disconnectDone", "sessionEnd"]);
+    expect(order).toEqual(["disconnected"]);
+    expect(calls[1]!.info).toMatchObject({ acknowledged: true });
+    expect(calls[1]!.info["durationMs"]).toBeGreaterThanOrEqual(0);
+    expect(calls[2]!.info).toMatchObject({
+      clientID: 7,
+      error: undefined,
+      attempt: 1,
+      reconnect: false,
+    });
+    expect(calls[2]!.info["durationMs"]).toBeGreaterThanOrEqual(0);
+  });
+
+  it("takes the server's announcement that this client left as the answer, as real servers send it", async () => {
+    // TeamSpeak 3 and 6 answer clientdisconnect with notifyclientleftview
+    // about this client and no error line; waiting for the error line held
+    // every disconnect() for its full timeout.
+    const { trace, calls } = recordingTrace();
+    const { client, sockets } = makeClient({ trace });
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    await settle();
+    calls.length = 0;
+    let saidGoodbye = false;
+    onSentLine((_, text) => {
+      if (text.startsWith("clientdisconnect")) saidGoodbye = true;
+    });
+
+    const started = performance.now();
+    const leaving = client.disconnect({ signal: AbortSignal.timeout(5_000) });
+    await until(() => saidGoodbye);
+    onSentLine(undefined);
+    deliverSession(client, sockets[0]!, `notifyclientleftview cfid=1 ctid=0 reasonid=8 clid=7`);
+    await leaving;
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(calls[1]!.info).toMatchObject({ acknowledged: true });
+  });
+
+  it("reports acknowledged false when the server does not answer", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client, sockets } = makeClient({ trace });
+    const order: string[] = [];
+    client.on("disconnected", () => order.push(`disconnected after ${calls.length} hooks`));
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    await settle();
+    calls.length = 0;
+    await client.disconnect({ signal: AbortSignal.timeout(20) });
+    expect(calls.map((c) => c.name)).toEqual(["disconnectStart", "disconnectDone", "sessionEnd"]);
+    expect(calls[1]!.info).toMatchObject({ acknowledged: false });
+    // sessionEnd came before the disconnected event was delivered.
+    expect(order).toEqual(["disconnected after 3 hooks"]);
+  });
+
+  it("does not call disconnectStart when there is no session, and reports no sessionEnd", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client } = makeClient({ trace });
+    await client.disconnect();
+    const connecting = client.connect();
+    connecting.catch(() => {});
+    await until(() => clientInternals(client).handler.isOpen);
+    await client.disconnect();
+    await connecting.catch(() => {});
+    const names = calls.map((c) => c.name);
+    expect(names).not.toContain("disconnectStart");
+    expect(names).not.toContain("sessionEnd");
+  });
+
+  it("reports sessionEnd with its cause on a drop, before reconnectScheduled", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client, sockets } = makeClient({
+      trace,
+      reconnect: { backoff: { initialDelayMs: 5_000, maxDelayMs: 5_000, jitter: 0 } },
+    });
+    const events: string[] = [];
+    client.on("disconnected", () => events.push(`disconnected after ${calls.length}`));
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    await settle();
+    const before = calls.length;
+    sockets[0]!.close();
+    await until(() => calls.some((c) => c.name === "reconnectScheduled"));
+    const after = calls.slice(before).map((c) => c.name);
+    expect(after).toEqual(["sessionEnd", "reconnectScheduled"]);
+    const end = calls[before]!.info;
+    expect(end["error"]).toBeInstanceOf(Error);
+    expect(end).toMatchObject({ clientID: 7, attempt: 1, reconnect: false });
+    await settle();
+    expect(events).toEqual([`disconnected after ${before + 2}`]);
+    await client.disconnect();
+  });
+
+  it("reports reconnectStopped when shouldRetry declines", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client, sockets } = makeClient({
+      trace,
+      reconnect: { shouldRetry: () => false },
+    });
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    sockets[0]!.close();
+    await until(() => calls.some((c) => c.name === "reconnectStopped"));
+    const stopped = calls.find((c) => c.name === "reconnectStopped")!.info;
+    expect(stopped["attempts"]).toBe(0);
+    expect(stopped["cause"]).toBeInstanceOf(Error);
+    expect(calls.map((c) => c.name)).not.toContain("reconnectScheduled");
+  });
+
+  it("reports reconnectStopped with no cause when disconnect() stops the loop", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client, sockets } = makeClient({
+      trace,
+      reconnect: { backoff: { initialDelayMs: 60_000, maxDelayMs: 60_000, jitter: 0 } },
+    });
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    sockets[0]!.close();
+    await until(() => calls.some((c) => c.name === "reconnectScheduled"));
+    await client.disconnect();
+    await until(() => calls.some((c) => c.name === "reconnectStopped"));
+    const stopped = calls.find((c) => c.name === "reconnectStopped")!.info;
+    expect(stopped["attempts"]).toBe(0);
+    expect(stopped["cause"]).toBeUndefined();
+  });
+
+  it("reports exactly one sessionEnd per session", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client, sockets } = makeClient({
+      trace,
+      reconnect: { backoff: { initialDelayMs: 20, maxDelayMs: 20, jitter: 0 } },
+    });
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    sockets[0]!.close();
+    await until(() => sockets.length === 2);
+    await handshake(client, sockets, 1);
+    await until(() => client.status === "connected");
+    // The server's kick, then the goodbye of a client that is already gone.
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+    await client.disconnect().catch(() => {});
+    await settle();
+    const ends = calls.filter((c) => c.name === "sessionEnd");
+    expect(ends).toHaveLength(2);
+    expect(ends.map((c) => c.info["reconnect"])).toEqual([false, true]);
+  });
+
+  it("reports one sessionEnd when the server removes the client", async () => {
+    const { trace, calls } = recordingTrace();
+    const { client, sockets } = makeClient({ trace });
+    const connecting = client.connect();
+    await handshake(client, sockets);
+    await connecting;
+    deliverSession(
+      client,
+      sockets[0]!,
+      "notifyclientleftview clid=7 reasonid=5 reasonmsg=bye invokerid=2 invokername=Admin invokeruid=x",
+    );
+    await until(() => calls.some((c) => c.name === "sessionEnd"));
+    await client.disconnect().catch(() => {});
+    expect(calls.filter((c) => c.name === "sessionEnd")).toHaveLength(1);
+    expect(calls.find((c) => c.name === "sessionEnd")!.info["error"]).toBeInstanceOf(Error);
   });
 });

@@ -91,6 +91,8 @@ export class PacketHandler {
    * ends the connection. Without an owner the error is logged.
    */
   onReceiveError: ((error: unknown) => void) | null = null;
+  /** Called with the socket once it is open, before the handshake's first packet is sent. */
+  onOpen: ((socket: DatagramSocket) => void) | null = null;
 
   readonly #crypt: Crypt;
   readonly #logger: Logger;
@@ -202,6 +204,7 @@ export class PacketHandler {
         done = true;
         socket.off("error", onError);
         signal?.removeEventListener("abort", onAbort);
+        this.onOpen?.(socket);
         this.start(socket);
         resolve();
       });

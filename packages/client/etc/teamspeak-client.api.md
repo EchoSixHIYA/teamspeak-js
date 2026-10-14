@@ -15,21 +15,22 @@ import type { CommandExecutor } from '@honeybbq/teamspeak-core';
 import type { CommandMiddleware } from '@honeybbq/teamspeak-core';
 import { CommandOptions } from '@honeybbq/teamspeak-core';
 import type { CommandRequest } from '@honeybbq/teamspeak-core';
-import type { Duplex } from 'node:stream';
+import { Duplex } from 'node:stream';
 import type { FileDownloadInfo } from '@honeybbq/teamspeak-core';
 import type { FileUploadInfo } from '@honeybbq/teamspeak-core';
-import type { IconID } from '@honeybbq/teamspeak-core';
+import { IconID } from '@honeybbq/teamspeak-core';
 import type { KickedEvent } from '@honeybbq/teamspeak-core';
 import type { Logger } from '@honeybbq/teamspeak-core';
 import type { NotificationEvent } from '@honeybbq/teamspeak-core';
 import type { PokeEvent } from '@honeybbq/teamspeak-core';
-import type { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
+import { ServerID } from '@honeybbq/teamspeak-core';
 import { TeamspeakError } from '@honeybbq/teamspeak-core';
 import type { TextMessageEvent } from '@honeybbq/teamspeak-core';
 import { TracingChannel } from 'node:diagnostics_channel';
 import { UID } from '@honeybbq/teamspeak-core';
 import type { VoiceDataEvent } from '@honeybbq/teamspeak-core';
-import type { Writable } from 'node:stream';
+import { Writable } from 'node:stream';
 
 // @public
 export interface AddrResolver {
@@ -52,6 +53,7 @@ export interface AttemptFailedInfo extends AttemptInfo {
     readonly durationMs: number;
     readonly error: unknown;
     readonly phase: ConnectPhase;
+    readonly target: string;
 }
 
 // @public
@@ -84,9 +86,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     disconnect(options?: {
         readonly signal?: AbortSignal | undefined;
     }): Promise<void>;
-    downloadFileData(host: string, info: FileDownloadInfo, dest: Writable, options?: {
-        readonly signal?: AbortSignal | undefined;
-    }): Promise<void>;
+    downloadFileData(host: string, info: FileDownloadInfo, dest: Writable, options?: Pick<FileTransferOptions, "signal" | "trace">): Promise<void>;
     events<K extends keyof EventMap>(event: K, options?: {
         readonly signal?: AbortSignal | undefined;
     }): AsyncIterableIterator<EventMap[K]>;
@@ -102,15 +102,12 @@ export class Client implements CommandExecutor, AsyncDisposable {
     get serverCapabilities(): ServerCapabilities;
     get status(): ClientStatus;
     get uid(): UID;
-    uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: {
-        readonly signal?: AbortSignal | undefined;
-    }): Promise<void>;
+    uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: Pick<FileTransferOptions, "signal" | "trace">): Promise<void>;
 }
 
 // @public
 export interface ClientOptions {
     readonly commandMiddleware?: readonly CommandMiddleware[] | undefined;
-    readonly connectTrace?: ConnectTrace | undefined;
     readonly defaultChannel?: string | undefined;
     readonly defaultChannelPassword?: string | undefined;
     readonly eventMiddleware?: readonly EventMiddleware[] | undefined;
@@ -121,6 +118,7 @@ export interface ClientOptions {
     readonly resolver?: AddrResolver | undefined;
     readonly serverPassword?: string | undefined;
     readonly socketFactory?: SocketFactory | undefined;
+    readonly trace?: ClientTrace | undefined;
 }
 
 // Warning: (ae-forgotten-export) The symbol "clientStatusValues" needs to be exported by the entry point index.d.ts
@@ -139,12 +137,36 @@ const clientStatusValues: {
 };
 
 // @public
+export interface ClientTrace {
+    readonly attemptFailed?: (info: AttemptFailedInfo) => void;
+    readonly connectDone?: (info: ConnectDoneInfo) => void;
+    readonly connectStart?: (info: ConnectStartInfo) => void;
+    readonly disconnectDone?: (info: DisconnectDoneInfo) => void;
+    readonly disconnectStart?: (info: DisconnectStartInfo) => void;
+    readonly handshakeDone?: (info: HandshakeDoneInfo) => void;
+    readonly reconnectScheduled?: (info: ReconnectScheduledInfo) => void;
+    readonly reconnectStopped?: (info: ReconnectStoppedInfo) => void;
+    readonly resolveDone?: (info: ResolveDoneInfo) => void;
+    readonly resolveStart?: (info: ResolveStartInfo) => void;
+    readonly sessionEnd?: (info: SessionEndInfo) => void;
+    readonly sessionStart?: (info: SessionStartInfo) => void;
+    readonly welcomeDone?: (info: WelcomeDoneInfo) => void;
+}
+
+// @public
 export const commandChannel: TracingChannel<CommandTrace>;
 
 // @public
 export interface CommandTrace {
     readonly client: Client;
     readonly command: string;
+}
+
+// @public
+export interface ConnectDoneInfo extends AttemptInfo {
+    readonly durationMs: number;
+    readonly localAddr: string;
+    readonly target: string;
 }
 
 // @public
@@ -175,18 +197,6 @@ export interface ConnectStartInfo extends AttemptInfo {
 }
 
 // @public
-export interface ConnectTrace {
-    readonly attemptFailed?: (info: AttemptFailedInfo) => void;
-    readonly connectStart?: (info: ConnectStartInfo) => void;
-    readonly handshakeDone?: (info: HandshakeDoneInfo) => void;
-    readonly reconnectScheduled?: (info: ReconnectScheduledInfo) => void;
-    readonly resolveDone?: (info: ResolveDoneInfo) => void;
-    readonly resolveStart?: (info: ResolveStartInfo) => void;
-    readonly sessionStart?: (info: SessionStartInfo) => void;
-    readonly welcomeDone?: (info: WelcomeDoneInfo) => void;
-}
-
-// @public
 export class CryptoInitError extends TeamspeakError {
     constructor(message: string, options?: ErrorOptions);
     // (undocumented)
@@ -195,6 +205,10 @@ export class CryptoInitError extends TeamspeakError {
 
 // @public
 export interface DatagramSocket {
+    address?(): {
+        readonly address: string;
+        readonly port: number;
+    };
     close(): void;
     connect(port: number, address: string, callback: () => void): void;
     off(event: "error", listener: (error: Error) => void): unknown;
@@ -213,6 +227,16 @@ export function defaultShouldRetry(error: Error | undefined): boolean;
 
 // @public
 export function dialFileTransfer(host: string, port: number, key: string, options?: FileTransferOptions): Promise<Duplex>;
+
+// @public
+export interface DisconnectDoneInfo {
+    readonly acknowledged: boolean;
+    readonly durationMs: number;
+}
+
+// @public
+export interface DisconnectStartInfo {
+}
 
 // @public
 export function downloadFileData(host: string, info: FileDownloadInfo, dest: Writable, options?: FileTransferOptions): Promise<void>;
@@ -235,6 +259,24 @@ export interface EventMap {
 export type EventMiddleware = (next: (event: ServerEvent) => void) => (event: ServerEvent) => void;
 
 // @public
+export interface FileTransferDialDoneInfo {
+    readonly addr: string;
+    readonly durationMs: number;
+    readonly localAddr: string;
+}
+
+// @public
+export interface FileTransferDialStartInfo {
+    readonly addr: string;
+}
+
+// @public
+export interface FileTransferDoneInfo {
+    readonly bytes: number;
+    readonly durationMs: number;
+}
+
+// @public
 export class FileTransferError extends TeamspeakError {
     constructor(message: string, options?: ErrorOptions);
     // (undocumented)
@@ -242,13 +284,40 @@ export class FileTransferError extends TeamspeakError {
 }
 
 // @public
+export interface FileTransferFailedInfo {
+    readonly bytes: number;
+    readonly durationMs: number;
+    readonly error: unknown;
+    readonly stage: FileTransferStage;
+}
+
+// @public
 export interface FileTransferOptions {
     readonly signal?: AbortSignal | undefined;
     readonly socketFactory?: FileTransferSocketFactory | undefined;
+    readonly trace?: FileTransferTrace | undefined;
+}
+
+// @public
+export interface FileTransferProgressInfo {
+    readonly bytes: number;
+    readonly total: number;
 }
 
 // @public
 export type FileTransferSocketFactory = (host: string, port: number) => Duplex;
+
+// @public
+export type FileTransferStage = "dial" | "transfer";
+
+// @public
+export interface FileTransferTrace {
+    readonly dialDone?: (info: FileTransferDialDoneInfo) => void;
+    readonly dialStart?: (info: FileTransferDialStartInfo) => void;
+    readonly done?: (info: FileTransferDoneInfo) => void;
+    readonly failed?: (info: FileTransferFailedInfo) => void;
+    readonly progress?: (info: FileTransferProgressInfo) => void;
+}
 
 // @public
 export function generateIdentity(targetLevel: number, options?: {
@@ -264,6 +333,10 @@ export function getChannelDescription(client: Client, cid: ChannelID, options?: 
 // @public
 export interface HandshakeDoneInfo extends AttemptInfo {
     readonly durationMs: number;
+    readonly puzzleDurationMs: number;
+    readonly puzzleLevel: number;
+    readonly resends: number;
+    readonly serverPublicKey: string;
 }
 
 // @public
@@ -326,6 +399,12 @@ export interface ReconnectScheduledInfo {
 }
 
 // @public
+export interface ReconnectStoppedInfo {
+    readonly attempts: number;
+    readonly cause: unknown;
+}
+
+// @public
 export class RemovedError extends TeamspeakError {
     constructor(reason: number, reasonMessage: string, invokerName: string);
     readonly invokerName: string;
@@ -345,6 +424,7 @@ export interface ResolvedAddr {
 // @public
 export interface ResolveDoneInfo extends AttemptInfo {
     readonly addr: string;
+    readonly candidates: readonly ResolvedAddr[];
     readonly durationMs: number;
     readonly error: unknown;
     readonly source: string;
@@ -360,9 +440,13 @@ export interface ResolveStartInfo extends AttemptInfo {
 export interface ServerCapabilities {
     readonly family: ServerFamily;
     readonly hostBannerImageURL: string | undefined;
+    readonly hostMessage: string;
+    readonly hostMessageMode: number;
     readonly iconID: IconID | undefined;
     readonly major: number;
     readonly name: string;
+    readonly serverID: ServerID;
+    readonly serverUID: string;
     readonly uidAlgorithm: UIDAlgorithm;
     readonly version: string;
     readonly welcomeMessage: string;
@@ -383,10 +467,22 @@ export type ServerEventName = "textMessage" | "clientEnter" | "clientLeave" | "c
 export type ServerFamily = "ts3" | "ts6" | "unknown";
 
 // @public
+export interface SessionEndInfo {
+    readonly attempt: number;
+    readonly clientID: ClientID;
+    readonly durationMs: number;
+    readonly error: unknown;
+    readonly reconnect: boolean;
+}
+
+// @public
 export interface SessionStartInfo extends AttemptInfo {
     readonly capabilities: ServerCapabilities;
     readonly clientID: ClientID;
     readonly durationMs: number;
+    readonly initServer: Readonly<Record<string, string>>;
+    readonly nickname: string;
+    readonly talkPower: number;
 }
 
 // @public
@@ -421,6 +517,9 @@ export function uploadFileData(host: string, info: FileUploadInfo, data: Readabl
 
 // @public
 export interface WelcomeDoneInfo extends AttemptInfo {
+    readonly channelID: ChannelID;
+    readonly channels: number;
+    readonly clients: number;
     readonly durationMs: number;
 }
 

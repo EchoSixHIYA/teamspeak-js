@@ -12,7 +12,7 @@ import type {
 } from "@honeybbq/teamspeak-core";
 import type { Duplex } from "node:stream";
 import type { ReconnectOptions } from "./reconnect.js";
-import type { ConnectTrace } from "./trace.js";
+import type { ClientTrace } from "./trace.js";
 
 // ---- Events ---------------------------------------------------------------
 
@@ -109,6 +109,11 @@ export interface DatagramSocket {
   once(event: "error", listener: (error: Error) => void): unknown;
   /** Stop listening for failures. */
   off(event: "error", listener: (error: Error) => void): unknown;
+  /**
+   * The local end of the socket, for a trace to report. Optional: a socket that
+   * cannot say is reported with an empty local address.
+   */
+  address?(): { readonly address: string; readonly port: number };
 }
 
 /** Creates the UDP socket the client talks through, for the given address family. */
@@ -205,10 +210,10 @@ export interface ClientOptions {
   /**
    * Hooks called at each milestone of every connection attempt, for timing,
    * metrics and progress. The object is copied when the client is made, so
-   * changing it afterwards has no effect. See {@link ConnectTrace} for the
+   * changing it afterwards has no effect. See {@link ClientTrace} for the
    * rules a hook follows.
    */
-  readonly connectTrace?: ConnectTrace | undefined;
+  readonly trace?: ClientTrace | undefined;
   /**
    * Creates the TCP socket a file transfer runs over.
    *

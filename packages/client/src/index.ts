@@ -41,20 +41,34 @@ export * from "./api/voice.js";
 
 // File transfer data
 export { dialFileTransfer, uploadFileData, downloadFileData } from "./transfer.js";
-export type { FileTransferOptions } from "./transfer.js";
+export type {
+  FileTransferOptions,
+  FileTransferTrace,
+  FileTransferStage,
+  FileTransferDialStartInfo,
+  FileTransferDialDoneInfo,
+  FileTransferProgressInfo,
+  FileTransferDoneInfo,
+  FileTransferFailedInfo,
+} from "./transfer.js";
 
 // Tracing a connection attempt
 export { ConnectPhase } from "./trace.js";
 export type {
-  ConnectTrace,
+  ClientTrace,
   ResolveStartInfo,
   ResolveDoneInfo,
   ConnectStartInfo,
+  ConnectDoneInfo,
   HandshakeDoneInfo,
   SessionStartInfo,
   WelcomeDoneInfo,
   AttemptFailedInfo,
   ReconnectScheduledInfo,
+  DisconnectStartInfo,
+  DisconnectDoneInfo,
+  SessionEndInfo,
+  ReconnectStoppedInfo,
 } from "./trace.js";
 
 // Server capabilities, read from the handshake

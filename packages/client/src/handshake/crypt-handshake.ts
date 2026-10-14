@@ -12,8 +12,22 @@ const INIT_STEP_LEN = 21;
 /** The RSA challenge each connection attempt, by its Crypt, has answered. */
 const answeredChallenges = new WeakMap<
   Crypt,
-  { readonly challenge: Uint8Array; readonly answer: Uint8Array }
+  {
+    readonly challenge: Uint8Array;
+    readonly answer: Uint8Array;
+    readonly level: number;
+    readonly durationMs: number;
+  }
 >();
+
+/**
+ * The RSA puzzle `crypt`'s attempt solved: the level the server demanded and
+ * the milliseconds spent on it. Level 0 and no time when the server sent none.
+ */
+export function puzzleOf(crypt: Crypt): { readonly level: number; readonly durationMs: number } {
+  const answered = answeredChallenges.get(crypt);
+  return { level: answered?.level ?? 0, durationMs: answered?.durationMs ?? 0 };
+}
 
 /**
  * Handle the TS3INIT1 handshake steps.
@@ -109,7 +123,9 @@ function buildInit1Step4Packet(crypt: Crypt, data: Uint8Array): Uint8Array | nul
   }
 
   const level = new DataView(data.buffer, data.byteOffset).getUint32(1 + 128, false);
+  const solveStarted = performance.now();
   const y = crypt.solveRsaChallenge(data, 1, level);
+  const durationMs = performance.now() - solveStarted;
 
   const alphaB64 = Buffer.from(crypt.newAlpha()).toString("base64");
   const omegaB64 = crypt.identity.publicKey();
@@ -130,6 +146,11 @@ function buildInit1Step4Packet(crypt: Crypt, data: Uint8Array): Uint8Array | nul
   sendData.set(y.slice(0, 64), 5 + 232);
   sendData.set(cmdBytes, 5 + 232 + 64);
 
-  answeredChallenges.set(crypt, { challenge: Uint8Array.from(data), answer: sendData });
+  answeredChallenges.set(crypt, {
+    challenge: Uint8Array.from(data),
+    answer: sendData,
+    level,
+    durationMs,
+  });
   return sendData;
 }

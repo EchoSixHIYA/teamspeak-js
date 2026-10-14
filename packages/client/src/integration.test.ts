@@ -15,7 +15,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createSocket } from "node:dgram";
 import { generateIdentitySync } from "./crypto/identity.js";
 import { Client, ClientStatus } from "./client.js";
-import type { ConnectTrace } from "./trace.js";
+import type { ClientTrace } from "./trace.js";
 import { Readable, Writable } from "node:stream";
 import { listChannels, getChannelInfo, createChannel } from "@honeybbq/teamspeak-core";
 import {
@@ -427,7 +427,31 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
 
     const upload = await initFileUpload(sharedClient, cid, path, BigInt(payload.length));
     expect(upload.fileTransferKey).not.toBe("");
-    await sharedClient.uploadFileData(host, upload, Readable.from([payload]));
+    const uploadCalls: Array<[string, Record<string, unknown>]> = [];
+    const traceInto =
+      (calls: Array<[string, Record<string, unknown>]>) =>
+      (name: string) =>
+      (i: object): void => {
+        calls.push([name, i as Record<string, unknown>]);
+      };
+    const forUpload = traceInto(uploadCalls);
+    await sharedClient.uploadFileData(host, upload, Readable.from([payload]), {
+      trace: {
+        dialStart: forUpload("dialStart"),
+        dialDone: forUpload("dialDone"),
+        progress: forUpload("progress"),
+        done: forUpload("done"),
+        failed: forUpload("failed"),
+      },
+    });
+    expect(uploadCalls.map(([name]) => name).filter((n) => n !== "progress")).toEqual([
+      "dialStart",
+      "dialDone",
+      "done",
+    ]);
+    expect(uploadCalls.filter(([n]) => n === "progress").at(-1)![1]["bytes"]).toBe(payload.length);
+    expect(uploadCalls.at(-1)![1]["bytes"]).toBe(payload.length);
+    expect(JSON.stringify(uploadCalls)).not.toContain(upload.fileTransferKey);
 
     try {
       const files = await listFiles(sharedClient, cid, "/");
@@ -609,29 +633,37 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(msg).toBe("hello from ts-js-integ");
   }, 15_000);
 
-  it("connectTrace — reports every milestone of a connection, in order", async () => {
-    const calls: Array<{ name: string; info: { durationMs?: number; clientID?: number } }> = [];
+  it("trace — reports every milestone of a session, in order, with what the server said", async () => {
+    const calls: Array<{ name: string; info: Record<string, unknown> }> = [];
     const record =
       (name: string) =>
       (info: object): void => {
-        calls.push({ name, info });
+        calls.push({ name, info: info as Record<string, unknown> });
       };
-    const trace: ConnectTrace = {
+    const trace: ClientTrace = {
       resolveStart: record("resolveStart"),
       resolveDone: record("resolveDone"),
       connectStart: record("connectStart"),
+      connectDone: record("connectDone"),
       handshakeDone: record("handshakeDone"),
       sessionStart: record("sessionStart"),
       welcomeDone: record("welcomeDone"),
       attemptFailed: record("attemptFailed"),
+      disconnectStart: record("disconnectStart"),
+      disconnectDone: record("disconnectDone"),
+      sessionEnd: record("sessionEnd"),
       reconnectScheduled: record("reconnectScheduled"),
+      reconnectStopped: record("reconnectStopped"),
     };
-    const traced = new Client(generateIdentitySync(8), ADDR!, "ts-js-trace", {
+    const nickname = "ts-js-trace";
+    const traced = new Client(generateIdentitySync(8), ADDR!, nickname, {
       serverPassword: SERVER_PASSWORD,
       defaultChannel: DEFAULT_CHANNEL,
       defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
-      connectTrace: trace,
+      trace,
     });
+    const info = (name: string): Record<string, unknown> =>
+      calls.find((c) => c.name === name)!.info;
     try {
       await traced.connect({ signal: AbortSignal.timeout(CONNECT_ATTEMPT_MS) });
       // The welcome sequence ends shortly after the session starts.
@@ -642,20 +674,49 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
         "resolveStart",
         "resolveDone",
         "connectStart",
+        "connectDone",
         "handshakeDone",
         "sessionStart",
         "welcomeDone",
       ]);
-      for (const name of ["resolveDone", "handshakeDone", "sessionStart", "welcomeDone"]) {
-        expect(calls.find((c) => c.name === name)!.info.durationMs).toBeGreaterThanOrEqual(0);
+      for (const name of [
+        "resolveDone",
+        "connectDone",
+        "handshakeDone",
+        "sessionStart",
+        "welcomeDone",
+      ]) {
+        expect(info(name)["durationMs"]).toBeGreaterThanOrEqual(0);
       }
-      expect(calls.find((c) => c.name === "sessionStart")!.info.clientID).toBe(traced.clientID);
+      expect(info("sessionStart")["clientID"]).toBe(traced.clientID);
+
+      // What the server said, on TS3 and TS6 alike.
+      expect(info("handshakeDone")["puzzleLevel"]).toBeGreaterThan(0);
+      expect(info("handshakeDone")["puzzleDurationMs"]).toBeGreaterThanOrEqual(0);
+      expect(info("handshakeDone")["resends"]).toBeGreaterThanOrEqual(0);
+      expect(String(info("handshakeDone")["serverPublicKey"])).not.toBe("");
+      expect(info("connectDone")["localAddr"]).not.toBe("");
+      expect(info("sessionStart")["nickname"]).toBe(nickname);
+      expect(
+        (info("sessionStart")["capabilities"] as { serverID: bigint }).serverID,
+      ).toBeGreaterThan(0n);
+      const welcome = info("welcomeDone");
+      expect(welcome["channelID"]).toBe(traced.channelID);
+      expect(welcome["channelID"] as bigint).toBeGreaterThan(0n);
+      // The fixture has Default Channel, Alpha and Secret.
+      expect(welcome["channels"]).toBeGreaterThanOrEqual(3);
+      expect(welcome["clients"]).toBeGreaterThanOrEqual(1);
     } finally {
       await traced.disconnect();
     }
+    const tail = calls.slice(-3);
+    expect(tail.map((c) => c.name)).toEqual(["disconnectStart", "disconnectDone", "sessionEnd"]);
+    expect(tail[1]!.info).toMatchObject({ acknowledged: true });
+    expect(tail[2]!.info["error"]).toBeUndefined();
+    expect(tail[2]!.info["clientID"]).toBeDefined();
   }, 30_000);
 
-  it("connectTrace — reports a failed attempt to a closed port", async () => {
+  it("trace — reports a failed attempt to a closed port", async () => {
     // Bind a UDP socket to learn a free port, then close it: nothing listens.
     const probe = createSocket("udp4");
     await new Promise<void>((resolve) => probe.bind(0, "127.0.0.1", resolve));
@@ -665,7 +726,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     const failures: Array<{ phase: string; error: unknown }> = [];
     const started: string[] = [];
     const closed = new Client(generateIdentitySync(8), `127.0.0.1:${port}`, "ts-js-closed", {
-      connectTrace: {
+      trace: {
         resolveStart: () => started.push("resolveStart"),
         sessionStart: () => started.push("sessionStart"),
         attemptFailed: (info) => failures.push({ phase: info.phase, error: info.error }),

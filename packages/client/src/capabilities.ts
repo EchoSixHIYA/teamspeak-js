@@ -12,8 +12,8 @@
  * round trip.
  */
 
-import type { IconID } from "@honeybbq/teamspeak-core";
-import { parseIconID } from "@honeybbq/teamspeak-core/internal";
+import { asServerID, type IconID, type ServerID } from "@honeybbq/teamspeak-core";
+import { parseIconID, parseUint64 } from "@honeybbq/teamspeak-core/internal";
 import { uidAlgorithmForVersion, type UIDAlgorithm } from "./crypto/identity.js";
 
 /**
@@ -50,6 +50,18 @@ export interface ServerCapabilities {
   readonly hostBannerImageURL: string | undefined;
   /** The welcome message shown on connecting (`virtualserver_welcomemessage`). */
   readonly welcomeMessage: string;
+  /** The virtual server's ID (`virtualserver_id`); 0 when the server did not send it. */
+  readonly serverID: ServerID;
+  /** The virtual server's unique identifier (`virtualserver_unique_identifier`); empty when not sent. */
+  readonly serverUID: string;
+  /** The host message (`virtualserver_hostmessage`) the server wants shown on connecting. */
+  readonly hostMessage: string;
+  /**
+   * How the host message is to be shown (`virtualserver_hostmessage_mode`):
+   * 0 not at all, 1 in the chat log, 2 as a modal dialog, 3 as a modal dialog
+   * after which the client is disconnected.
+   */
+  readonly hostMessageMode: number;
 }
 
 /**
@@ -78,6 +90,10 @@ export function parseServerCapabilities(
     iconID: parseIconID(params["virtualserver_icon_id"]),
     hostBannerImageURL: params["virtualserver_hostbanner_gfx_url"]?.trim() || undefined,
     welcomeMessage: params["virtualserver_welcomemessage"] ?? "",
+    serverID: asServerID(parseUint64(params["virtualserver_id"] ?? "")),
+    serverUID: params["virtualserver_unique_identifier"] ?? "",
+    hostMessage: params["virtualserver_hostmessage"] ?? "",
+    hostMessageMode: hostMessageMode(params["virtualserver_hostmessage_mode"]),
   };
 }
 
@@ -89,4 +105,9 @@ export function parseServerCapabilities(
  */
 export function unknownServerCapabilities(): ServerCapabilities {
   return parseServerCapabilities("");
+}
+
+function hostMessageMode(value: string | undefined): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
