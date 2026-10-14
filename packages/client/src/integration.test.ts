@@ -37,7 +37,7 @@ import {
 import { sendPrivateMessage, whoAmI } from "@honeybbq/teamspeak-core";
 import { ErrorCode, getServerInfo, listServerGroups } from "@honeybbq/teamspeak-core";
 import { asChannelID, asClientDBID, asClientID, asUID } from "@honeybbq/teamspeak-core";
-import type { ClientEnterEvent } from "./types.js";
+import type { ClientEnterEvent } from "@honeybbq/teamspeak-core";
 
 const ADDR = process.env["TEAMSPEAK_ADDR"];
 const SERVER_PASSWORD = process.env["TEAMSPEAK_SERVER_PASSWORD"] ?? "";
@@ -288,6 +288,20 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
 
     expect(channels.length).toBeGreaterThan(0);
     console.log(`channels: ${channels.length} found, first="${channels[0]?.name}"`);
+  }, 15_000);
+
+  it("listChannels — fills the flags, limits and client counts", async () => {
+    const [channels, clients] = await Promise.all([
+      listChannels(sharedClient),
+      listClients(sharedClient),
+    ]);
+    const self = clients.find((c) => c.id === sharedClient.clientID);
+    const here = channels.find((c) => c.id === self?.channelID);
+
+    expect(channels.some((c) => c.isPermanent)).toBe(true);
+    expect(channels.some((c) => c.isDefault)).toBe(true);
+    expect(here?.totalClients).toBeGreaterThanOrEqual(1);
+    expect(here?.totalFamilyClients).toBeGreaterThanOrEqual(here?.totalClients ?? 1);
   }, 15_000);
 
   it("joins the configured default channel when provided", async () => {

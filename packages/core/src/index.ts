@@ -84,6 +84,18 @@ export type { Permission } from "./permission.js";
 export { noopLogger, consoleLogger } from "./types.js";
 export type { CommandMiddleware, FileDownloadInfo, FileUploadInfo, Logger } from "./types.js";
 
+// The events a server sends, shared by every client.
+export type {
+  TextMessageEvent,
+  ClientMovedEvent,
+  ClientLeaveEvent,
+  KickedEvent,
+  ClientEnterEvent,
+  PokeEvent,
+  VoiceDataEvent,
+  NotificationEvent,
+} from "./events.js";
+
 // Typed commands, one module per area of the protocol.
 export * from "./api/channels.js";
 export * from "./api/clients.js";

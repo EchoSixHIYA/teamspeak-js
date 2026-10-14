@@ -216,12 +216,26 @@ export async function deleteChannel(
   );
 }
 
-/** All channels on the server, in the server's own sort order. */
+const listFlags: ReadonlyArray<readonly [string, true]> = [
+  ["-topic", true],
+  ["-flags", true],
+  ["-voice", true],
+  ["-limits", true],
+  ["-icon", true],
+];
+
+/**
+ * All channels on the server, in the server's own sort order.
+ *
+ * Always asks for the topic, flags, voice, limits and icon, which a bare
+ * `channellist` leaves out. `description` and `uid` are not part of
+ * `channellist` and stay empty; `getChannelInfo` has them.
+ */
 export async function listChannels(
   client: CommandExecutor,
   options?: CommandOptions,
 ): Promise<Channel[]> {
-  return (await list(client, "channellist", [], options)).map(parseChannel);
+  return (await list(client, "channellist", listFlags, options)).map(parseChannel);
 }
 
 /**

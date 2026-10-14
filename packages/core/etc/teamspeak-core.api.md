@@ -157,12 +157,17 @@ export interface Channel {
     readonly id: ChannelID;
     readonly isDefault: boolean;
     readonly isPermanent: boolean;
+    readonly isSemiPermanent: boolean;
     readonly maxClients: number;
+    readonly maxFamilyClients: number;
     readonly name: string;
+    readonly neededSubscribePower: number;
     readonly neededTalkPower: number;
     readonly order: ChannelID;
     readonly parentID: ChannelID;
     readonly topic: string;
+    readonly totalClients: number;
+    readonly totalFamilyClients: number;
     readonly uid: ChannelUID;
 }
 
@@ -302,6 +307,9 @@ export interface ClientEditOptions {
 }
 
 // @public
+export type ClientEnterEvent = ClientEntry;
+
+// @public
 export interface ClientEntry {
     readonly channelGroupID: ChannelGroupID;
     readonly channelID: ChannelID;
@@ -334,6 +342,16 @@ export interface ClientKickOptions extends CommandOptions {
 }
 
 // @public
+export interface ClientLeaveEvent {
+    readonly clientID: ClientID;
+    readonly invokerID: ClientID;
+    readonly invokerName: string;
+    readonly invokerUID: UID;
+    readonly reason: number;
+    readonly reasonMessage: string;
+}
+
+// @public
 export interface ClientListOptions extends CommandOptions {
     readonly away?: boolean | undefined;
     readonly badges?: boolean | undefined;
@@ -350,6 +368,16 @@ export interface ClientListOptions extends CommandOptions {
 export interface ClientMatch {
     readonly id: ClientID;
     readonly nickname: string;
+}
+
+// @public
+export interface ClientMovedEvent {
+    readonly clientID: ClientID;
+    readonly invokerID: ClientID;
+    readonly invokerName: string;
+    readonly invokerUID: UID;
+    readonly reason: number;
+    readonly targetChannelID: ChannelID;
 }
 
 // @public
@@ -1100,6 +1128,15 @@ export function iterateClientDatabase(client: CommandExecutor, options?: PagingO
 export function kickClient(client: CommandExecutor, clid: ClientID, reason: KickReason, options?: ClientKickOptions): Promise<void>;
 
 // @public
+export interface KickedEvent {
+    readonly invokerID: ClientID;
+    readonly invokerName: string;
+    readonly invokerUID: UID;
+    readonly reason: number;
+    readonly reasonMessage: string;
+}
+
+// @public
 export type KickReason = typeof Reason.KickChannel | typeof Reason.KickServer;
 
 // @public
@@ -1229,6 +1266,12 @@ export const noopLogger: Logger;
 export class NotConnectedError extends TeamspeakError {
     constructor(options?: ErrorOptions);
     static readonly kind: string;
+}
+
+// @public
+export interface NotificationEvent {
+    readonly name: NotificationName | (string & {});
+    readonly params: Readonly<Record<string, string>>;
 }
 
 // Warning: (ae-forgotten-export) The symbol "notificationNameValues" needs to be exported by the entry point index.d.ts
@@ -1683,6 +1726,14 @@ const permissionTargetValues: {
 export function pokeClient(client: CommandExecutor, clid: ClientID, message: string, options?: CommandOptions): Promise<void>;
 
 // @public
+export interface PokeEvent {
+    readonly invokerID: ClientID;
+    readonly invokerName: string;
+    readonly invokerUID: UID;
+    readonly message: string;
+}
+
+// @public
 export interface PrivilegeKey {
     readonly channelGroupID: ChannelGroupID | undefined;
     readonly channelID: ChannelID | undefined;
@@ -2098,6 +2149,17 @@ export interface TempPasswordOptions {
     readonly targetChannelPassword?: string | undefined;
 }
 
+// @public
+export interface TextMessageEvent {
+    readonly invokerGroups: readonly ServerGroupID[];
+    readonly invokerID: ClientID;
+    readonly invokerName: string;
+    readonly invokerUID: UID;
+    readonly message: string;
+    readonly targetID: ClientID;
+    readonly targetMode: number;
+}
+
 // Warning: (ae-forgotten-export) The symbol "textMessageTargetValues" needs to be exported by the entry point index.d.ts
 //
 // @public
@@ -2133,6 +2195,13 @@ export function usePrivilegeKey(client: CommandExecutor, token: string, options?
 
 // @public
 export function viewLog(client: CommandExecutor, options?: LogViewOptions): Promise<LogPage>;
+
+// @public
+export interface VoiceDataEvent {
+    readonly clientID: ClientID;
+    readonly codec: number;
+    readonly data: Uint8Array;
+}
 
 // @public
 export interface WhoAmI {

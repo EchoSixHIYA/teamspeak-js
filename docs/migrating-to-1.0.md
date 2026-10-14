@@ -11,7 +11,7 @@ each package's CHANGELOG; this guide is the path through them.
 
 Install only `@honeybbq/teamspeak-client`; the core comes with it and every
 import below is from the client package. Both are ESM-only, as 0.x was; on
-Node 20.19 and later `require()` loads them too.
+Node 22.12 and later `require()` loads them too.
 
 ## Identities
 

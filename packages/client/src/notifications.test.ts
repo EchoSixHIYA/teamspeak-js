@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { handleNotification } from "./notifications.js";
-import type { ClientEnterEvent } from "./types.js";
+import type { ClientEnterEvent } from "@honeybbq/teamspeak-core";
 
 function makeClients(): Map<number, ClientEnterEvent> {
   return new Map();

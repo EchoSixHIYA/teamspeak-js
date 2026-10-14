@@ -5,7 +5,7 @@ import type {
   ClientMovedEvent,
   TextMessageEvent,
   PokeEvent,
-} from "./types.js";
+} from "@honeybbq/teamspeak-core";
 import {
   parseClient,
   parseUint64,

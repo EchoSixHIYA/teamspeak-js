@@ -3,8 +3,6 @@ import {
   type ClientOptions,
   type EventMiddleware,
   type AddrResolver,
-  type ClientEnterEvent,
-  type KickedEvent,
   type Listener,
   type ServerEvent,
   type ServerEventName,
@@ -13,8 +11,10 @@ import {
 } from "./types.js";
 import {
   type ChannelID,
+  type ClientEnterEvent,
   type ClientID,
   type Codec,
+  type KickedEvent,
   type CommandMiddleware,
   type CommandOptions,
   type UID,

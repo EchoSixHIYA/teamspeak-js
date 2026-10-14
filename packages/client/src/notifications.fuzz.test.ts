@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { handleNotification } from "./notifications.js";
-import type { ClientEnterEvent } from "./types.js";
+import type { ClientEnterEvent } from "@honeybbq/teamspeak-core";
 
 // Property tests over the notifications a server pushes. Every field comes
 // from the network, so a notification of any shape must be read without

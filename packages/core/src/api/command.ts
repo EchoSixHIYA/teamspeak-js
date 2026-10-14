@@ -419,12 +419,12 @@ export interface Channel {
   readonly parentID: ChannelID;
   /** The channel's name. */
   readonly name: string;
-  /** The topic shown under the name. */
+  /** The topic shown under the name (`channel_topic`). */
   readonly topic: string;
   /**
-   * The description. `channellist` over the voice protocol leaves it out for
-   * bandwidth; `getChannelInfo` or the voice client's `getChannelDescription`
-   * has it.
+   * The description (`channel_description`). `channellist` does not carry it,
+   * so `listChannels` leaves it empty; `getChannelInfo` or the voice client's
+   * `getChannelDescription` has it.
    */
   readonly description: string;
   /**
@@ -436,14 +436,36 @@ export interface Channel {
   readonly hasPassword: boolean;
   /** Whether new clients land here. */
   readonly isDefault: boolean;
-  /** Whether the channel survives a server restart. */
+  /** Whether the channel survives a server restart (`channel_flag_permanent`). */
   readonly isPermanent: boolean;
+  /**
+   * Whether the channel is kept until the last client leaves it, but not
+   * across a restart (`channel_flag_semi_permanent`).
+   */
+  readonly isSemiPermanent: boolean;
   /** The voice codec, one of {@link Codec}. */
   readonly codec: number;
   /** The codec's quality, 0 to 10. */
   readonly codecQuality: number;
-  /** How many clients may be in the channel; -1 for no limit. */
+  /** How many clients may be in the channel (`channel_maxclients`); -1 for no limit. */
   readonly maxClients: number;
+  /**
+   * How many clients may be in the channel and its subchannels together
+   * (`channel_maxfamilyclients`); -1 for no limit.
+   */
+  readonly maxFamilyClients: number;
+  /** How many clients are in the channel now (`total_clients`). */
+  readonly totalClients: number;
+  /**
+   * How many clients are in the channel and its subchannels now
+   * (`total_clients_family`).
+   */
+  readonly totalFamilyClients: number;
+  /**
+   * The subscribe power a client needs to subscribe to the channel
+   * (`channel_needed_subscribe_power`).
+   */
+  readonly neededSubscribePower: number;
   /** The talk power a client needs to speak here. */
   readonly neededTalkPower: number;
   /** The channel's icon, or undefined for none. */
@@ -451,6 +473,7 @@ export interface Channel {
   /**
    * The unique identifier the server gives the channel
    * (`channel_unique_identifier`): TS6 sends one, TS3 none, which reads as "".
+   * `channellist` does not carry it, so `listChannels` leaves it empty.
    */
   readonly uid: ChannelUID;
 }
@@ -466,9 +489,14 @@ function parseChannel(row: Record<string, string>): Channel {
     hasPassword: bool(row, "channel_flag_password"),
     isDefault: bool(row, "channel_flag_default"),
     isPermanent: bool(row, "channel_flag_permanent"),
+    isSemiPermanent: bool(row, "channel_flag_semi_permanent"),
     codec: num(row, "channel_codec"),
     codecQuality: num(row, "channel_codec_quality"),
     maxClients: num(row, "channel_maxclients"),
+    maxFamilyClients: num(row, "channel_maxfamilyclients"),
+    totalClients: num(row, "total_clients"),
+    totalFamilyClients: num(row, "total_clients_family"),
+    neededSubscribePower: num(row, "channel_needed_subscribe_power"),
     neededTalkPower: num(row, "channel_needed_talk_power"),
     iconID: icon(row, "channel_icon_id"),
     uid: asChannelUID(str(row, "channel_unique_identifier")),

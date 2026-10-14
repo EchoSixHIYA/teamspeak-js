@@ -626,6 +626,62 @@ describe("other fixes", () => {
     expect(second?.iconID).toBeUndefined();
   });
 
+  it("asks channellist for the topic, flags, voice, limits and icon", async () => {
+    const { client, sent } = recordingClient([]);
+    await listChannels(client);
+
+    expect(sent[0]).toBe("channellist -topic -flags -voice -limits -icon");
+  });
+
+  it("reads every channellist field", async () => {
+    const { client } = recordingClient([
+      {
+        cid: "5",
+        pid: "2",
+        channel_order: "4",
+        channel_name: "Room",
+        channel_topic: "Hello",
+        channel_flag_default: "1",
+        channel_flag_password: "1",
+        channel_flag_permanent: "1",
+        channel_flag_semi_permanent: "1",
+        channel_codec: "4",
+        channel_codec_quality: "7",
+        channel_needed_talk_power: "9",
+        channel_icon_id: "12",
+        channel_maxclients: "-1",
+        channel_maxfamilyclients: "30",
+        total_clients: "3",
+        total_clients_family: "8",
+        channel_needed_subscribe_power: "6",
+      },
+    ]);
+    const [channel] = await listChannels(client);
+
+    expect(channel).toMatchObject({
+      id: 5n,
+      parentID: 2n,
+      order: 4n,
+      name: "Room",
+      topic: "Hello",
+      isDefault: true,
+      hasPassword: true,
+      isPermanent: true,
+      isSemiPermanent: true,
+      codec: 4,
+      codecQuality: 7,
+      neededTalkPower: 9,
+      iconID: 12,
+      maxClients: -1,
+      maxFamilyClients: 30,
+      totalClients: 3,
+      totalFamilyClients: 8,
+      neededSubscribePower: 6,
+      description: "",
+      uid: "",
+    });
+  });
+
   it("reads an empty list as empty, not as a refusal", async () => {
     const { client } = recordingClient(emptyResult());
     expect(await listBans(client)).toEqual([]);

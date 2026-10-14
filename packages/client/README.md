@@ -46,7 +46,7 @@ npm install @honeybbq/teamspeak-client@beta
 pnpm add @honeybbq/teamspeak-client@beta
 ```
 
-Everything in this README is the 1.0 API. You need Node.js 20.19 or newer.
+Everything in this README is the 1.0 API. You need Node.js 22.12 or newer.
 
 ## Quick Start
 

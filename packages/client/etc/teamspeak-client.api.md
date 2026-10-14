@@ -6,8 +6,10 @@
 
 import { Channel } from 'node:diagnostics_channel';
 import { ChannelID } from '@honeybbq/teamspeak-core';
-import type { ClientEntry } from '@honeybbq/teamspeak-core';
+import type { ClientEnterEvent } from '@honeybbq/teamspeak-core';
 import { ClientID } from '@honeybbq/teamspeak-core';
+import type { ClientLeaveEvent } from '@honeybbq/teamspeak-core';
+import type { ClientMovedEvent } from '@honeybbq/teamspeak-core';
 import { Codec } from '@honeybbq/teamspeak-core';
 import type { CommandExecutor } from '@honeybbq/teamspeak-core';
 import type { CommandMiddleware } from '@honeybbq/teamspeak-core';
@@ -17,13 +19,16 @@ import type { Duplex } from 'node:stream';
 import type { FileDownloadInfo } from '@honeybbq/teamspeak-core';
 import type { FileUploadInfo } from '@honeybbq/teamspeak-core';
 import type { IconID } from '@honeybbq/teamspeak-core';
+import type { KickedEvent } from '@honeybbq/teamspeak-core';
 import type { Logger } from '@honeybbq/teamspeak-core';
-import type { NotificationName } from '@honeybbq/teamspeak-core';
+import type { NotificationEvent } from '@honeybbq/teamspeak-core';
+import type { PokeEvent } from '@honeybbq/teamspeak-core';
 import type { Readable } from 'node:stream';
-import type { ServerGroupID } from '@honeybbq/teamspeak-core';
 import { TeamspeakError } from '@honeybbq/teamspeak-core';
+import type { TextMessageEvent } from '@honeybbq/teamspeak-core';
 import { TracingChannel } from 'node:diagnostics_channel';
 import { UID } from '@honeybbq/teamspeak-core';
+import type { VoiceDataEvent } from '@honeybbq/teamspeak-core';
 import type { Writable } from 'node:stream';
 
 // @public
@@ -85,29 +90,6 @@ export class Client implements CommandExecutor, AsyncDisposable {
     uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: {
         readonly signal?: AbortSignal | undefined;
     }): Promise<void>;
-}
-
-// @public
-export type ClientEnterEvent = ClientEntry;
-
-// @public
-export interface ClientLeaveEvent {
-    readonly clientID: ClientID;
-    readonly invokerID: ClientID;
-    readonly invokerName: string;
-    readonly invokerUID: UID;
-    readonly reason: number;
-    readonly reasonMessage: string;
-}
-
-// @public
-export interface ClientMovedEvent {
-    readonly clientID: ClientID;
-    readonly invokerID: ClientID;
-    readonly invokerName: string;
-    readonly invokerUID: UID;
-    readonly reason: number;
-    readonly targetChannelID: ChannelID;
 }
 
 // @public
@@ -261,22 +243,7 @@ export class InvalidIdentityError extends TeamspeakError {
 }
 
 // @public
-export interface KickedEvent {
-    readonly invokerID: ClientID;
-    readonly invokerName: string;
-    readonly invokerUID: UID;
-    readonly reason: number;
-    readonly reasonMessage: string;
-}
-
-// @public
 export type Listener<K extends keyof EventMap> = EventMap[K] extends void ? () => void : (payload: EventMap[K]) => void;
-
-// @public
-export interface NotificationEvent {
-    readonly name: NotificationName | (string & {});
-    readonly params: Readonly<Record<string, string>>;
-}
 
 // @public
 export const packetChannel: Channel<PacketTrace>;
@@ -289,14 +256,6 @@ export interface PacketTrace {
 
 // @public
 export function parseIdentity(s: string): Identity;
-
-// @public
-export interface PokeEvent {
-    readonly invokerID: ClientID;
-    readonly invokerName: string;
-    readonly invokerUID: UID;
-    readonly message: string;
-}
 
 // @public
 export interface ReconnectOptions {
@@ -359,17 +318,6 @@ export function subscribeAllChannels(client: Client, options?: CommandOptions): 
 export function subscribeChannel(client: Client, cid: ChannelID, options?: CommandOptions): Promise<void>;
 
 // @public
-export interface TextMessageEvent {
-    readonly invokerGroups: readonly ServerGroupID[];
-    readonly invokerID: ClientID;
-    readonly invokerName: string;
-    readonly invokerUID: UID;
-    readonly message: string;
-    readonly targetID: ClientID;
-    readonly targetMode: number;
-}
-
-// @public
 export type UIDAlgorithm = "sha1" | "sha256";
 
 // @public
@@ -389,13 +337,6 @@ export function unsubscribeChannel(client: Client, cid: ChannelID, options?: Com
 
 // @public
 export function uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: FileTransferOptions): Promise<void>;
-
-// @public
-export interface VoiceDataEvent {
-    readonly clientID: ClientID;
-    readonly codec: number;
-    readonly data: Uint8Array;
-}
 
 
 export * from "@honeybbq/teamspeak-core";
