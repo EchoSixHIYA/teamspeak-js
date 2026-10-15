@@ -11,8 +11,8 @@ body:
     attributes:
       label: Package
       options:
-        - "@honeybbq/teamspeak-client"
-        - "@honeybbq/teamspeak-core"
+        - "@honeybbq/teamspeak"
+        - "@honeybbq/teamspeak-client (forwarding package)"
         - Not sure
     validations:
       required: true
@@ -20,7 +20,7 @@ body:
     id: version
     attributes:
       label: Package version
-      description: The version you have installed, from `npm ls @honeybbq/teamspeak-client`. For an unreleased commit, give the commit hash.
+      description: The version you have installed, from `npm ls @honeybbq/teamspeak`. For an unreleased commit, give the commit hash.
       placeholder: 1.0.0-beta.3
     validations:
       required: true

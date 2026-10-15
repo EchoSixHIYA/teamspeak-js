@@ -23,7 +23,7 @@ three shapes:
 
 Notifications carry no `return_code`, so nothing on the wire says which
 command one answers. That pairing is a property of the command, recorded in
-`src/command/responses.ts`; the client consults it for every command it sends,
+`packages/teamspeak/src/core/command/responses.ts`; the client consults it for every command it sends,
 including raw ones passed to `execCommandWithResponse`.
 
 The same notification can also arrive unprompted — `notifyservergrouplist`

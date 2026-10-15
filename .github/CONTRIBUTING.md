@@ -1,7 +1,7 @@
 # Contributing to teamspeak-js
 
 Thanks for helping. Bug reports, fixes, protocol findings and documentation
-changes are all welcome. For a larger change, such as a new package or an API
+changes are all welcome. For a larger change, such as a new entry point or an API
 change, open an issue first so we can agree on the shape before you write it.
 
 By taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). To report
@@ -33,14 +33,32 @@ cd teamspeak-js
 pnpm install
 ```
 
+## Layout
+
+The code is one package, `@honeybbq/teamspeak`, in `packages/teamspeak/`, with
+one directory per entry point:
+
+- `src/core` is what every connection shares: the command language, ids,
+  errors and the typed commands. It imports nothing from the other two.
+- `src/client` is the voice client (`@honeybbq/teamspeak/client`).
+- `src/query` is the ServerQuery client. It is not exported yet and ships in a
+  1.x release as `@honeybbq/teamspeak/query`.
+- `packages/teamspeak-client` forwards to the package above and has no code of
+  its own.
+
+`src/client` and `src/query` use the core's public API through its package name,
+`@honeybbq/teamspeak`, and take plumbing only from `../core/internal.js`. They
+never import each other. An entry exports only its own symbols, so the client
+entry does not re-export the core.
+
 ## Checks
 
 CI runs these, so run them before you push:
 
 ```sh
 pnpm check        # typecheck, lint, and format check
-pnpm test         # unit tests for every package
-pnpm build        # build every package
+pnpm test         # unit tests
+pnpm build        # build the package
 pnpm check:docs   # every exported symbol has a doc comment
 pnpm api:check    # the public API matches the committed report
 ```
@@ -50,8 +68,8 @@ about it.
 
 ### Public API report
 
-The public API of each published package is recorded in `packages/*/etc/*.api.md`
-and reviewed like code. `pnpm api:check` fails with a diff when the built
+The public API of each entry point is recorded in `packages/teamspeak/etc/core.api.md`
+and `client.api.md`, and reviewed like code. `pnpm api:check` fails with a diff when the built
 declarations and the record disagree, so an API change cannot land without
 showing up in the same commit. When the change is on purpose, rewrite the
 record and commit it with the change:
@@ -72,15 +90,21 @@ changelog and in the GitHub release notes:
 pnpm changeset
 ```
 
-Pick the packages and the bump, and describe the change for someone upgrading:
-what changed, and what they have to do about it. The published packages are one
-fixed group and are released together at one version. The repository is in
-prerelease mode (`1.0.0-beta.N`) until 1.0.0, so a changeset is still the right
-way to record a breaking change. [.changeset/README.md](../.changeset/README.md)
-has the details. Changes nobody would notice, such as tests, CI and internal
-refactors, do not need one.
+A changeset names `@honeybbq/teamspeak` and the bump. It does not name
+`@honeybbq/teamspeak-client`, which follows by itself. Describe the change for
+someone upgrading: what changed, and what they have to do about it. The
+repository is in prerelease mode (`1.0.0-beta.N`) until 1.0.0, so a changeset is
+still the right way to record a breaking change.
+[.changeset/README.md](../.changeset/README.md) has the details. Changes nobody
+would notice, such as tests, CI and internal refactors, do not need one.
 
-You do not run `pnpm version-packages`; the maintainer does that when releasing.
+The changelog links each entry to its pull request and commit and thanks its
+author, so a changeset has no `pr:`, `commit:` or `author:` lines. A maintainer
+may write or edit a changeset for you, so a first pull request does not need to
+learn changesets.
+
+You do not run `pnpm version-packages`; maintainers do, after pushing, with `gh`
+logged in or `GITHUB_TOKEN` set.
 
 ## Integration tests
 
@@ -114,7 +138,7 @@ yours banned. If that happens, restart the container.
 
 - Add a test with a fix or a feature. A bug fix should have a test that fails
   without it.
-- If behaviour changes, update the README of the package and the doc comments.
+- If behaviour changes, update the README, the docs and the doc comments.
 - Keep commits focused. Messages follow [Conventional Commits](https://www.conventionalcommits.org/),
   as the history does: `feat`, `fix`, `docs`, `ci`, `test`, `refactor` or
   `chore`, with an optional scope, and a `!` after the type for a breaking

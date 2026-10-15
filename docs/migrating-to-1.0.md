@@ -1,17 +1,63 @@
 # Migrating to 1.0
 
 From `@honeybbq/teamspeak-client` 0.x to 1.0. The per-release details are in
-each package's CHANGELOG; this guide is the path through them.
+the CHANGELOG; this guide is the path through them.
 
-## Packages
+In 1.0 the packages are one: `@honeybbq/teamspeak`, with two entry points.
+Install it, and import from the entry that holds what you need.
 
-| 0.x                          | 1.0                                                                       |
-| ---------------------------- | ------------------------------------------------------------------------- |
-| `@honeybbq/teamspeak-client` | `@honeybbq/teamspeak-client`, which re-exports `@honeybbq/teamspeak-core` |
+| Entry                        | What it holds                                                                                                              |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `@honeybbq/teamspeak`        | The command language, branded ids, errors and `ErrorCode`, the typed commands such as `listChannels`, and the event types  |
+| `@honeybbq/teamspeak/client` | The voice `Client`, identities, file transfer data, diagnostics, reconnection, and the errors only the voice client throws |
 
-Install only `@honeybbq/teamspeak-client`; the core comes with it and every
-import below is from the client package. Both are ESM-only, as 0.x was; on
-Node 22.12 and later `require()` loads them too.
+Both are ESM-only, as 0.x was; on Node 22.12 and later `require()` loads them
+too. Each entry exports only its own symbols. The code samples below name
+symbols without import lines: `Client`, `Identity`, `generateIdentity`,
+`parseIdentity`, `uidFromPublicKey`, `ClientStatus`, the voice client's errors
+(`HandshakeError`, `ConnectionTimeoutError`, `RemovedError`,
+`InvalidAddressError`, `InvalidIdentityError`, `FileTransferError`),
+`defaultShouldRetry`, `defaultBackoffPolicy`, `backoffDelay` and
+`unknownServerCapabilities` come from `@honeybbq/teamspeak/client`; everything
+else, the typed commands, ids, `ServerError`, `ErrorCode`, `NotConnectedError`,
+`NoDataError`, `CommandTimeoutError`, `CommandMiddleware`, the event types and
+`escape`, comes from `@honeybbq/teamspeak`.
+
+## The package was renamed
+
+`@honeybbq/teamspeak-core` and `@honeybbq/teamspeak-client` are now one
+package, `@honeybbq/teamspeak`. The 0.x client re-exported the core; the new
+client entry does not, so an import splits in two:
+
+| You imported                                                                                                       | Import it from now on        |
+| ------------------------------------------------------------------------------------------------------------------ | ---------------------------- |
+| `Client`, `Identity`, `ClientStatus`, the client's errors, `commandChannel`, ... from `@honeybbq/teamspeak-client` | `@honeybbq/teamspeak/client` |
+| `listChannels`, `ErrorCode`, `TeamspeakError`, ids, events, ... from `@honeybbq/teamspeak-client`                  | `@honeybbq/teamspeak`        |
+| anything from `@honeybbq/teamspeak-core`                                                                           | `@honeybbq/teamspeak`        |
+
+```ts
+// before
+import { Client, listChannels, ErrorCode } from "@honeybbq/teamspeak-client";
+// after
+import { Client } from "@honeybbq/teamspeak/client";
+import { listChannels, ErrorCode } from "@honeybbq/teamspeak";
+```
+
+Replace both package names with `@honeybbq/teamspeak` in your `package.json`.
+To rewrite the specifiers in your source in one step (use `sed -i ''` on
+macOS), then move the client's own symbols to a `/client` import by hand:
+
+```sh
+git grep -lE '@honeybbq/teamspeak-(core|client)' -- src | xargs sed -i -E 's#@honeybbq/teamspeak-(core|client)#@honeybbq/teamspeak#g'
+```
+
+`@honeybbq/teamspeak-client` stays on npm as a thin package that re-exports
+both entries, so code that imports everything from it keeps working through
+1.x. New code should use `@honeybbq/teamspeak`. `@honeybbq/teamspeak-core` is
+not published any more, and `@honeybbq/teamspeak-core/internal` is gone.
+
+The 0.x line is closed to features: 0.3.x gets security fixes only, from a
+`release/0.3` branch. There will be no 0.x release built on 1.0.
 
 ## Identities
 
