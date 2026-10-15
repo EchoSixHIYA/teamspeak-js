@@ -8,6 +8,8 @@ import {
   listChannels,
 } from "./channels.js";
 import {
+  getClientIDs,
+  getClientNameByDBID,
   iterateClientDatabase,
   kickClient,
   listClientPermissions,
@@ -43,15 +45,22 @@ import {
   listBans,
   listComplaints,
   sendChannelMessage,
+  updateMessageFlag,
   viewLog,
 } from "./moderation.js";
-import { addTempPassword, listBindings, listServerGroups } from "./server.js";
+import {
+  addServerGroupPermission,
+  addTempPassword,
+  listBindings,
+  listServerGroups,
+} from "./server.js";
 import {
   asChannelGroupID,
   asChannelID,
   asClientDBID,
   asClientID,
   asPermissionID,
+  asMessageID,
   asServerGroupID,
   asUID,
 } from "../command/ids.js";
@@ -911,5 +920,55 @@ describe("listPermissions", () => {
       { permid: "32769", permname: "i_needed_modify_power_serverinstance_help_view", permdesc: "" },
     ]);
     expect((await listPermissions(client)).map((p) => p.id)).toEqual([1, 32769]);
+  });
+});
+
+describe("answers that are records", () => {
+  it("names every client behind a uid with the nickname it uses", async () => {
+    const { client } = recordingClient([
+      { cluid: "u=", clid: "4", name: "alice" },
+      { cluid: "u=", clid: "9", name: "alice2" },
+    ]);
+
+    expect(await getClientIDs(client, asUID("u="))).toEqual([
+      { id: asClientID(4), nickname: "alice" },
+      { id: asClientID(9), nickname: "alice2" },
+    ]);
+  });
+
+  it("names a database id's record as a uid's", async () => {
+    const { client } = recordingClient([{ cluid: "u=", cldbid: "12", name: "alice" }]);
+
+    expect(await getClientNameByDBID(client, asClientDBID(12))).toEqual({
+      databaseID: asClientDBID(12),
+      name: "alice",
+    });
+  });
+});
+
+describe("addServerGroupPermission", () => {
+  it("takes the permission and value as its siblings do, and negated and skip as options", async () => {
+    const { client, sent } = recordingClient();
+    const permission = permissionByID(asPermissionID(7));
+    await addServerGroupPermission(client, asServerGroupID(6n), permission, 50);
+    await addServerGroupPermission(client, asServerGroupID(6n), permission, 50, {
+      negated: true,
+      skip: true,
+    });
+
+    expect(sent).toEqual([
+      "servergroupaddperm sgid=6 permid=7 permvalue=50 permnegated=0 permskip=0",
+      "servergroupaddperm sgid=6 permid=7 permvalue=50 permnegated=1 permskip=1",
+    ]);
+  });
+});
+
+describe("updateMessageFlag", () => {
+  it("sends the flag of the record it is given", async () => {
+    const { client, sent } = recordingClient();
+    await updateMessageFlag(client, asMessageID(3), { read: true });
+    await updateMessageFlag(client, asMessageID(3), { read: false });
+
+    expect(sent).toEqual(["messageupdateflag msgid=3 flag=1", "messageupdateflag msgid=3 flag=0"]);
   });
 });

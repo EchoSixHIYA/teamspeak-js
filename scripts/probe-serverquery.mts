@@ -105,7 +105,7 @@ import {
   getClientDBIDByUID,
   getClientDatabaseInfo,
   getClientIDs,
-  getClientInfo,
+  getClientProperties,
   getClientNameByDBID,
   getClientNameByUID,
   getClientUIDByID,
@@ -586,7 +586,7 @@ async function probe(target: Target): Promise<Findings> {
     await step(run, "listClients", () =>
       listClients(q, { groups: true, times: true, voice: true, away: true, info: true }),
     );
-    await step(run, "getClientInfo", () => getClientInfo(q, vc2.clientID));
+    await step(run, "getClientProperties", () => getClientProperties(q, vc2.clientID));
     await step(run, "findClients", () => findClients(q, `pb-${tag}`));
     await step(run, "findClients (no match)", () => findClients(q, `no-such-client-${tag}`));
     await step(run, "getClientIDs", () => getClientIDs(q, vc2uid));
@@ -674,9 +674,7 @@ async function probe(target: Target): Promise<Findings> {
       if (copy !== undefined)
         later("delete server group copy", () => deleteServerGroup(q, copy, { force: true }));
       await step(run, "addServerGroupPermission", () =>
-        addServerGroupPermission(q, sg, {
-          permission: permissionByName(PermissionName.ChannelJoinPower),
-          value: 7,
+        addServerGroupPermission(q, sg, permissionByName(PermissionName.ChannelJoinPower), 7, {
           skip: true,
         }),
       );
@@ -797,7 +795,7 @@ async function probe(target: Target): Promise<Findings> {
     const msg = messages[0];
     if (msg) {
       await step(run, "getMessage", () => getMessage(q, msg.id));
-      await step(run, "updateMessageFlag", () => updateMessageFlag(q, msg.id, true));
+      await step(run, "updateMessageFlag", () => updateMessageFlag(q, msg.id, { read: true }));
       await step(run, "deleteMessage", () => deleteMessage(q, msg.id));
     } else {
       for (const fn of ["getMessage", "updateMessageFlag", "deleteMessage"])
@@ -1068,7 +1066,7 @@ async function passwords(run: Run, target: Target, pq: ChannelID, extra: Record<
   const joiner = await voice(target, `pj-${tag}`);
   try {
     const joined = (): Promise<string> =>
-      getClientInfo(q, joiner.clientID).then(
+      getClientProperties(q, joiner.clientID).then(
         (row) => row["cid"] ?? row["client_channel_id"] ?? "?",
       );
     out["channel: wrong password"] = await moveClient(joiner, joiner.clientID, room, {

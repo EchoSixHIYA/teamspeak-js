@@ -345,11 +345,17 @@ export async function deleteMessage(
   await exec(client, "messagedel", [["msgid", messageID]], options);
 }
 
+/** The flags of an offline message that can be changed. */
+export interface MessageFlags {
+  /** Whether the message is marked read (`flag`). */
+  readonly read: boolean;
+}
+
 /** Mark a message read or unread. */
 export async function updateMessageFlag(
   client: CommandExecutor,
   messageID: MessageID,
-  read: boolean,
+  flags: MessageFlags,
   options?: CommandOptions,
 ): Promise<void> {
   await exec(
@@ -357,7 +363,7 @@ export async function updateMessageFlag(
     "messageupdateflag",
     [
       ["msgid", messageID],
-      ["flag", read],
+      ["flag", flags.read],
     ],
     options,
   );

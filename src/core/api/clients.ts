@@ -132,7 +132,7 @@ export async function listClients(
  * `client_idle_time` and `connection_connected_time` in milliseconds. The keys
  * are named in `PropertyName`.
  */
-export async function getClientInfo(
+export async function getClientProperties(
   client: CommandExecutor,
   clid: ClientID,
   options?: CommandOptions,
@@ -359,14 +359,20 @@ export async function findClients(
   }));
 }
 
-/** Every clid currently using a given unique identifier. */
+/**
+ * Every client currently using a given unique identifier, with the nickname
+ * each uses; none is an empty list.
+ */
 export async function getClientIDs(
   client: CommandExecutor,
   uid: UID,
   options?: CommandOptions,
-): Promise<ClientID[]> {
+): Promise<ClientMatch[]> {
   const rows = await list(client, "clientgetids", [["cluid", uid]], options);
-  return rows.map((row) => asClientID(uint(row, "clid", U16)));
+  return rows.map((row) => ({
+    id: asClientID(uint(row, "clid", U16)),
+    nickname: str(row, "name"),
+  }));
 }
 
 /** The uid of a connected client. */
@@ -389,22 +395,26 @@ export async function getClientDBIDByUID(
   return asClientDBID(big(firstRow(rows, "clientgetdbidfromuid", "cldbid"), "cldbid"));
 }
 
-/** The nickname recorded for a database id. */
-export async function getClientNameByDBID(
-  client: CommandExecutor,
-  cldbid: ClientDBID,
-  options?: CommandOptions,
-): Promise<string> {
-  const rows = await query(client, "clientgetnamefromdbid", [["cldbid", cldbid]], options);
-  return str(firstRow(rows, "clientgetnamefromdbid"), "name");
-}
-
-/** The database record a uid names, as `clientgetnamefromuid` reports it. */
+/** The database record a uid or database id names. */
 export interface ClientDatabaseName {
   /** The client's database id. */
   readonly databaseID: ClientDBID;
   /** The nickname the client last used. */
   readonly name: string;
+}
+
+function parseDatabaseName(row: Record<string, string>): ClientDatabaseName {
+  return { databaseID: asClientDBID(big(row, "cldbid")), name: str(row, "name") };
+}
+
+/** The database id and nickname recorded for a database id. */
+export async function getClientNameByDBID(
+  client: CommandExecutor,
+  cldbid: ClientDBID,
+  options?: CommandOptions,
+): Promise<ClientDatabaseName> {
+  const rows = await query(client, "clientgetnamefromdbid", [["cldbid", cldbid]], options);
+  return parseDatabaseName(firstRow(rows, "clientgetnamefromdbid", "cldbid"));
 }
 
 /** The database id and nickname recorded for a uid. */
@@ -414,8 +424,7 @@ export async function getClientNameByUID(
   options?: CommandOptions,
 ): Promise<ClientDatabaseName> {
   const rows = await query(client, "clientgetnamefromuid", [["cluid", uid]], options);
-  const row = firstRow(rows, "clientgetnamefromuid", "cldbid");
-  return { databaseID: asClientDBID(big(row, "cldbid")), name: str(row, "name") };
+  return parseDatabaseName(firstRow(rows, "clientgetnamefromuid", "cldbid"));
 }
 
 /** Give a client a channel group in one channel. */

@@ -570,40 +570,31 @@ export async function listServerGroupPermissions(
   );
 }
 
-/** One permission to set on a server group. */
-export interface ServerGroupPermission {
-  /** The permission. */
-  readonly permission: Permission;
-  /** Its value (`permvalue`). */
-  readonly value: number;
+/** How {@link addServerGroupPermission} sets the permission. */
+export interface ServerGroupPermissionOptions extends CommandOptions {
   /** Whether the value is negated, so the lowest wins; false by default (`permnegated`). */
   readonly negated?: boolean | undefined;
   /** Whether it skips channel and client overrides; false by default (`permskip`). */
   readonly skip?: boolean | undefined;
 }
 
-/**
- * Set a permission on a server group.
- *
- * `grant` is what to send; the command's `signal` and `timeoutMs` go in
- * `options`, a separate last argument — set among the fields, they are not
- * read.
- */
+/** Set a permission on a server group. */
 export async function addServerGroupPermission(
   client: CommandExecutor,
   sgid: ServerGroupID,
-  grant: ServerGroupPermission,
-  options?: CommandOptions,
+  permission: Permission,
+  value: number,
+  options: ServerGroupPermissionOptions = {},
 ): Promise<void> {
   await exec(
     client,
     "servergroupaddperm",
     [
       ["sgid", sgid],
-      permissionParam(grant.permission),
-      ["permvalue", grant.value],
-      ["permnegated", grant.negated ?? false],
-      ["permskip", grant.skip ?? false],
+      permissionParam(permission),
+      ["permvalue", value],
+      ["permnegated", options.negated ?? false],
+      ["permskip", options.skip ?? false],
     ],
     options,
   );

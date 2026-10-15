@@ -134,33 +134,38 @@ options object, which also carries `{ signal, timeoutMs }`:
 | `client.execCommandWithResponse(line, ms)`                 | `client.exec(line, { timeoutMs: ms })`                                                                                   |
 | `client.execCommand(line, ms)`                             | `client.exec(line, { timeoutMs: ms })`                                                                                   |
 | `client.sendCommandNoWait(line)`                           | `client.execNoWait(line)`                                                                                                |
+| `getClientInfo(client, clid)`                              | `getClientProperties(client, clid)`, the raw property map                                                                |
 
 If you used a 1.0 prerelease, these took positional optional arguments and now
 take them in the options object:
 
-| Before                                                                                            | Now                                                              |
-| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `listClients(c, include, options)`                                                                | `listClients(c, { ...include, ...options })`                     |
-| `moveClient(c, clid, cid, password)`                                                              | `moveClient(c, clid, cid, { password })`                         |
-| `kickClient(c, clid, reason, message)`                                                            | `kickClient(c, clid, reason, { reasonMessage })`                 |
-| `moveChannel(c, cid, parent, order)`                                                              | `moveChannel(c, cid, parent, { order })`                         |
-| `deleteChannel(c, cid, force)`                                                                    | `deleteChannel(c, cid, { force })`                               |
-| `deleteServerGroup` / `deleteChannelGroup(c, id, force)`                                          | `(c, id, { force })`                                             |
-| `addClientPermission(c, dbid, perm, value, skip)`                                                 | `addClientPermission(c, dbid, perm, value, { skip })`            |
-| `listFiles(c, cid, path?, password?)`                                                             | `listFiles(c, cid, path, { password })`                          |
-| `getFileInfo`, `deleteFile`, `createDirectory(…, password)`                                       | `(…, { password })`                                              |
-| `renameFile(c, cid, old, new, rename, options)`                                                   | `renameFile(c, cid, old, new, { ...rename, ...options })`        |
-| `initFileUpload` / `initFileDownload(…, upload, options)`                                         | `(…, { password, ..., signal })`                                 |
-| `stopFileTransfer(c, id, removePartialFile)`                                                      | `stopFileTransfer(c, id, { removePartialFile })`                 |
-| `listComplaints(c, dbid)`                                                                         | `listComplaints(c, { targetDatabaseID })`                        |
-| `listBindings(c, subsystem)`                                                                      | `listBindings(c, { subsystem })`                                 |
-| `banClient`, `viewLog`, `listClientDatabase`, `listServerGroupClients`, `listChannelGroupClients` | their options and `{ signal, timeoutMs }` merged into one object |
+| Before                                                                                            | Now                                                                 |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `listClients(c, include, options)`                                                                | `listClients(c, { ...include, ...options })`                        |
+| `moveClient(c, clid, cid, password)`                                                              | `moveClient(c, clid, cid, { password })`                            |
+| `kickClient(c, clid, reason, message)`                                                            | `kickClient(c, clid, reason, { reasonMessage })`                    |
+| `moveChannel(c, cid, parent, order)`                                                              | `moveChannel(c, cid, parent, { order })`                            |
+| `deleteChannel(c, cid, force)`                                                                    | `deleteChannel(c, cid, { force })`                                  |
+| `deleteServerGroup` / `deleteChannelGroup(c, id, force)`                                          | `(c, id, { force })`                                                |
+| `addClientPermission(c, dbid, perm, value, skip)`                                                 | `addClientPermission(c, dbid, perm, value, { skip })`               |
+| `listFiles(c, cid, path?, password?)`                                                             | `listFiles(c, cid, path, { password })`                             |
+| `getFileInfo`, `deleteFile`, `createDirectory(…, password)`                                       | `(…, { password })`                                                 |
+| `renameFile(c, cid, old, new, rename, options)`                                                   | `renameFile(c, cid, old, new, { ...rename, ...options })`           |
+| `initFileUpload` / `initFileDownload(…, upload, options)`                                         | `(…, { password, ..., signal })`                                    |
+| `stopFileTransfer(c, id, removePartialFile)`                                                      | `stopFileTransfer(c, id, { removePartialFile })`                    |
+| `listComplaints(c, dbid)`                                                                         | `listComplaints(c, { targetDatabaseID })`                           |
+| `listBindings(c, subsystem)`                                                                      | `listBindings(c, { subsystem })`                                    |
+| `banClient`, `viewLog`, `listClientDatabase`, `listServerGroupClients`, `listChannelGroupClients` | their options and `{ signal, timeoutMs }` merged into one object    |
+| `addServerGroupPermission(c, sgid, { permission, value, negated, skip })`                         | `addServerGroupPermission(c, sgid, perm, value, { negated, skip })` |
+| `updateMessageFlag(c, id, read)`                                                                  | `updateMessageFlag(c, id, { read })`                                |
+| `getClientIDs(c, uid)` answering `ClientID[]`                                                     | answers `ClientMatch[]` (`id`, `nickname`)                          |
+| `getClientNameByDBID(c, dbid)` answering a string                                                 | answers `ClientDatabaseName` (`databaseID`, `name`)                 |
 
 A ban's fields are a `BanFields` (`ip`, `name`, `uid`, `reason`, `durationMs`),
 which `addBan` takes as `BanOptions` and which carries no `signal` or
-`timeout`: those are `addBan`'s separate last argument, as they are for every
+`timeoutMs`: those are `addBan`'s separate last argument, as they are for every
 command that sends content (`createChannel`, `editChannel`, `updateClient`,
-`editClient`, `editClientDatabase`, `addServerGroupPermission`).
+`editClient`, `editClientDatabase`).
 `BanClientOptions` is `BanFields`' `durationMs` and `reason` with
 `{ signal, timeoutMs }`.
 
@@ -267,10 +272,11 @@ lookup's error. `TimedOutError` is now
 `ConnectionTimeoutError`, which says which timeout it is: a command's is a
 `CommandTimeoutError`. A command that exists to return data — `createChannel`,
 `addPrivilegeKey`, `initFileUpload`, `initFileDownload`, `getChannelInfo`,
-`getClientInfo`, `getClientDBIDByUID`, `getServerIDByPort`, `getMessage`,
+`getClientProperties`, `getClientDBIDByUID`, `getServerIDByPort`, `getMessage`,
 `whoAmI` and the other single-answer queries — throws the new `NoDataError`
 when the server answers without it, where it used to return an id of 0 or an
-object of empty fields; `getClientInfo` threw a plain `TeamspeakError`.
+object of empty fields; `getClientInfo`, now `getClientProperties`, threw a plain
+`TeamspeakError`.
 
 The exported tables — `ErrorCode`, `Reason`, `ClientStatus`, every enumeration,
 `noopLogger`, `consoleLogger` and `defaultBackoffPolicy` — are frozen.

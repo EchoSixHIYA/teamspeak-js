@@ -224,9 +224,8 @@ await moveClient(client, client.clientID, cid, { password: "channel-password" })
 await sendChannelMessage(client, "hello");
 await kickClient(client, someone, Reason.KickChannel, { reasonMessage: "take a break" });
 
-await addServerGroupPermission(client, sgid, {
-  permission: permissionByName(PermissionName.ClientTalkPower),
-  value: 50,
+await addServerGroupPermission(client, sgid, permissionByName(PermissionName.ClientTalkPower), 50, {
+  skip: true,
 });
 
 for await (const entry of iterateClientDatabase(client)) {
@@ -236,7 +235,7 @@ for await (const entry of iterateClientDatabase(client)) {
 
 A command that sends content — `createChannel`'s channel, `editChannel`'s
 settings, `updateClient`, `editClient`, `editClientDatabase`,
-`addServerGroupPermission`'s grant, `addBan`'s `BanFields` — takes it as its own
+`addBan`'s `BanFields` — takes it as its own
 argument, and `{ signal, timeoutMs }` as a separate one after it: set among the
 content, they are not read.
 
@@ -272,7 +271,7 @@ so this is invisible to callers; [docs/voice-protocol-responses.md](https://gith
 has the measured table. A refusal is always thrown, never returned as an empty
 result. A list or find with nothing to report answers `[]`. A command that
 exists to return something — `createChannel`'s id, `initFileUpload`'s key,
-`getClientInfo`'s fields — throws a `NoDataError` when the server answers
+`getClientProperties`'s fields — throws a `NoDataError` when the server answers
 without it, rather than returning an id of 0 or an empty object.
 
 For anything outside the typed set, `client.exec(line, { signal?, timeoutMs? })`

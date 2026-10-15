@@ -20,7 +20,7 @@ import { Readable, Writable } from "node:stream";
 import { listChannels, getChannelInfo, createChannel } from "@honeybbq/teamspeak";
 import {
   listClients,
-  getClientInfo,
+  getClientProperties,
   moveClient,
   getClientUIDByID,
   getClientDBIDByUID,
@@ -375,7 +375,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
   // pin that as server behaviour in this very test.
   it("client lookups answer with their data", async () => {
     const ownID = sharedClient.clientID;
-    const me = await getClientInfo(sharedClient, ownID);
+    const me = await getClientProperties(sharedClient, ownID);
     const uid = asUID(me["client_unique_identifier"]!);
     const dbid = asClientDBID(BigInt(me["client_database_id"]!));
     const nickname = me["client_nickname"]!;
@@ -386,8 +386,11 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
       databaseID: dbid,
       name: nickname,
     });
-    expect(await getClientNameByDBID(sharedClient, dbid)).toBe(nickname);
-    expect(await getClientIDs(sharedClient, uid)).toContain(ownID);
+    expect(await getClientNameByDBID(sharedClient, dbid)).toEqual({
+      databaseID: dbid,
+      name: nickname,
+    });
+    expect(await getClientIDs(sharedClient, uid)).toContainEqual({ id: ownID, nickname });
   }, 20_000);
 
   it("listServerGroups — includes the server's default group", async () => {
@@ -509,8 +512,8 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     expect(left).not.toContain(paths[1]);
   }, 30_000);
 
-  it("getClientInfo — returns our own nickname", async () => {
-    const info = await getClientInfo(sharedClient, sharedClient.clientID);
+  it("getClientProperties — returns our own nickname", async () => {
+    const info = await getClientProperties(sharedClient, sharedClient.clientID);
 
     expect(Object.keys(info).length).toBeGreaterThan(0);
     console.log("clientinfo keys:", Object.keys(info).sort().join(", "));
@@ -527,7 +530,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     peers.set("ts-js-version", peer);
     await connectWithRetries(peer);
 
-    const info = await getClientInfo(peer, peer.clientID);
+    const info = await getClientProperties(peer, peer.clientID);
 
     expect(info["client_version"]).toBe(Windows_3_6_3_1701166057.version);
     expect(info["client_platform"]).toBe(Windows_3_6_3_1701166057.platform);
