@@ -27,6 +27,7 @@
     "codecValues",
     "commandNameValues",
     "errorCodeValues",
+    "eventNameValues",
     "groupNameModeValues",
     "groupTypeValues",
     "logLevelValues",

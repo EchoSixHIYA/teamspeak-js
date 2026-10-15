@@ -56,6 +56,51 @@ export interface EventMap {
   kicked: KickedEvent;
 }
 
+/** The values of the table below, before freezing. */
+const eventNameValues = {
+  /** A text message to this client, its channel or the server. */
+  TextMessage: "textMessage",
+  /** A client coming into view, including every client already there on connecting. */
+  ClientEnter: "clientEnter",
+  /** A client going out of view. */
+  ClientLeave: "clientLeave",
+  /** A client changing channel. */
+  ClientMoved: "clientMoved",
+  /** This client being poked. */
+  Poked: "poked",
+  /** Audio from another client. Only decoded with a listener or event middleware. */
+  VoiceData: "voiceData",
+  /** Every notification the server sends, modelled or not, after any event it produces. */
+  Notification: "notification",
+  /** The handshake completing, on `connect()` and on every reconnection. */
+  Connected: "connected",
+  /** The connection ending: `undefined` after `disconnect()`, and the cause otherwise. */
+  Disconnected: "disconnected",
+  /** A kick from the server, which also ends the connection. */
+  Kicked: "kicked",
+} as const;
+/**
+ * The names of the events `Client.on()` takes, as constants. `on(EventName.TextMessage, ...)`
+ * and `on("textMessage", ...)` are the same call, and both give the listener
+ * the same payload type.
+ */
+export const EventName: typeof eventNameValues = /* @__PURE__ */ Object.freeze(eventNameValues);
+/**
+ * One of {@link EventName}, and so a key of {@link EventMap}. May gain members
+ * in a minor release: a `switch` over it needs a default case.
+ */
+export type EventName = (typeof EventName)[keyof typeof EventName];
+
+// Each direction fails to compile when `EventMap` and `EventName` drift: an
+// event without a name, and a name that is not an event.
+const eventNamesCoverEventMap: [Exclude<keyof EventMap, EventName>] extends [never] ? true : never =
+  true;
+const eventMapCoversEventNames: [Exclude<EventName, keyof EventMap>] extends [never]
+  ? true
+  : never = true;
+void eventNamesCoverEventMap;
+void eventMapCoversEventNames;
+
 /**
  * The events that come from the server, and so pass through event middleware.
  * May gain members in a minor release: a `switch` over an event's name needs
