@@ -98,8 +98,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
     on<K extends keyof EventMap>(event: K, listener: Listener<K>): Unsubscribe;
     once<K extends keyof EventMap>(event: K, listener: Listener<K>): Unsubscribe;
     send(request: CommandRequest, options?: CommandOptions): Promise<Record<string, string>[]>;
-    sendVoice(data: Uint8Array, codec: Codec): void;
-    sendWhisper(data: Uint8Array, targetClientIDs: readonly ClientID[], codec: Codec): void;
+    sendVoice(data: Uint8Array, codec: Codec, options?: VoiceOptions): void;
+    sendWhisper(data: Uint8Array, targets: WhisperTargets, codec: Codec): void;
     get serverCapabilities(): ServerCapabilities;
     get status(): ClientStatus;
     get uid(): UID;
@@ -114,8 +114,8 @@ export interface ClientOptions {
     readonly eventMiddleware?: readonly EventMiddleware[] | undefined;
     readonly fileTransferSocketFactory?: FileTransferSocketFactory | undefined;
     readonly logger?: Logger | undefined;
+    readonly nicknameLookup?: boolean | undefined;
     readonly reconnect?: ReconnectOptions | undefined;
-    readonly resolveNicknames?: boolean | undefined;
     readonly resolver?: AddrResolver | undefined;
     readonly serverPassword?: string | undefined;
     readonly socketFactory?: SocketFactory | undefined;
@@ -169,6 +169,11 @@ export interface ConnectDoneInfo extends AttemptInfo {
     readonly durationMs: number;
     readonly localAddr: string;
     readonly target: string;
+}
+
+// @public
+export interface ConnectedEvent {
+    readonly reconnected: boolean;
 }
 
 // @public
@@ -230,6 +235,12 @@ export interface DisconnectDoneInfo {
 }
 
 // @public
+export interface DisconnectedEvent {
+    readonly error: Error | undefined;
+    readonly willReconnect: boolean;
+}
+
+// @public
 export interface DisconnectStartInfo {
 }
 
@@ -241,8 +252,8 @@ export interface EventMap {
     clientEnter: ClientEnterEvent;
     clientLeave: ClientLeaveEvent;
     clientMoved: ClientMovedEvent;
-    connected: void;
-    disconnected: Error | undefined;
+    connected: ConnectedEvent;
+    disconnected: DisconnectedEvent;
     kicked: KickedEvent;
     notification: NotificationEvent;
     poked: PokeEvent;
@@ -379,6 +390,15 @@ export class Identity {
 }
 
 // @public
+export const incomingChannel: Channel<IncomingTrace>;
+
+// @public
+export interface IncomingTrace {
+    readonly client: Client;
+    readonly command: string;
+}
+
+// @public
 export class InvalidAddressError extends TeamspeakError {
     constructor(address: string, reason: string);
     readonly address: string;
@@ -395,15 +415,6 @@ export class InvalidIdentityError extends TeamspeakError {
 
 // @public
 export type Listener<K extends keyof EventMap> = EventMap[K] extends void ? () => void : (payload: EventMap[K]) => void;
-
-// @public
-export const packetChannel: Channel<PacketTrace>;
-
-// @public
-export interface PacketTrace {
-    readonly client: Client;
-    readonly command: string;
-}
 
 // @public
 export function parseIdentity(s: string): Identity;
@@ -541,11 +552,20 @@ export function unsubscribeChannel(client: Client, cid: ChannelID, options?: Com
 export function uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: FileTransferOptions): Promise<void>;
 
 // @public
+export interface VoiceOptions {
+}
+
+// @public
 export interface WelcomeDoneInfo extends AttemptInfo {
     readonly channelID: ChannelID;
     readonly channels: number;
     readonly clients: number;
     readonly durationMs: number;
+}
+
+// @public
+export interface WhisperTargets {
+    readonly clients?: readonly ClientID[] | undefined;
 }
 
 // (No @packageDocumentation comment for this package)

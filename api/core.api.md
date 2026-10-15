@@ -48,7 +48,7 @@ export function addLog(client: CommandExecutor, level: LogLevel, message: string
 export function addPrivilegeKey(client: CommandExecutor, key: PrivilegeKeyOptions, options?: CommandOptions): Promise<string>;
 
 // @public
-export function addServerGroupPermission(client: CommandExecutor, sgid: ServerGroupID, grant: ServerGroupPermission, options?: CommandOptions): Promise<void>;
+export function addServerGroupPermission(client: CommandExecutor, sgid: ServerGroupID, permission: Permission, value: number, options?: ServerGroupPermissionOptions): Promise<void>;
 
 // @public
 export function addTempPassword(client: CommandExecutor, temp: TempPasswordOptions, options?: CommandOptions): Promise<void>;
@@ -377,6 +377,7 @@ export interface ClientMovedEvent {
     readonly invokerName: string;
     readonly invokerUID: UID;
     readonly reason: number;
+    readonly reasonMessage: string;
     readonly targetChannelID: ChannelID;
 }
 
@@ -625,7 +626,7 @@ const commandNameValues: {
 // @public
 export interface CommandOptions {
     readonly signal?: AbortSignal | undefined;
-    readonly timeout?: number | undefined;
+    readonly timeoutMs?: number | undefined;
 }
 
 // @public
@@ -1035,16 +1036,16 @@ export function getClientDatabaseInfo(client: CommandExecutor, cldbid: ClientDBI
 export function getClientDBIDByUID(client: CommandExecutor, uid: UID, options?: CommandOptions): Promise<ClientDBID>;
 
 // @public
-export function getClientIDs(client: CommandExecutor, uid: UID, options?: CommandOptions): Promise<ClientID[]>;
+export function getClientIDs(client: CommandExecutor, uid: UID, options?: CommandOptions): Promise<ClientMatch[]>;
 
 // @public
-export function getClientInfo(client: CommandExecutor, clid: ClientID, options?: CommandOptions): Promise<Readonly<Record<string, string>>>;
-
-// @public
-export function getClientNameByDBID(client: CommandExecutor, cldbid: ClientDBID, options?: CommandOptions): Promise<string>;
+export function getClientNameByDBID(client: CommandExecutor, cldbid: ClientDBID, options?: CommandOptions): Promise<ClientDatabaseName>;
 
 // @public
 export function getClientNameByUID(client: CommandExecutor, uid: UID, options?: CommandOptions): Promise<ClientDatabaseName>;
+
+// @public
+export function getClientProperties(client: CommandExecutor, clid: ClientID, options?: CommandOptions): Promise<Readonly<Record<string, string>>>;
 
 // @public
 export function getClientUIDByID(client: CommandExecutor, clid: ClientID, options?: CommandOptions): Promise<UID>;
@@ -1262,6 +1263,11 @@ export interface LogViewOptions extends CommandOptions {
     readonly instance?: boolean | undefined;
     readonly lines?: number | undefined;
     readonly reverse?: boolean | undefined;
+}
+
+// @public
+export interface MessageFlags {
+    readonly read: boolean;
 }
 
 // @public
@@ -2114,11 +2120,9 @@ export interface ServerGroupMember {
 }
 
 // @public
-export interface ServerGroupPermission {
+export interface ServerGroupPermissionOptions extends CommandOptions {
     readonly negated?: boolean | undefined;
-    readonly permission: Permission;
     readonly skip?: boolean | undefined;
-    readonly value: number;
 }
 
 // @public
@@ -2174,7 +2178,7 @@ export interface TempPasswordOptions {
 
 // @public
 export interface TextMessageEvent {
-    readonly invokerGroups: readonly ServerGroupID[];
+    readonly invokerGroups: readonly ServerGroupID[] | undefined;
     readonly invokerID: ClientID;
     readonly invokerName: string;
     readonly invokerUID: UID;
@@ -2211,7 +2215,7 @@ export { unescape_2 as unescape }
 export function updateClient(client: CommandExecutor, update: ClientUpdateOptions, options?: CommandOptions): Promise<void>;
 
 // @public
-export function updateMessageFlag(client: CommandExecutor, messageID: MessageID, read: boolean, options?: CommandOptions): Promise<void>;
+export function updateMessageFlag(client: CommandExecutor, messageID: MessageID, flags: MessageFlags, options?: CommandOptions): Promise<void>;
 
 // @public
 export function usePrivilegeKey(client: CommandExecutor, token: string, options?: CommandOptions): Promise<void>;

@@ -144,7 +144,7 @@ describe("connect() during disconnect()", () => {
     await first;
 
     const events: string[] = [];
-    client.on("disconnected", (cause) => events.push(`disconnected:${cause?.name ?? "-"}`));
+    client.on("disconnected", (e) => events.push(`disconnected:${e.error?.name ?? "-"}`));
     // The fake server never acknowledges the goodbye, so it waits its second.
     const leaving = client.disconnect();
     await settle();
@@ -213,7 +213,7 @@ describe("sending without a connection", () => {
   it("throws a NotConnectedError for voice, whispers and execNoWait", async () => {
     const client = clientOn(() => new FakeSocket());
     expect(() => client.sendVoice(new Uint8Array(4), Codec.OpusVoice)).toThrow(NotConnectedError);
-    expect(() => client.sendWhisper(new Uint8Array(4), [], Codec.OpusVoice)).toThrow(
+    expect(() => client.sendWhisper(new Uint8Array(4), {}, Codec.OpusVoice)).toThrow(
       NotConnectedError,
     );
     await expect(client.execNoWait("clientupdate")).rejects.toBeInstanceOf(NotConnectedError);
@@ -242,9 +242,9 @@ describe("sending without a connection", () => {
     await expect(client.send({ command: "whoami" })).rejects.toBeInstanceOf(NotConnectedError);
     await expect(client.execNoWait("clientupdate")).rejects.toBeInstanceOf(NotConnectedError);
     expect(() => client.sendVoice(new Uint8Array(4), Codec.OpusVoice)).toThrow(NotConnectedError);
-    expect(() => client.sendWhisper(new Uint8Array(4), [asClientID(1)], Codec.OpusVoice)).toThrow(
-      NotConnectedError,
-    );
+    expect(() =>
+      client.sendWhisper(new Uint8Array(4), { clients: [asClientID(1)] }, Codec.OpusVoice),
+    ).toThrow(NotConnectedError);
     expect(socket!.sent.length).toBe(before);
     await client.disconnect();
   });
@@ -264,7 +264,7 @@ describe("the command throttle", () => {
     for (let i = 0; i < 8; i++) await client.execNoWait("clientupdate");
 
     const started = Date.now();
-    await expect(client.exec("whoami", { timeout: 30 })).rejects.toBeInstanceOf(
+    await expect(client.exec("whoami", { timeoutMs: 30 })).rejects.toBeInstanceOf(
       CommandTimeoutError,
     );
     expect(Date.now() - started).toBeLessThan(200);
@@ -431,7 +431,7 @@ describe("the idle timeout", () => {
     try {
       const { client, socket } = await connected();
       const dropped: Array<Error | undefined> = [];
-      client.on("disconnected", (error) => dropped.push(error));
+      client.on("disconnected", (e) => dropped.push(e.error));
       for (let second = 1; second <= seconds; second++) {
         if (second % 10 === 0) socket.deliver(datagramFor(client, second));
         vi.advanceTimersByTime(1_000);

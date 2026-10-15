@@ -39,7 +39,7 @@ export interface CommandOptions {
   /** Abandons the command; it then rejects with the signal's reason. */
   readonly signal?: AbortSignal | undefined;
   /** Milliseconds to wait for the answer before failing with a CommandTimeoutError. */
-  readonly timeout?: number | undefined;
+  readonly timeoutMs?: number | undefined;
 }
 
 /** A connection the typed commands can run on. */

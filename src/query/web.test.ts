@@ -161,7 +161,7 @@ describe("WebQueryTransport", () => {
     const client = new QueryClient(
       new WebQueryTransport({ url: "http://h", apiKey: "K", fetch: hang }),
     );
-    await expect(client.exec("whoami", { timeout: 10 })).rejects.toMatchObject({
+    await expect(client.exec("whoami", { timeoutMs: 10 })).rejects.toMatchObject({
       name: "CommandTimeoutError",
     });
   });

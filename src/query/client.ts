@@ -156,7 +156,7 @@ export class QueryClient implements CommandExecutor {
   }
 
   async #execNow(line: string, options: CommandOptions): Promise<Array<Record<string, string>>> {
-    const { signal, timeout = DEFAULT_COMMAND_TIMEOUT_MS } = options;
+    const { signal, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = options;
     signal?.throwIfAborted();
     if (this.#closed) throw new NotConnectedError();
 
@@ -166,7 +166,7 @@ export class QueryClient implements CommandExecutor {
       this.#pending = { command: parseCommand(line)?.name ?? "", rows: [], resolve, reject };
       timer = setTimeout(
         () => reject(new CommandTimeoutError(parseCommand(line)?.name ?? "")),
-        timeout,
+        timeoutMs,
       );
       onAbort = () => reject(signal!.reason);
       signal?.addEventListener("abort", onAbort, { once: true });

@@ -1,6 +1,6 @@
 /**
  * The properties a TeamSpeak server reports, by name: the keys of the records
- * `getServerInfo`, `getInstanceInfo`, `getHostInfo` and `getClientInfo` return,
+ * `getServerInfo`, `getInstanceInfo`, `getHostInfo` and `getClientProperties` return,
  * and of the settings `editServer` and `editInstance` take:
  *
  * ```ts

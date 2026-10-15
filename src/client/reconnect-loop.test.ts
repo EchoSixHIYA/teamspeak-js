@@ -16,7 +16,10 @@ async function until(condition: () => boolean): Promise<void> {
 }
 
 /** A reconnecting client on fake sockets, with what it logged. */
-function reconnectingClient(delayMs = 20): {
+function reconnectingClient(
+  delayMs = 20,
+  shouldRetry?: (error: Error | undefined, attempt: number) => boolean,
+): {
   client: Client;
   sockets: FakeSocket[];
   logs: string[];
@@ -36,7 +39,10 @@ function reconnectingClient(delayMs = 20): {
       sockets.push(socket);
       return socket;
     },
-    reconnect: { backoff: { initialDelayMs: delayMs, maxDelayMs: delayMs, jitter: 0 } },
+    reconnect: {
+      backoff: { initialDelayMs: delayMs, maxDelayMs: delayMs, jitter: 0 },
+      shouldRetry,
+    },
   });
   return { client, sockets, logs };
 }
@@ -59,6 +65,49 @@ async function connectedClient(): Promise<ReturnType<typeof reconnectingClient>>
 }
 
 describe("the reconnect loop", () => {
+  it("tells `connected` whether it made the connection, and `disconnected` whether it will", async () => {
+    const { client, sockets } = reconnectingClient();
+    const connected: boolean[] = [];
+    const disconnected: boolean[] = [];
+    client.on("connected", (e) => connected.push(e.reconnected));
+    client.on("disconnected", (e) => disconnected.push(e.willReconnect));
+    const first = client.connect();
+    await until(() => sockets.length === 1);
+    finishHandshake(client, sockets[0]!);
+    await first;
+
+    sockets[0]!.close();
+    await until(() => sockets.length === 2);
+    finishHandshake(client, sockets[1]!);
+    await until(() => connected.length === 2);
+    await client.disconnect({ signal: AbortSignal.timeout(1) });
+
+    expect(connected).toEqual([false, true]);
+    expect(disconnected).toEqual([true, false]);
+  });
+
+  it("asks shouldRetry once for a failure, and reports its refusal", async () => {
+    const asked: number[] = [];
+    const { client, sockets } = reconnectingClient(20, (_, attempt) => {
+      asked.push(attempt);
+      return false;
+    });
+    const disconnected: boolean[] = [];
+    client.on("disconnected", (e) => disconnected.push(e.willReconnect));
+    const first = client.connect();
+    await until(() => sockets.length === 1);
+    finishHandshake(client, sockets[0]!);
+    await first;
+
+    sockets[0]!.close();
+    await until(() => disconnected.length === 1);
+    for (let i = 0; i < 5; i++) await settle();
+
+    expect(disconnected).toEqual([false]);
+    expect(asked).toEqual([1]);
+    expect(sockets).toHaveLength(1);
+  });
+
   it("keeps retrying when its own attempt drops before the loop resumes", async () => {
     const { client, sockets, logs } = await connectedClient();
     sockets[0]!.close();

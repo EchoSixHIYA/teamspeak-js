@@ -26,7 +26,7 @@ Upgrading from 0.x? The package was renamed; see the [migration guide](https://g
 - **Event-driven API** — Register handlers for text messages, client enter/leave, channel moves, kicks, etc.
 - **Voice data** — Send Opus voice packets (codec 4 & 5)
 - **File transfers** — Upload, download, and delete files on the server
-- **Address resolution** — SRV records, TSDNS, and direct addresses; server nicknames on request (`resolveNicknames: true`), since that lookup goes to named.myteamspeak.com
+- **Address resolution** — SRV records, TSDNS, and direct addresses; server nicknames on request (`nicknameLookup: true`), since that lookup goes to named.myteamspeak.com
 - **Middleware** — Pluggable command and event middleware chains
 - **Built-in rate limiter** — Token-bucket throttling to prevent server-side flood kicks
 - **Identity management** — Generate, import/export, and upgrade security level of identities
@@ -66,16 +66,16 @@ const client = new Client(identity, "localhost", "TSBot", {
 });
 
 // Register event handlers
-client.on("connected", () => {
-  console.log("Connected to server!");
+client.on("connected", ({ reconnected }) => {
+  console.log(reconnected ? "Reconnected to server!" : "Connected to server!");
 });
 
 client.on("textMessage", (msg) => {
   console.log(`[${msg.invokerName}]: ${msg.message}`);
 });
 
-client.on("disconnected", (err) => {
-  console.log("Disconnected:", err?.message ?? "clean");
+client.on("disconnected", ({ error, willReconnect }) => {
+  console.log("Disconnected:", error?.message ?? "clean", willReconnect ? "(reconnecting)" : "");
 });
 
 // Connect; resolves once the handshake completes.
@@ -124,17 +124,17 @@ client.on(EventName.TextMessage, (message) => console.log(message.message));
 client.on("textMessage", (message) => console.log(message.message)); // the same
 ```
 
-| Method                        | Description                        |
-| ----------------------------- | ---------------------------------- |
-| `on("connected", handler)`    | Fires when fully connected         |
-| `on("disconnected", handler)` | Fires on disconnect                |
-| `on("textMessage", handler)`  | Fires on text messages             |
-| `on("clientEnter", handler)`  | Fires when a client joins          |
-| `on("clientLeave", handler)`  | Fires when a client leaves         |
-| `on("clientMoved", handler)`  | Fires when a client moves channels |
-| `on("kicked", handler)`       | Fires when the bot is kicked       |
-| `on("poked", handler)`        | Fires when poked by a client       |
-| `on("voiceData", handler)`    | Fires on incoming voice data       |
+| Method                        | Description                                   |
+| ----------------------------- | --------------------------------------------- |
+| `on("connected", handler)`    | Fires when fully connected (`ConnectedEvent`) |
+| `on("disconnected", handler)` | Fires on disconnect (`DisconnectedEvent`)     |
+| `on("textMessage", handler)`  | Fires on text messages                        |
+| `on("clientEnter", handler)`  | Fires when a client joins                     |
+| `on("clientLeave", handler)`  | Fires when a client leaves                    |
+| `on("clientMoved", handler)`  | Fires when a client moves channels            |
+| `on("kicked", handler)`       | Fires when the bot is kicked                  |
+| `on("poked", handler)`        | Fires when poked by a client                  |
+| `on("voiceData", handler)`    | Fires on incoming voice data                  |
 
 `on()` and `once()` return a function that removes the listener, which is also
 a `Disposable` (`using listener = client.on(...)`). Listeners run one at a
@@ -193,7 +193,7 @@ range: 0–65535 for a `ClientID` and the file transfer ids, 0–2^32−1 for a
 `PermissionID` (an `IconID` also takes the signed form), 0–2^64−1 for the
 `bigint` ids. Required arguments are positional; everything optional
 goes in one options object, always the last argument, which also carries
-`signal` and `timeout` to abandon the command or bound how long it waits.
+`signal` and `timeoutMs` to abandon the command or bound how long it waits.
 
 ```typescript
 import {
@@ -224,9 +224,8 @@ await moveClient(client, client.clientID, cid, { password: "channel-password" })
 await sendChannelMessage(client, "hello");
 await kickClient(client, someone, Reason.KickChannel, { reasonMessage: "take a break" });
 
-await addServerGroupPermission(client, sgid, {
-  permission: permissionByName(PermissionName.ClientTalkPower),
-  value: 50,
+await addServerGroupPermission(client, sgid, permissionByName(PermissionName.ClientTalkPower), 50, {
+  skip: true,
 });
 
 for await (const entry of iterateClientDatabase(client)) {
@@ -236,8 +235,8 @@ for await (const entry of iterateClientDatabase(client)) {
 
 A command that sends content — `createChannel`'s channel, `editChannel`'s
 settings, `updateClient`, `editClient`, `editClientDatabase`,
-`addServerGroupPermission`'s grant, `addBan`'s `BanFields` — takes it as its own
-argument, and `{ signal, timeout }` as a separate one after it: set among the
+`addBan`'s `BanFields` — takes it as its own
+argument, and `{ signal, timeoutMs }` as a separate one after it: set among the
 content, they are not read.
 
 Options objects use camelCase names (`maxClients` for `channel_maxclients`),
@@ -272,10 +271,10 @@ so this is invisible to callers; [docs/voice-protocol-responses.md](https://gith
 has the measured table. A refusal is always thrown, never returned as an empty
 result. A list or find with nothing to report answers `[]`. A command that
 exists to return something — `createChannel`'s id, `initFileUpload`'s key,
-`getClientInfo`'s fields — throws a `NoDataError` when the server answers
+`getClientProperties`'s fields — throws a `NoDataError` when the server answers
 without it, rather than returning an id of 0 or an empty object.
 
-For anything outside the typed set, `client.exec(line, { signal?, timeout? })`
+For anything outside the typed set, `client.exec(line, { signal?, timeoutMs? })`
 sends a raw command line and resolves to the rows that answer it.
 
 ### File Transfers
@@ -451,7 +450,7 @@ channels, which cost nothing without a subscriber:
 - `honeybbq:teamspeak:command` (`commandChannel`), a tracing channel: `start`
   when a command is sent, `asyncEnd` when its answer arrives, `error` when it
   fails.
-- `honeybbq:teamspeak:packet` (`packetChannel`): every command the server sends.
+- `honeybbq:teamspeak:incoming` (`incomingChannel`): every command the server sends.
 
 Both carry the command's name, never its parameters, which hold password hashes
 and privilege keys.

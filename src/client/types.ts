@@ -1,5 +1,6 @@
 import type {
   ClientEnterEvent,
+  ClientID,
   ClientVersion,
   ClientLeaveEvent,
   ClientMovedEvent,
@@ -46,15 +47,53 @@ export interface EventMap {
    */
   notification: NotificationEvent;
   /** The handshake completing, on `connect()` and on every reconnection. */
-  connected: void;
+  connected: ConnectedEvent;
+  /**
+   * The connection ending, after `disconnect()`, a drop, or a failed attempt;
+   * the event says why and whether the reconnect loop will try again.
+   */
+  disconnected: DisconnectedEvent;
+  /** A kick from the server also ends the connection, which `disconnected` reports. */
+  kicked: KickedEvent;
+}
+
+/**
+ * Who `sendWhisper` sends to. The whisper framing the client writes carries
+ * client ids only, so there is no field for channels yet; one can be added
+ * without changing a call that names `clients`.
+ */
+export interface WhisperTargets {
+  /** The clients to whisper to: at least one and at most 32. */
+  readonly clients?: readonly ClientID[] | undefined;
+}
+
+/** What `sendVoice` can be told. Reserved: it has no fields yet. */
+export interface VoiceOptions {}
+
+/** What `connected` delivers. */
+export interface ConnectedEvent {
+  /**
+   * Whether the reconnect loop made this connection, rather than a call to
+   * `connect()`.
+   */
+  readonly reconnected: boolean;
+}
+
+/** What `disconnected` delivers. */
+export interface DisconnectedEvent {
   /**
    * `undefined` after `disconnect()`, and the cause otherwise: a failed
    * handshake, a `ConnectionTimeoutError`, or a `RemovedError` for a kick, a
    * ban or a server stopping.
    */
-  disconnected: Error | undefined;
-  /** A kick from the server also ends the connection, which `disconnected` reports. */
-  kicked: KickedEvent;
+  readonly error: Error | undefined;
+  /**
+   * Whether the reconnect loop will try again, as of this event. False after
+   * `disconnect()`, without `reconnect` options, when `shouldRetry` refuses
+   * this cause, and once `backoff.maxAttempts` is spent. A `disconnect()` or a
+   * manual `connect()` while it waits can still end the loop.
+   */
+  readonly willReconnect: boolean;
 }
 
 /** The values of the table below, before freezing. */
@@ -75,7 +114,7 @@ const eventNameValues = {
   Notification: "notification",
   /** The handshake completing, on `connect()` and on every reconnection. */
   Connected: "connected",
-  /** The connection ending: `undefined` after `disconnect()`, and the cause otherwise. */
+  /** The connection ending, with its cause and whether a reconnection follows. */
   Disconnected: "disconnected",
   /** A kick from the server, which also ends the connection. */
   Kicked: "kicked",
@@ -274,7 +313,7 @@ export interface ClientOptions {
    * to a third party; without it a dot-less name is resolved like any host.
    * Ignored with a custom `resolver`.
    */
-  readonly resolveNicknames?: boolean | undefined;
+  readonly nicknameLookup?: boolean | undefined;
   /** Replaces the SRV and TSDNS resolution `connect()` performs. */
   readonly resolver?: AddrResolver | undefined;
   /**

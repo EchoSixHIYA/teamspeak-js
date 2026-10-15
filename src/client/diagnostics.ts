@@ -36,8 +36,8 @@ export interface CommandTrace {
   readonly client: Client;
 }
 
-/** What `honeybbq:teamspeak:packet` reports about a command arriving from the server. */
-export interface PacketTrace {
+/** What `honeybbq:teamspeak:incoming` reports about a command arriving from the server. */
+export interface IncomingTrace {
   /** The command's name, such as `notifytextmessage`, or `""` for a data row. */
   readonly command: string;
   /** The client receiving it. */
@@ -53,6 +53,6 @@ export const commandChannel: TracingChannel<CommandTrace> = tracingChannel<Comma
 );
 
 /** Publishes every command the server sends. */
-export const packetChannel: Channel<PacketTrace> = channel<PacketTrace>(
-  "honeybbq:teamspeak:packet",
+export const incomingChannel: Channel<IncomingTrace> = channel<IncomingTrace>(
+  "honeybbq:teamspeak:incoming",
 );

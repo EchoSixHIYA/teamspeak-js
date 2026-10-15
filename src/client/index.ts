@@ -13,12 +13,16 @@ export { Client, ClientStatus } from "./client.js";
 export { EventName } from "./types.js";
 
 export type {
+  ConnectedEvent,
+  DisconnectedEvent,
   EventMap,
   EventMiddleware,
   Listener,
   ServerEvent,
   ServerEventName,
   Unsubscribe,
+  VoiceOptions,
+  WhisperTargets,
   AddrResolver,
   ClientOptions,
   ResolvedAddr,
@@ -77,8 +81,8 @@ export { unknownServerCapabilities } from "./capabilities.js";
 export type { ServerCapabilities, ServerFamily } from "./capabilities.js";
 
 // Tracing points for diagnostics_channel subscribers
-export { commandChannel, packetChannel } from "./diagnostics.js";
-export type { CommandTrace, PacketTrace } from "./diagnostics.js";
+export { commandChannel, incomingChannel } from "./diagnostics.js";
+export type { CommandTrace, IncomingTrace } from "./diagnostics.js";
 
 // Reconnection policy
 export { backoffDelay, defaultShouldRetry, defaultBackoffPolicy } from "./reconnect.js";

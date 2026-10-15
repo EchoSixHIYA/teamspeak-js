@@ -8,6 +8,8 @@ import {
   listChannels,
 } from "./channels.js";
 import {
+  getClientIDs,
+  getClientNameByDBID,
   iterateClientDatabase,
   kickClient,
   listClientPermissions,
@@ -43,15 +45,22 @@ import {
   listBans,
   listComplaints,
   sendChannelMessage,
+  updateMessageFlag,
   viewLog,
 } from "./moderation.js";
-import { addTempPassword, listBindings, listServerGroups } from "./server.js";
+import {
+  addServerGroupPermission,
+  addTempPassword,
+  listBindings,
+  listServerGroups,
+} from "./server.js";
 import {
   asChannelGroupID,
   asChannelID,
   asClientDBID,
   asClientID,
   asPermissionID,
+  asMessageID,
   asServerGroupID,
   asUID,
 } from "../command/ids.js";
@@ -483,10 +492,10 @@ describe("bans", () => {
     const { signal } = new AbortController();
     // @ts-expect-error: a ban carries no signal.
     await addBan(client, { uid: asUID("x"), signal });
-    await addBan(client, { uid: asUID("x") }, { signal, timeout: 5 });
-    await banClient(client, asClientID(5), { reason: "x", signal, timeout: 5 });
+    await addBan(client, { uid: asUID("x") }, { signal, timeoutMs: 5 });
+    await banClient(client, asClientID(5), { reason: "x", signal, timeoutMs: 5 });
 
-    expect(options).toEqual([undefined, { signal, timeout: 5 }, { signal, timeout: 5 }]);
+    expect(options).toEqual([undefined, { signal, timeoutMs: 5 }, { signal, timeoutMs: 5 }]);
   });
 
   // The voice protocol reports no ban id.
@@ -790,22 +799,22 @@ describe("iterateClientDatabase", () => {
     expect(seen).toEqual([1n, 2n]);
   });
 
-  it("gives every page the signal and timeout, but not the page size", async () => {
+  it("gives every page the signal and timeoutMs, but not the page size", async () => {
     const { signal } = new AbortController();
     const { client, options } = recordingClient(page(1), emptyResult());
-    await collect(iterateClientDatabase(client, { pageSize: 5, signal, timeout: 1234 }));
+    await collect(iterateClientDatabase(client, { pageSize: 5, signal, timeoutMs: 1234 }));
 
     expect(options).toEqual([
-      { signal, timeout: 1234 },
-      { signal, timeout: 1234 },
+      { signal, timeoutMs: 1234 },
+      { signal, timeoutMs: 1234 },
     ]);
   });
 });
 
 describe("CommandOptions", () => {
-  it("reaches send as its signal and timeout", async () => {
+  it("reaches send as its signal and timeoutMs", async () => {
     const { signal } = new AbortController();
-    const commandOptions = { signal, timeout: 500 };
+    const commandOptions = { signal, timeoutMs: 500 };
     const { client, options } = recordingClient([], [], [{ cid: "9" }]);
 
     await listChannels(client, commandOptions);
@@ -813,7 +822,7 @@ describe("CommandOptions", () => {
     await createChannel(client, { name: "x" }, commandOptions);
     await listFiles(client, asChannelID(1), "/", { password: "", ...commandOptions });
 
-    // The executor sees the signal and timeout, never a command's own options.
+    // The executor sees the signal and timeoutMs, never a command's own options.
     expect(options).toEqual([commandOptions, commandOptions, commandOptions, commandOptions]);
   });
 
@@ -911,5 +920,55 @@ describe("listPermissions", () => {
       { permid: "32769", permname: "i_needed_modify_power_serverinstance_help_view", permdesc: "" },
     ]);
     expect((await listPermissions(client)).map((p) => p.id)).toEqual([1, 32769]);
+  });
+});
+
+describe("answers that are records", () => {
+  it("names every client behind a uid with the nickname it uses", async () => {
+    const { client } = recordingClient([
+      { cluid: "u=", clid: "4", name: "alice" },
+      { cluid: "u=", clid: "9", name: "alice2" },
+    ]);
+
+    expect(await getClientIDs(client, asUID("u="))).toEqual([
+      { id: asClientID(4), nickname: "alice" },
+      { id: asClientID(9), nickname: "alice2" },
+    ]);
+  });
+
+  it("names a database id's record as a uid's", async () => {
+    const { client } = recordingClient([{ cluid: "u=", cldbid: "12", name: "alice" }]);
+
+    expect(await getClientNameByDBID(client, asClientDBID(12))).toEqual({
+      databaseID: asClientDBID(12),
+      name: "alice",
+    });
+  });
+});
+
+describe("addServerGroupPermission", () => {
+  it("takes the permission and value as its siblings do, and negated and skip as options", async () => {
+    const { client, sent } = recordingClient();
+    const permission = permissionByID(asPermissionID(7));
+    await addServerGroupPermission(client, asServerGroupID(6n), permission, 50);
+    await addServerGroupPermission(client, asServerGroupID(6n), permission, 50, {
+      negated: true,
+      skip: true,
+    });
+
+    expect(sent).toEqual([
+      "servergroupaddperm sgid=6 permid=7 permvalue=50 permnegated=0 permskip=0",
+      "servergroupaddperm sgid=6 permid=7 permvalue=50 permnegated=1 permskip=1",
+    ]);
+  });
+});
+
+describe("updateMessageFlag", () => {
+  it("sends the flag of the record it is given", async () => {
+    const { client, sent } = recordingClient();
+    await updateMessageFlag(client, asMessageID(3), { read: true });
+    await updateMessageFlag(client, asMessageID(3), { read: false });
+
+    expect(sent).toEqual(["messageupdateflag msgid=3 flag=1", "messageupdateflag msgid=3 flag=0"]);
   });
 });

@@ -113,13 +113,13 @@ Client(...)` disconnects at the end of the scope.
 
 The default logger is silent: pass `logger: console` to see what 0.x printed.
 `TEAMSPEAK_TRACE_RAW` is gone; subscribe to the `honeybbq:teamspeak:command`
-and `honeybbq:teamspeak:packet` diagnostics channels instead.
+and `honeybbq:teamspeak:incoming` diagnostics channels instead.
 
 ## Commands
 
 The helpers 0.x had are typed functions taking the client first and branded
 ids. Required arguments are positional; everything optional is in one last
-options object, which also carries `{ signal, timeout }`:
+options object, which also carries `{ signal, timeoutMs }`:
 
 | 0.x                                                        | 1.0                                                                                                                      |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -131,38 +131,43 @@ options object, which also carries `{ signal, timeout }`:
 | `fileTransferDeleteFile(client, cid, paths)`               | `deleteFile(client, cid, paths)`                                                                                         |
 | `client.fileTransferInitUpload(cid, path, password, size)` | `initFileUpload(client, cid, path, size, { password })`                                                                  |
 | `client.fileTransferInitDownload(cid, path, password)`     | `initFileDownload(client, cid, path, { password })`                                                                      |
-| `client.execCommandWithResponse(line, ms)`                 | `client.exec(line, { timeout: ms })`                                                                                     |
-| `client.execCommand(line, ms)`                             | `client.exec(line, { timeout: ms })`                                                                                     |
+| `client.execCommandWithResponse(line, ms)`                 | `client.exec(line, { timeoutMs: ms })`                                                                                   |
+| `client.execCommand(line, ms)`                             | `client.exec(line, { timeoutMs: ms })`                                                                                   |
 | `client.sendCommandNoWait(line)`                           | `client.execNoWait(line)`                                                                                                |
+| `getClientInfo(client, clid)`                              | `getClientProperties(client, clid)`, the raw property map                                                                |
 
 If you used a 1.0 prerelease, these took positional optional arguments and now
 take them in the options object:
 
-| Before                                                                                            | Now                                                            |
-| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `listClients(c, include, options)`                                                                | `listClients(c, { ...include, ...options })`                   |
-| `moveClient(c, clid, cid, password)`                                                              | `moveClient(c, clid, cid, { password })`                       |
-| `kickClient(c, clid, reason, message)`                                                            | `kickClient(c, clid, reason, { reasonMessage })`               |
-| `moveChannel(c, cid, parent, order)`                                                              | `moveChannel(c, cid, parent, { order })`                       |
-| `deleteChannel(c, cid, force)`                                                                    | `deleteChannel(c, cid, { force })`                             |
-| `deleteServerGroup` / `deleteChannelGroup(c, id, force)`                                          | `(c, id, { force })`                                           |
-| `addClientPermission(c, dbid, perm, value, skip)`                                                 | `addClientPermission(c, dbid, perm, value, { skip })`          |
-| `listFiles(c, cid, path?, password?)`                                                             | `listFiles(c, cid, path, { password })`                        |
-| `getFileInfo`, `deleteFile`, `createDirectory(…, password)`                                       | `(…, { password })`                                            |
-| `renameFile(c, cid, old, new, rename, options)`                                                   | `renameFile(c, cid, old, new, { ...rename, ...options })`      |
-| `initFileUpload` / `initFileDownload(…, upload, options)`                                         | `(…, { password, ..., signal })`                               |
-| `stopFileTransfer(c, id, removePartialFile)`                                                      | `stopFileTransfer(c, id, { removePartialFile })`               |
-| `listComplaints(c, dbid)`                                                                         | `listComplaints(c, { targetDatabaseID })`                      |
-| `listBindings(c, subsystem)`                                                                      | `listBindings(c, { subsystem })`                               |
-| `banClient`, `viewLog`, `listClientDatabase`, `listServerGroupClients`, `listChannelGroupClients` | their options and `{ signal, timeout }` merged into one object |
+| Before                                                                                            | Now                                                                 |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `listClients(c, include, options)`                                                                | `listClients(c, { ...include, ...options })`                        |
+| `moveClient(c, clid, cid, password)`                                                              | `moveClient(c, clid, cid, { password })`                            |
+| `kickClient(c, clid, reason, message)`                                                            | `kickClient(c, clid, reason, { reasonMessage })`                    |
+| `moveChannel(c, cid, parent, order)`                                                              | `moveChannel(c, cid, parent, { order })`                            |
+| `deleteChannel(c, cid, force)`                                                                    | `deleteChannel(c, cid, { force })`                                  |
+| `deleteServerGroup` / `deleteChannelGroup(c, id, force)`                                          | `(c, id, { force })`                                                |
+| `addClientPermission(c, dbid, perm, value, skip)`                                                 | `addClientPermission(c, dbid, perm, value, { skip })`               |
+| `listFiles(c, cid, path?, password?)`                                                             | `listFiles(c, cid, path, { password })`                             |
+| `getFileInfo`, `deleteFile`, `createDirectory(…, password)`                                       | `(…, { password })`                                                 |
+| `renameFile(c, cid, old, new, rename, options)`                                                   | `renameFile(c, cid, old, new, { ...rename, ...options })`           |
+| `initFileUpload` / `initFileDownload(…, upload, options)`                                         | `(…, { password, ..., signal })`                                    |
+| `stopFileTransfer(c, id, removePartialFile)`                                                      | `stopFileTransfer(c, id, { removePartialFile })`                    |
+| `listComplaints(c, dbid)`                                                                         | `listComplaints(c, { targetDatabaseID })`                           |
+| `listBindings(c, subsystem)`                                                                      | `listBindings(c, { subsystem })`                                    |
+| `banClient`, `viewLog`, `listClientDatabase`, `listServerGroupClients`, `listChannelGroupClients` | their options and `{ signal, timeoutMs }` merged into one object    |
+| `addServerGroupPermission(c, sgid, { permission, value, negated, skip })`                         | `addServerGroupPermission(c, sgid, perm, value, { negated, skip })` |
+| `updateMessageFlag(c, id, read)`                                                                  | `updateMessageFlag(c, id, { read })`                                |
+| `getClientIDs(c, uid)` answering `ClientID[]`                                                     | answers `ClientMatch[]` (`id`, `nickname`)                          |
+| `getClientNameByDBID(c, dbid)` answering a string                                                 | answers `ClientDatabaseName` (`databaseID`, `name`)                 |
 
 A ban's fields are a `BanFields` (`ip`, `name`, `uid`, `reason`, `durationMs`),
 which `addBan` takes as `BanOptions` and which carries no `signal` or
-`timeout`: those are `addBan`'s separate last argument, as they are for every
+`timeoutMs`: those are `addBan`'s separate last argument, as they are for every
 command that sends content (`createChannel`, `editChannel`, `updateClient`,
-`editClient`, `editClientDatabase`, `addServerGroupPermission`).
+`editClient`, `editClientDatabase`).
 `BanClientOptions` is `BanFields`' `durationMs` and `reason` with
-`{ signal, timeout }`.
+`{ signal, timeoutMs }`.
 
 `initFileUpload` no longer replaces a file already at the path unless passed
 `overwrite: true`; it used to by default. `renameFile` sends its
@@ -237,6 +242,14 @@ Commands, `exec`, `execNoWait`, `sendVoice` and `sendWhisper` fail with a
 only an open socket, so one sent while `connect()` was still running went out
 under the handshake's public key.
 
+## Voice
+
+`sendWhisper(data, targets, codec)` takes its targets as a record,
+`{ clients: [clid, …] }`, in place of a bare list of client ids. The whisper
+the client writes carries client ids only, so `WhisperTargets` has no field for
+channels yet. `sendVoice(data, codec, options?)` takes a `VoiceOptions`, which
+has no fields yet.
+
 ## Errors
 
 ```ts
@@ -267,10 +280,11 @@ lookup's error. `TimedOutError` is now
 `ConnectionTimeoutError`, which says which timeout it is: a command's is a
 `CommandTimeoutError`. A command that exists to return data — `createChannel`,
 `addPrivilegeKey`, `initFileUpload`, `initFileDownload`, `getChannelInfo`,
-`getClientInfo`, `getClientDBIDByUID`, `getServerIDByPort`, `getMessage`,
+`getClientProperties`, `getClientDBIDByUID`, `getServerIDByPort`, `getMessage`,
 `whoAmI` and the other single-answer queries — throws the new `NoDataError`
 when the server answers without it, where it used to return an id of 0 or an
-object of empty fields; `getClientInfo` threw a plain `TeamspeakError`.
+object of empty fields; `getClientInfo`, now `getClientProperties`, threw a plain
+`TeamspeakError`.
 
 The exported tables — `ErrorCode`, `Reason`, `ClientStatus`, every enumeration,
 `noopLogger`, `consoleLogger` and `defaultBackoffPolicy` — are frozen.
@@ -294,9 +308,12 @@ for await (const message of client.events("textMessage", { signal })) { … }
 Listeners run one at a time, in arrival order. A listener that throws does not
 stop the others: its exception surfaces as an `uncaughtException`, as an
 EventEmitter listener's would, and the event still reaches the listeners after
-it. `disconnected` is `undefined`
-only after `disconnect()`; otherwise it is the cause, such as a `RemovedError`
-for a kick or a `ConnectionTimeoutError`. `disconnect()` resolves once
+it. `disconnected` delivers a `DisconnectedEvent`: its `error` is `undefined`
+only after `disconnect()`, and otherwise the cause, such as a `RemovedError`
+for a kick or a `ConnectionTimeoutError`; its `willReconnect` says whether the
+reconnect loop will try again (0.x gave the bare `Error | undefined`).
+`connected` delivers a `ConnectedEvent`, whose `reconnected` is true when the
+reconnect loop made the connection. `disconnect()` resolves once
 `disconnected` has been delivered, and a `connect()` waits for an earlier
 session's `disconnected` to be delivered first, so the new session never hears
 the old one end. `connected` is delivered after `connect()` resolves. Channel
@@ -318,7 +335,9 @@ The client an event is about is `clientID` in `ClientMovedEvent`,
 `ClientLeaveEvent` and `VoiceDataEvent` (was `id`, and `clientId` for voice).
 `TextMessageEvent.targetMode` and `VoiceDataEvent.codec` are plain numbers, to
 compare with `TextMessageTarget` and `Codec`: a server may send a value newer
-than those tables.
+than those tables. `TextMessageEvent.invokerGroups` is `undefined` for a sender
+the client has not seen, as a text message carries no groups of its own, and
+`ClientMovedEvent.reasonMessage` is the move's message, `""` when it has none.
 
 Middleware is set with the `commandMiddleware` and `eventMiddleware` options;
 `useCommandMiddleware()` and `useEventMiddleware()` are gone. Event middleware
@@ -358,7 +377,7 @@ takes its signal in an options object, and returns `ResolvedAddr`s whose
 ## Address resolution
 
 A dot-less address (`mybox`) was sent to named.myteamspeak.com as a server
-nickname. That lookup is now opt-in, with `resolveNicknames: true`; without it
+nickname. That lookup is now opt-in, with `nicknameLookup: true`; without it
 the name is resolved like any host. Resolution as a whole is bounded at ten
 seconds, after which the address is used as given; the client holds a custom
 `resolver` to the same budget, through the `signal` it passes in.

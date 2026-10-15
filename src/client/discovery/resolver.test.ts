@@ -20,7 +20,7 @@ describe("Resolver", () => {
     expect(fetch).not.toHaveBeenCalled();
     expect(plain[0]?.addr).toBe("mybox:9987");
 
-    const looked = await new Resolver({ resolveNicknames: true }).resolve("mybox");
+    const looked = await new Resolver({ nicknameLookup: true }).resolve("mybox");
     expect(fetch).toHaveBeenCalledOnce();
     expect(looked[0]?.addr).toBe("10.0.0.1:9987");
   });

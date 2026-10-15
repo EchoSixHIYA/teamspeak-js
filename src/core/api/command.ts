@@ -5,7 +5,7 @@
  * here, running on any CommandExecutor. Functions that only send a command
  * return `Promise<void>`; functions that read return a parsed type. Every one
  * takes a last, optional {@link CommandOptions} — a signal to abandon it and a
- * timeout — which is passed to the executor as it is.
+ * timeoutMs — which is passed to the executor as it is.
  *
  * Nothing here re-encodes ids or field names by hand at the call site: the
  * branded id types, the field tables below and the request encoder
@@ -45,13 +45,13 @@ async function exec(
 }
 
 /**
- * The signal and timeout of a command's options, alone: a command's own
+ * The signal and timeoutMs of a command's options, alone: a command's own
  * options extend CommandOptions, and the executor, and any middleware on it,
  * should see only what is theirs.
  */
 function commandOptions(options: CommandOptions | undefined): CommandOptions | undefined {
   if (options === undefined) return undefined;
-  return { signal: options.signal, timeout: options.timeout };
+  return { signal: options.signal, timeoutMs: options.timeoutMs };
 }
 
 /** Send a command and return its response rows. */
@@ -204,7 +204,7 @@ export type WireField<V> = string | readonly [name: string, encode: (value: V) =
  *
  * Every key is required, so a field added to the options interface without a
  * wire name is a compile error rather than a field silently never sent; the
- * signal and timeout every command's options carry are not parameters. A
+ * signal and timeoutMs every command's options carry are not parameters. A
  * field whose type is not already a parameter value — a duration in
  * milliseconds sent in seconds, say — must have an encoder.
  */

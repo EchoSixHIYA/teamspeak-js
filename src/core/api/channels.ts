@@ -148,7 +148,7 @@ const createNames: WireNames<ChannelCreateOptions> = {
  * Over the voice protocol the server also moves the creator into the new
  * channel.
  *
- * `channel` is what to send; the command's `signal` and `timeout` go in
+ * `channel` is what to send; the command's `signal` and `timeoutMs` go in
  * `options`, a separate last argument — set among the fields, they are not
  * read.
  */
@@ -174,7 +174,7 @@ const editNames: WireNames<ChannelEditOptions> = { name: "channel_name", ...sett
 /**
  * Change a channel's settings. Only the fields you set are sent.
  *
- * `settings` is what to send; the command's `signal` and `timeout` go in
+ * `settings` is what to send; the command's `signal` and `timeoutMs` go in
  * `options`, a separate last argument — set among the fields, they are not
  * read.
  */

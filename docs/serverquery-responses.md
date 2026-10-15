@@ -104,7 +104,7 @@ extra keys on TS6 and the order of the keys.
 | `listChannelPermissions`        | `channelpermlist`             | `cid`, `permid`, `permvalue`, `permnegated`, `permskip`                            | `cid`, `permid`, `permnegated`, `permskip`, `permvalue`                                       | `permsid`                                                                                | a     |
 | `deleteChannelPermission`       | `channeldelperm`              | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
 | `listClients`                   | `clientlist`                  | 26 keys                                                                            | 26 keys                                                                                       | -                                                                                        | a     |
-| `getClientInfo`                 | `clientinfo`                  | 62 keys                                                                            | 65 keys                                                                                       | -                                                                                        | a     |
+| `getClientProperties`           | `clientinfo`                  | 62 keys                                                                            | 65 keys                                                                                       | -                                                                                        | a     |
 | `findClients`                   | `clientfind`                  | `clid`, `client_nickname`                                                          | `clid`, `client_nickname`                                                                     | -                                                                                        | a     |
 | `getClientIDs`                  | `clientgetids`                | `cluid`, `clid`, `name`; 1281 when empty                                           | `clid`, `cluid`, `name`; 1281 when empty                                                      | -                                                                                        | a     |
 | `getClientUIDByID`              | `clientgetuidfromclid`        | `clid`, `cluid`, `nickname`, `mytsid`                                              | `clid`, `cluid`, `mytsid`, `nickname`                                                         | -                                                                                        | a     |
@@ -324,7 +324,7 @@ under "Not in it".
   fills them as the voice client does, from the client it learned of in a
   `notifycliententerview` or `clientlist -groups`. It sees an enter only for
   clients that arrive after it registered, so it has to list the ones already
-  there.
+  there. Until it has seen the sender, `invokerGroups` is `undefined`.
 - **`ClientLeaveEvent.reason` on a plain disconnect.** The notification has no
   `reasonid`, so `reason` is 0. The voice client reads the same 0 from the same
   disconnect, so the two agree.

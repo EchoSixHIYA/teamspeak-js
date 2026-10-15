@@ -13,7 +13,7 @@ import {
   getClientDatabaseInfo,
   getClientDBIDByUID,
   getClientIDs,
-  getClientInfo,
+  getClientProperties,
   getClientNameByDBID,
   getClientNameByUID,
   getClientUIDByID,
@@ -149,7 +149,7 @@ const answering = (rows: Array<Record<string, string>>): CommandExecutor => ({
 const required: Record<string, (client: CommandExecutor) => Promise<unknown>> = {
   createChannel: (c) => createChannel(c, { name: "x" }),
   getChannelInfo: (c) => getChannelInfo(c, cid),
-  getClientInfo: (c) => getClientInfo(c, asClientID(1)),
+  getClientProperties: (c) => getClientProperties(c, asClientID(1)),
   getClientUIDByID: (c) => getClientUIDByID(c, asClientID(1)),
   getClientDBIDByUID: (c) => getClientDBIDByUID(c, asUID("x")),
   getClientNameByDBID: (c) => getClientNameByDBID(c, cldbid),

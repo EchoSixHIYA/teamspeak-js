@@ -33,9 +33,10 @@ async function main(): Promise<void> {
     console.log(`[example] connected! self clid=${client.clientID}`);
   });
 
-  client.on("disconnected", (err) => {
-    if (err) console.error("[example] disconnected with error:", err.message);
+  client.on("disconnected", ({ error, willReconnect }) => {
+    if (error) console.error("[example] disconnected with error:", error.message);
     else console.log("[example] disconnected cleanly");
+    if (willReconnect) console.log("[example] reconnecting");
   });
 
   client.on("clientEnter", (info) => {
@@ -58,8 +59,8 @@ async function main(): Promise<void> {
 
   // List channels
   try {
-    // Every typed command takes { signal?, timeout? } as its last argument.
-    const channels = await listChannels(client, { timeout: 5_000 });
+    // Every typed command takes { signal?, timeoutMs? } as its last argument.
+    const channels = await listChannels(client, { timeoutMs: 5_000 });
     console.log(`\n[example] ${channels.length} channel(s):`);
     for (const ch of channels) {
       const indent = ch.parentID === 0n ? "  " : "    ";
@@ -71,7 +72,7 @@ async function main(): Promise<void> {
 
   // List clients
   try {
-    const clients = await listClients(client, { times: true, timeout: 5_000 });
+    const clients = await listClients(client, { times: true, timeoutMs: 5_000 });
     console.log(`\n[example] ${clients.length} client(s) online:`);
     for (const cl of clients) {
       const marker = cl.id === client.clientID ? " ← (me)" : "";

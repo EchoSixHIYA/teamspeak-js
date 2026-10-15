@@ -120,7 +120,7 @@ export interface BanFields {
 /**
  * A ban to add: {@link BanFields}, at least one of `ip`, `name` or `uid` set; a
  * ban matching nothing is refused before anything is sent. It carries no
- * signal or timeout: those are addBan's separate last argument.
+ * signal or timeoutMs: those are addBan's separate last argument.
  */
 export type BanOptions = BanFields;
 
@@ -134,7 +134,7 @@ const banNames: WireNames<BanFields> = {
 
 /**
  * How long {@link banClient}'s bans last and why — {@link BanFields}' duration
- * and reason — with the command's signal and timeout, as the last argument.
+ * and reason — with the command's signal and timeoutMs, as the last argument.
  */
 export interface BanClientOptions
   extends Pick<BanFields, "durationMs" | "reason">, CommandOptions {}
@@ -148,7 +148,7 @@ const banClientNames: WireNames<BanClientOptions> = {
  * Add a ban and return its id — over ServerQuery. The voice protocol reports
  * no id, so there this resolves to undefined.
  *
- * `ban` is what to ban; the command's `signal` and `timeout` go in `options`,
+ * `ban` is what to ban; the command's `signal` and `timeoutMs` go in `options`,
  * a separate last argument — set among the fields, they are not read.
  */
 export async function addBan(
@@ -345,11 +345,17 @@ export async function deleteMessage(
   await exec(client, "messagedel", [["msgid", messageID]], options);
 }
 
+/** The flags of an offline message that can be changed. */
+export interface MessageFlags {
+  /** Whether the message is marked read (`flag`). */
+  readonly read: boolean;
+}
+
 /** Mark a message read or unread. */
 export async function updateMessageFlag(
   client: CommandExecutor,
   messageID: MessageID,
-  read: boolean,
+  flags: MessageFlags,
   options?: CommandOptions,
 ): Promise<void> {
   await exec(
@@ -357,7 +363,7 @@ export async function updateMessageFlag(
     "messageupdateflag",
     [
       ["msgid", messageID],
-      ["flag", read],
+      ["flag", flags.read],
     ],
     options,
   );
