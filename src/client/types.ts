@@ -1,5 +1,6 @@
 import type {
   ClientEnterEvent,
+  ClientVersion,
   ClientLeaveEvent,
   ClientMovedEvent,
   CommandMiddleware,
@@ -284,6 +285,13 @@ export interface ClientOptions {
   readonly commandMiddleware?: readonly CommandMiddleware[] | undefined;
   /** Wraps the delivery of every server event, outermost first. Fixed for the client's life. */
   readonly eventMiddleware?: readonly EventMiddleware[] | undefined;
+  /**
+   * The platform, version and signature `clientinit` sends. Default: a recent
+   * Windows build. Pick another from `@honeybbq/teamspeak/versions`; a version
+   * the server does not know, or a build below its minimum, is refused when
+   * connecting. A bad value throws when the client is made.
+   */
+  readonly version?: ClientVersion | undefined;
   /** Server password sent during the initial `clientinit` handshake. */
   readonly serverPassword?: string | undefined;
   /** Default channel name to join during the initial `clientinit` handshake. */

@@ -10,6 +10,7 @@ import type { ClientEnterEvent } from '@honeybbq/teamspeak';
 import { ClientID } from '@honeybbq/teamspeak';
 import type { ClientLeaveEvent } from '@honeybbq/teamspeak';
 import type { ClientMovedEvent } from '@honeybbq/teamspeak';
+import type { ClientVersion } from '@honeybbq/teamspeak';
 import { Codec } from '@honeybbq/teamspeak';
 import type { CommandExecutor } from '@honeybbq/teamspeak';
 import type { CommandMiddleware } from '@honeybbq/teamspeak';
@@ -119,6 +120,7 @@ export interface ClientOptions {
     readonly serverPassword?: string | undefined;
     readonly socketFactory?: SocketFactory | undefined;
     readonly trace?: ClientTrace | undefined;
+    readonly version?: ClientVersion | undefined;
 }
 
 // Warning: (ae-forgotten-export) The symbol "clientStatusValues" needs to be exported by the entry point index.d.ts

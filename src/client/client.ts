@@ -47,10 +47,11 @@ import { processInit1 } from "./handshake/crypt-handshake.js";
 import {
   handleHandshakeInitIV,
   handleHandshakeExpand2,
+  defaultClientVersion,
   handleInitServer,
   prepareClientPassword,
 } from "./handshake.js";
-import type { CommandExecutor, CommandRequest } from "@honeybbq/teamspeak";
+import type { ClientVersion, CommandExecutor, CommandRequest } from "@honeybbq/teamspeak";
 import { handleNotification } from "./notifications.js";
 import type { NotificationResult } from "./notifications.js";
 import { parseCommand } from "../core/internal.js";
@@ -83,6 +84,28 @@ export interface ClientInitOptions {
   readonly serverPasswordHash: string;
   readonly defaultChannel: string;
   readonly defaultChannelPasswordHash: string;
+  /** The platform, version and signature, copied so later changes to the option have no effect. */
+  readonly version: ClientVersion;
+}
+
+/** The signature is Ed25519, 64 bytes; the server verifies it, so only its shape is checked. */
+function normalizeClientVersion(version: ClientVersion | undefined): ClientVersion {
+  if (version === undefined) return defaultClientVersion;
+  const { platform, version: text, sign } = version;
+  for (const [name, value] of [
+    ["platform", platform],
+    ["version", text],
+    ["sign", sign],
+  ] as const) {
+    if (typeof value !== "string" || value === "") {
+      throw new TypeError(`a client version's ${name} is a non-empty string`);
+    }
+  }
+  const raw = Buffer.from(sign, "base64");
+  if (raw.length !== 64 || raw.toString("base64") !== sign) {
+    throw new RangeError("a client version's sign is the base64 of a 64-byte signature");
+  }
+  return { platform, version: text, sign };
 }
 
 function normalizeClientInitOptions(options: ClientOptions): ClientInitOptions {
@@ -90,6 +113,7 @@ function normalizeClientInitOptions(options: ClientOptions): ClientInitOptions {
     serverPasswordHash: prepareClientPassword(options.serverPassword ?? ""),
     defaultChannel: options.defaultChannel ?? "",
     defaultChannelPasswordHash: prepareClientPassword(options.defaultChannelPassword ?? ""),
+    version: normalizeClientVersion(options.version),
   };
 }
 
