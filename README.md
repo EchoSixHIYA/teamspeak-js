@@ -1,56 +1,578 @@
-# teamspeak-js
+<div align="center">
 
-TeamSpeak SDKs for TypeScript, in one repository and released together.
+# @honeybbq/teamspeak
 
-| Package                                         | What it is                                                                                        |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [`@honeybbq/teamspeak-client`](packages/client) | A clean-room client that connects over the voice protocol, the way the TeamSpeak application does |
-| [`@honeybbq/teamspeak-core`](packages/core)     | What the clients share: the command language, ids, errors, and the typed commands                 |
+**A clean-room TeamSpeak client protocol library written in pure TypeScript.**
 
-Browse the [API reference](https://honeybbq.github.io/teamspeak-js/).
+Works with TeamSpeak 3 and TeamSpeak 6 servers. No proprietary SDK, no copied code.
 
-Install the client and nothing else; it pulls in the core and re-exports all of
-it. 1.0 is in beta, so for now that means `npm install @honeybbq/teamspeak-client@beta`.
+[![CI](https://github.com/honeybbq/teamspeak-js/actions/workflows/ci.yml/badge.svg)](https://github.com/honeybbq/teamspeak-js/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@honeybbq/teamspeak)](https://www.npmjs.com/package/@honeybbq/teamspeak)
+[![npm beta](https://img.shields.io/npm/v/@honeybbq/teamspeak/beta?label=beta)](https://www.npmjs.com/package/@honeybbq/teamspeak?activeTab=versions)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/HoneyBBQ/teamspeak-js/badge)](https://scorecard.dev/viewer/?uri=github.com/HoneyBBQ/teamspeak-js)
+[![Node Version](https://img.shields.io/node/v/@honeybbq/teamspeak)](https://github.com/HoneyBBQ/teamspeak-js/blob/main/package.json)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/HoneyBBQ/teamspeak-js/blob/main/LICENSE)
 
-A ServerQuery client, [`@honeybbq/teamspeak-serverquery`](packages/serverquery),
-is being written and isn't published yet. It will run the same typed commands.
-There's a Go version of all this too:
-[teamspeak-go](https://github.com/honeybbq/teamspeak-go).
+</div>
 
-Upgrading from 0.x? [docs/migrating-to-1.0.md](docs/migrating-to-1.0.md) walks
-through every change.
+**[API reference](https://honeybbq.github.io/teamspeak-js/)**
 
-## Development
+Upgrading from 0.x? The package was renamed; see the [migration guide](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/migrating-to-1.0.md).
 
-```sh
-pnpm install
-pnpm check        # typecheck, lint, format
-pnpm test         # unit tests for every package
-pnpm api:report   # after a deliberate API change: rewrite packages/*/etc/*.api.md
+## Features
+
+- **Full protocol handshake** — ECDH key exchange, RSA puzzle, EAX-encrypted transport
+- **Command & notification system** — Send commands, receive server events
+- **Event-driven API** — Register handlers for text messages, client enter/leave, channel moves, kicks, etc.
+- **Voice data** — Send Opus voice packets (codec 4 & 5)
+- **File transfers** — Upload, download, and delete files on the server
+- **Address resolution** — SRV records, TSDNS, and direct addresses; server nicknames on request (`resolveNicknames: true`), since that lookup goes to named.myteamspeak.com
+- **Middleware** — Pluggable command and event middleware chains
+- **Built-in rate limiter** — Token-bucket throttling to prevent server-side flood kicks
+- **Identity management** — Generate, import/export, and upgrade security level of identities
+- **Full command set** — 111 typed functions covering every command the voice protocol answers
+- **Reconnection** — Opt-in retry with backoff, tuned for TeamSpeak's antiflood ban
+- **Server capabilities** — Reports the server version and the uid hash it uses (SHA-1 on TS3, SHA-256 on TS6), and the server's name, icon, banner and welcome message
+- **Custom transports** — Supply your own socket, for proxies, tunnels or tests
+- **ESM with types** — Ships ES modules with full TypeScript declarations
+- **Zero native deps** — Pure TypeScript, no native addons required
+
+## Installation
+
+1.0 is in beta, published under the `beta` tag. A plain `npm install` still
+gets 0.3, so ask for the beta:
+
+```bash
+npm install @honeybbq/teamspeak@beta
+# or
+pnpm add @honeybbq/teamspeak@beta
 ```
 
-The public API of each published package is recorded in `packages/*/etc/*.api.md`
-and reviewed like code. CI runs `pnpm api:check`, which fails with a diff when
-the built declarations and the record disagree.
+Everything in this README is the 1.0 API. You need Node.js 22.12 or newer.
 
-The integration suite runs against a live server. `scripts/ts3-fixture.sh`
-provisions one — channels, permissions, relaxed antiflood — and writes
-`ts3-fixture.env`:
+## Quick Start
 
-```sh
-docker run -d --name ts3 -e TS3SERVER_LICENSE=accept \
-  -p 9987:9987/udp -p 10011:10011 -p 30033:30033 teamspeak:latest
-TS3_QUERY_HOST=127.0.0.1 ./scripts/ts3-fixture.sh
-set -a; . ./ts3-fixture.env; set +a
-pnpm test:integration
+```typescript
+import { Client, generateIdentity } from "@honeybbq/teamspeak/client";
+
+// Generate a new identity (or load an existing one)
+const identity = await generateIdentity(8);
+
+// Create the client
+const client = new Client(identity, "localhost", "TSBot", {
+  serverPassword: process.env.TEAMSPEAK_SERVER_PASSWORD,
+  defaultChannel: "Lobby",
+  defaultChannelPassword: process.env.TEAMSPEAK_DEFAULT_CHANNEL_PASSWORD,
+});
+
+// Register event handlers
+client.on("connected", () => {
+  console.log("Connected to server!");
+});
+
+client.on("textMessage", (msg) => {
+  console.log(`[${msg.invokerName}]: ${msg.message}`);
+});
+
+client.on("disconnected", (err) => {
+  console.log("Disconnected:", err?.message ?? "clean");
+});
+
+// Connect; resolves once the handshake completes.
+await client.connect({ signal: AbortSignal.timeout(15_000) });
+
+// Stay connected until interrupted
+process.on("SIGINT", async () => {
+  await client.disconnect();
+});
 ```
 
-CI runs it against both TS3 and TS6.
+## API Overview
 
-`docs/voice-protocol-responses.md` records where the voice protocol puts each
-command's answer, measured on both server generations;
-`scripts/probe-response-shapes.mts` re-runs that measurement.
+### Client Lifecycle
+
+| Method                                        | Description                                       |
+| --------------------------------------------- | ------------------------------------------------- |
+| `new Client(identity, addr, nickname, opts?)` | Create a new client                               |
+| `connect({ signal? })`                        | Connect; resolves once the handshake completes    |
+| `disconnect({ signal? })`                     | Leave the server and close the connection         |
+| `status`                                      | `"disconnected"`, `"connecting"` or `"connected"` |
+| `clientID`                                    | Our clid, assigned by the server                  |
+| `channelID`                                   | The channel we are in                             |
+| `serverCapabilities`                          | Server version, family and uid hash               |
+| `uid`                                         | Our own uid, hashed as the server does            |
+
+`connect()` rejects with an `InvalidAddressError` for an address that cannot be
+one — no host, or a port outside 1–65535 — before anything starts; a host name
+that does not resolve fails with a `TeamspeakError` whose `cause` is the lookup's
+error. A `connect()` called while `disconnect()` is still saying goodbye waits
+for it to finish, then connects.
+
+Commands, raw `exec`/`execNoWait`, voice and whispers need a connected client:
+until `connect()` resolves, and from the moment `disconnect()` begins, they fail
+with a `NotConnectedError` and send nothing.
+
+### Events
+
+| Method                        | Description                        |
+| ----------------------------- | ---------------------------------- |
+| `on("connected", handler)`    | Fires when fully connected         |
+| `on("disconnected", handler)` | Fires on disconnect                |
+| `on("textMessage", handler)`  | Fires on text messages             |
+| `on("clientEnter", handler)`  | Fires when a client joins          |
+| `on("clientLeave", handler)`  | Fires when a client leaves         |
+| `on("clientMoved", handler)`  | Fires when a client moves channels |
+| `on("kicked", handler)`       | Fires when the bot is kicked       |
+| `on("poked", handler)`        | Fires when poked by a client       |
+| `on("voiceData", handler)`    | Fires on incoming voice data       |
+
+`on()` and `once()` return a function that removes the listener, which is also
+a `Disposable` (`using listener = client.on(...)`). Listeners run one at a
+time, in the order their events arrived, so a listener may call the client and
+await an answer. `disconnected` delivers `undefined` after `disconnect()`, and
+the cause otherwise — a `ConnectionTimeoutError`, or a `RemovedError` for a kick, a ban
+or a server stopping. `await using client = new Client(...)` disconnects when
+the scope ends.
+
+`connected` is delivered after `connect()` resolves, so a listener added right
+after `await client.connect()` still hears it. `disconnect()` waits a second at
+most for the server to acknowledge its goodbye, less if its `signal` aborts
+sooner, and resolves once `disconnected` has been delivered. A `connect()` waits
+for an earlier session's `disconnected` to be delivered before it starts, so no
+listener or `events()` iterator of the new session hears the old one end.
+
+A listener that throws does not stop the others: the event still reaches the
+listeners after it, and the exception surfaces as an `uncaughtException`, as an
+EventEmitter listener's would.
+
+Voice is the exception to "every event in order": while more than 256
+deliveries are waiting, voice frames are dropped (and counted in a warning at
+most every ten seconds) rather than queued without bound.
+
+`events(name, { signal })` is the same as an async iterator, buffering events
+that arrive while the loop body runs. The buffer is unbounded (voice excepted,
+as above), so stop iterating when you stop reading. Aborting `signal` stops
+listening and makes the pending and later `next()` calls reject with the
+signal's reason, as Node's `events.on` does; `break`ing out of the loop, or a
+disconnect, ends it normally:
+
+```typescript
+for await (const msg of client.events("textMessage", { signal })) {
+  await reply(msg);
+}
+```
+
+`notification` delivers every notification as it arrived, for the ones the SDK
+does not model. `NotificationName` names them:
+
+```typescript
+import { NotificationName } from "@honeybbq/teamspeak";
+
+client.on("notification", (n) => {
+  if (n.name === NotificationName.ChannelEdited) console.log(n.params);
+});
+```
+
+### Commands
+
+Every command the voice protocol answers is a typed function, grouped by area.
+Each is addressed by branded ids, so a `ChannelID` cannot be passed where a
+`ClientID` is meant. The constructors — `asChannelID(5)`, `asClientID(3)` and
+the rest — throw a `RangeError` for anything but an integer in the id's wire
+range: 0–65535 for a `ClientID` and the file transfer ids, 0–2^32−1 for a
+`PermissionID` (an `IconID` also takes the signed form), 0–2^64−1 for the
+`bigint` ids. Required arguments are positional; everything optional
+goes in one options object, always the last argument, which also carries
+`signal` and `timeout` to abandon the command or bound how long it waits.
+
+```typescript
+import {
+  listChannels,
+  createChannel,
+  moveClient,
+  kickClient,
+  sendChannelMessage,
+  addServerGroupPermission,
+  iterateClientDatabase,
+  permissionByName,
+  PermissionName,
+  asClientID,
+  Codec,
+  Reason,
+} from "@honeybbq/teamspeak";
+
+const channels = await listChannels(client, { signal: AbortSignal.timeout(5_000) });
+
+const cid = await createChannel(client, {
+  name: "Lounge",
+  topic: "the quiet one",
+  codec: Codec.OpusVoice,
+  isPermanent: true,
+});
+
+await moveClient(client, client.clientID, cid, { password: "channel-password" });
+await sendChannelMessage(client, "hello");
+await kickClient(client, someone, Reason.KickChannel, { reasonMessage: "take a break" });
+
+await addServerGroupPermission(client, sgid, {
+  permission: permissionByName(PermissionName.ClientTalkPower),
+  value: 50,
+});
+
+for await (const entry of iterateClientDatabase(client)) {
+  console.log(entry.nickname, entry.lastConnectedAt);
+}
+```
+
+A command that sends content — `createChannel`'s channel, `editChannel`'s
+settings, `updateClient`, `editClient`, `editClientDatabase`,
+`addServerGroupPermission`'s grant, `addBan`'s `BanFields` — takes it as its own
+argument, and `{ signal, timeout }` as a separate one after it: set among the
+content, they are not read.
+
+Options objects use camelCase names (`maxClients` for `channel_maxclients`),
+and only the fields you set are sent: an unset field leaves the setting alone,
+while `""` sends it empty — `editChannel(client, cid, { password: "" })` clears
+a password. A key an options type does not name is never sent. The exceptions
+are `editServer` and `editInstance`, which take the raw `virtualserver_*` and
+`serverinstance_*` properties as `getServerInfo` reports them; `PropertyName` names
+the keys.
+
+Results are camelCase too. Timestamps are `Date`s (`undefined` where the server
+sends 0 for "never"), durations are milliseconds with an `Ms` suffix
+(`idleTimeMs`, `durationMs`), and a permission is a `Permission`, built with
+`permissionByID` or `permissionByName`. Small enumerations — `GroupType`,
+`Codec`, `PrivilegeKeyType`, `LogLevel` and the rest — are objects of named values with
+a type of the same name.
+
+| Module       | Covers                                                         |
+| ------------ | -------------------------------------------------------------- |
+| `channels`   | Create, edit, move, delete, subscribe, channel permissions     |
+| `clients`    | List, move, kick, poke, edit, the client database, permissions |
+| `server`     | Server and instance settings, groups, temp passwords, bindings |
+| `groups`     | Channel groups, the permission catalogue, privilege keys       |
+| `moderation` | Bans, complaints, offline messages, text messages, the log     |
+| `files`      | List, delete, rename, create directories, transfer negotiation |
+
+Many of these commands are answered over the voice protocol with a
+notification rather than data rows — `servergrouplist` with
+`notifyservergrouplist`, `ftinitupload` with `notifystartupload` after the
+command has already succeeded. The client pairs each answer with its command,
+so this is invisible to callers; [docs/voice-protocol-responses.md](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/voice-protocol-responses.md)
+has the measured table. A refusal is always thrown, never returned as an empty
+result. A list or find with nothing to report answers `[]`. A command that
+exists to return something — `createChannel`'s id, `initFileUpload`'s key,
+`getClientInfo`'s fields — throws a `NoDataError` when the server answers
+without it, rather than returning an id of 0 or an empty object.
+
+For anything outside the typed set, `client.exec(line, { signal?, timeout? })`
+sends a raw command line and resolves to the rows that answer it.
+
+### File Transfers
+
+Negotiate with the `files` module, then move the bytes over TCP:
+
+```typescript
+import { Readable } from "node:stream";
+import { initFileUpload } from "@honeybbq/teamspeak";
+
+const info = await initFileUpload(client, cid, "/notes.txt", BigInt(data.length));
+await client.uploadFileData(host, info, Readable.from([data]));
+```
+
+An upload does not replace a file already at the path unless passed
+`{ overwrite: true }`.
+
+| Function                                             | Description                       |
+| ---------------------------------------------------- | --------------------------------- |
+| `initFileUpload(client, ...)`                        | Negotiate an upload               |
+| `initFileDownload(client, ...)`                      | Negotiate a download              |
+| `client.uploadFileData(host, info, data, options?)`  | Transfer file data to the server  |
+| `client.downloadFileData(host, info, out, options?)` | Receive file data from the server |
+
+The transfer functions take `FileTransferOptions`:
+
+| Option          | Description                                                                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `signal`        | An `AbortSignal` that abandons the transfer; it rejects with the signal's reason                                                   |
+| `socketFactory` | Opens the connection instead of a direct TCP dial, to route it through a proxy or tunnel                                           |
+| `trace`         | Hooks called at each milestone of the transfer (`dialStart`, `dialDone`, `progress`, `done`, `failed`); none sees the transfer key |
+| `idleTimeoutMs` | The longest, in milliseconds, a transfer may go without moving a byte, the key write included. Default 30 000; `0` disables it     |
+
+A transfer that goes idle for `idleTimeoutMs` fails with a `FileTransferError`
+whose `cause` is a `TimeoutError`, and its connection is destroyed. A download
+that sends more bytes than the negotiated size, or ends short of it, fails with
+a `FileTransferError` too; bytes past the announced size are never written.
+
+### Identity
+
+```typescript
+import { generateIdentity, parseIdentity } from "@honeybbq/teamspeak/client";
+
+// Generate a new identity with security level 8
+const identity = await generateIdentity(8);
+
+// Export to string for persistent storage
+const exported = identity.export();
+
+// Import from a previously exported string
+const restored = parseIdentity(exported);
+
+// Raise the security level (CPU-intensive). Identities are immutable: this
+// returns a new one with the same key.
+const stronger = await identity.upgradeToLevel(10, { signal });
+
+// The unique identifier, hashed as a TS3 (sha1) or TS6 (sha256) server does
+const uid = identity.uid("sha1");
+```
+
+The private key never leaves the identity except through `export()`:
+`toString()`, `toJSON()` and `util.inspect()` describe it without the key.
+`parseIdentity` takes exactly what `export()` writes — the key as canonical
+base64 of at most 32 bytes, a colon, and a decimal offset that fits in 64 bits
+— and throws an `InvalidIdentityError` for anything else.
+
+### Options
+
+```typescript
+import { Client } from "@honeybbq/teamspeak/client";
+import { consoleLogger } from "@honeybbq/teamspeak";
+
+const client = new Client(identity, "ts.example.com", "Bot", {
+  logger: consoleLogger, // silent unless set
+  resolver: customResolver,
+  commandMiddleware: [timing],
+  eventMiddleware: [filterMiddleware],
+  serverPassword: process.env.TEAMSPEAK_SERVER_PASSWORD,
+  defaultChannel: "Lobby",
+  defaultChannelPassword: process.env.TEAMSPEAK_DEFAULT_CHANNEL_PASSWORD,
+});
+```
+
+Address resolution — the built-in one or a custom `resolver` — has ten seconds
+in all: the `signal` a resolver is given aborts then, and the client connects
+to the address as given.
+
+`commandMiddleware` wraps the typed commands: each middleware receives the
+request (its command name and parameters) with its options and returns the
+answering rows, so it can time, retry or answer a command itself. Raw `exec`
+and `execNoWait` lines do not pass through it.
+
+```typescript
+import type { CommandMiddleware } from "@honeybbq/teamspeak";
+
+const timing: CommandMiddleware = (next) => async (request, options) => {
+  const started = Date.now();
+  try {
+    return await next(request, options);
+  } finally {
+    console.log(request.command, Date.now() - started, "ms");
+  }
+};
+```
+
+Connection auth options:
+
+- `serverPassword`: plain-text server password; sent as the TeamSpeak protocol hash during `clientinit`
+- `defaultChannel`: default channel name requested during `clientinit`
+- `defaultChannelPassword`: plain-text password for `defaultChannel`; sent as the TeamSpeak protocol hash
+
+### Tracing
+
+`trace` takes hooks that are called at each milestone of the client's life, for timing, metrics, logs or a progress display. For each connection attempt, the one `connect()` starts and each one the reconnect loop makes, the milestones come in this order: `resolveStart`, `resolveDone`, `connectStart`, `connectDone`, `handshakeDone`, `sessionStart`, `welcomeDone`. An attempt that never gets a session ends with `attemptFailed` instead, which says in which phase (`"open"`, `"handshake"` or `"join"`) and why. When a session ends, `sessionEnd` is called with the cause (`undefined` after `disconnect()`), preceded on a `disconnect()` by `disconnectStart` and `disconnectDone`, which says whether the server acknowledged the goodbye. `reconnectScheduled` fires when the reconnect loop is about to wait for its next attempt, and `reconnectStopped` when it ends without a session. Every attempt ends with exactly one of `sessionStart` and `attemptFailed`, and every session with exactly one `sessionEnd`.
+
+The infos carry what each milestone knows: the resolver's candidates, the local address, the RSA puzzle's level and how long it took, how many packets were sent again, the server's public key (to pin a server's identity), the nickname the server accepted, the server's `initserver` parameters without any secret, and where the client landed with how many channels and clients the welcome delivered. Durations are in milliseconds.
+
+```ts
+const client = new Client(identity, "ts.example.com", "Bot", {
+  trace: {
+    resolveDone: (i) => console.log(`resolved to ${i.target} in ${i.durationMs.toFixed(0)} ms`),
+    handshakeDone: (i) =>
+      console.log(`encrypted after ${i.durationMs.toFixed(0)} ms, ${i.resends} resends`),
+    sessionStart: (i) => console.log(`joined as ${i.nickname} after ${i.durationMs.toFixed(0)} ms`),
+    welcomeDone: (i) => console.log(`${i.channels} channels, ${i.clients} clients in view`),
+    attemptFailed: (i) => console.log(`attempt ${i.attempt} failed while ${i.phase}:`, i.error),
+    sessionEnd: (i) => console.log(`session over after ${(i.durationMs / 1000).toFixed(0)} s`),
+    reconnectScheduled: (i) => console.log(`retry ${i.attempt} in ${i.delayMs} ms`),
+  },
+});
+```
+
+A file transfer has a trace of its own, given in the options of `uploadFileData`, `downloadFileData` and `dialFileTransfer` (and of the client's methods that forward to them): `dialStart`, `dialDone`, `progress` (at most once per 64 KiB, and once more at the end with the final count), then exactly one of `done` and `failed`, which names the stage (`"dial"` or `"transfer"`). The transfer key never appears in any of it.
+
+The rules for a hook, in both traces:
+
+- It runs synchronously, at the moment of the milestone, and the client waits for it. Keep it quick and hand slow work to your own task.
+- What it returns is ignored. A promise it returns is not awaited.
+- It must not call `connect()` or `disconnect()`. To give up on an attempt, abort the signal you passed to `connect()`; to leave once connected, call `disconnect()` from a `connected` listener.
+- It may read `client.status`, `client.clientID` and the like. `sessionStart` runs before `connect()` resolves and before `connected` is delivered, and `sessionEnd` before `disconnected`.
+- If it throws, or the promise it returns rejects, the error is reported the way a throwing event listener's is, as an uncaught exception, and the client carries on as if nothing happened.
+
+The object is copied when the client is made (or the transfer call starts), so changing it afterwards has no effect.
+
+### Diagnostics
+
+The client logs nothing unless given a `logger`. For tracing, it publishes on
+two [`diagnostics_channel`](https://nodejs.org/api/diagnostics_channel.html)
+channels, which cost nothing without a subscriber:
+
+- `honeybbq:teamspeak:command` (`commandChannel`), a tracing channel: `start`
+  when a command is sent, `asyncEnd` when its answer arrives, `error` when it
+  fails.
+- `honeybbq:teamspeak:packet` (`packetChannel`): every command the server sends.
+
+Both carry the command's name, never its parameters, which hold password hashes
+and privilege keys.
+
+### Reconnection
+
+Off by default: a silent reconnect makes an outage look like a healthy session.
+An explicit `disconnect()` never reconnects, whatever the policy says.
+
+```typescript
+const client = new Client(identity, "ts.example.com", "Bot", {
+  reconnect: {
+    backoff: { initialDelayMs: 1_000, maxDelayMs: 60_000, factor: 2, jitter: 0.2 },
+    // Optional: decide for yourself which failures are worth retrying.
+    shouldRetry: (err, attempt) => attempt < 10,
+  },
+});
+```
+
+The defaults are conservative because TeamSpeak **bans an IP after roughly
+three rapid connects** — a retry loop without a delay bans itself, and the ban
+outlasts the outage it was recovering from. Recovery is also not instant even
+when it succeeds: the server holds the dropped session for a while and refuses a
+reconnect with `521 too many clones already connected` until it reaps it, so the
+loop keeps trying rather than giving up on the first refusal. It stops once a
+`connect()` of your own has connected the client, and it does not retry an
+address that cannot be one (`InvalidAddressError`).
+
+### Custom transports
+
+`fileTransferSocketFactory` and `socketFactory` are the only seams into the
+network layer. Without them the SDK always creates its own sockets, so an
+application running behind a proxy has no way through. `socketFactory` returns
+a `DatagramSocket` — a `node:dgram` socket, or anything with the few methods
+it names — and `fileTransferSocketFactory` any `Duplex` stream, such as the
+socket a SOCKS library returns.
+
+```typescript
+const client = new Client(identity, "ts.example.com", "Bot", {
+  // UDP, for the voice and command channel.
+  socketFactory: (family) => createSocket(family === 6 ? "udp6" : "udp4"),
+  // TCP, dialled separately by each file transfer.
+  fileTransferSocketFactory: (host, port) => createConnection({ host, port }),
+});
+```
+
+### Server capabilities
+
+```typescript
+const caps = client.serverCapabilities;
+// {
+//   version: "6.0.0-beta13.1 [Build: 1790080330]", major: 6, family: "ts6",
+//   uidAlgorithm: "sha256", name: "TeamSpeak 6 Server", iconID: undefined,
+//   hostBannerImageURL: undefined, welcomeMessage: "…"
+// }
+```
+
+Read from `initserver` during the handshake, so it costs no extra round trip.
+The uid hash matters because TS3 hashes a client's public key with SHA-1 and TS6
+with SHA-256 — a client that assumes either one computes an identifier the other
+server never sends.
+
+## Compatibility
+
+The package follows semver from 1.0. A few sets are open by nature and may
+gain members in a minor release: the events (`EventMap`, `ServerEventName`),
+`ClientStatus`, `ServerFamily`, `UIDAlgorithm`, `ErrorCode`, `Reason` and the
+enumeration tables. Write a `switch` over any of them with a default case. A
+field the server sends as a number that one of those tables names — a codec, a
+text message's target mode, a group type — is a plain `number`, since a server
+may send a value newer than the table.
+
+`DatagramSocket` describes the part of a socket the client uses; should a
+later release use more, the new members will be optional.
+
+The [Go SDK](https://github.com/honeybbq/teamspeak-go) makes the same calls
+with the same semantics, apart from what the languages make differ:
+
+- Backoff fields: JavaScript takes `undefined` as "the default" and `0` as 0.
+  Go cannot tell an unset field from 0, so there a zero field takes the default
+  and a negative jitter disables it.
+- A listener that throws: here the exception is rethrown from a microtask, an
+  uncaught exception as an EventEmitter listener's would be, and the other
+  listeners still get the event. Go recovers a panicking handler, logs it at
+  Error, and keeps delivering.
+- Durations are milliseconds with an `Ms` suffix here, `time.Duration` in Go;
+  `listClients`' `uid` flag (on by default) is Go's `OmitUID`.
+
+## Entry points
+
+| Import from                  | What it is                                                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `@honeybbq/teamspeak`        | What every TeamSpeak connection shares: the command language, ids, errors, the typed commands and the event types |
+| `@honeybbq/teamspeak/client` | The voice client, identities, file transfers, diagnostics and reconnection                                        |
+| `@honeybbq/teamspeak/query`  | A ServerQuery client running the same typed commands; coming in a 1.x release                                     |
+
+Each entry exports only its own symbols. The client entry does not re-export
+the core, so a program imports the `Client` from `@honeybbq/teamspeak/client`
+and the typed commands, ids and errors from `@honeybbq/teamspeak`.
+
+The protocol internals (crypto, handshake, transport) are not exported. They
+change with the protocol, and exporting them would have made every change a
+breaking one.
+
+`@honeybbq/teamspeak-client` remains as a forwarding package that re-exports
+both entries, so existing imports keep working through 1.x; new code should use
+`@honeybbq/teamspeak`. Coming from 0.x? The
+[migration guide](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/migrating-to-1.0.md) lists every change.
+
+## Architecture
+
+```
+src/
+├── core/              # Shared: command language, ids, errors, typed commands
+├── client/            # The voice client (@honeybbq/teamspeak/client)
+│   ├── client.ts          # Client lifecycle, connection management
+│   ├── commands.ts        # Command sending and response tracking
+│   ├── api/voice.ts       # Commands only the voice protocol has
+│   ├── capabilities.ts    # Server version and uid hash detection
+│   ├── reconnect.ts       # Backoff policy and permanent-failure detection
+│   ├── events.ts          # Event handler registration and middleware
+│   ├── notifications.ts   # Server notification parsing and dispatch
+│   ├── handshake.ts       # Protocol handshake orchestration
+│   ├── transfer.ts        # File transfer data connections
+│   ├── throttle.ts        # Token-bucket rate limiter
+│   ├── crypto/            # ECDH, EAX encryption, identity management
+│   ├── handshake/         # Crypto handshake and license verification
+│   ├── transport/         # UDP packet framing, ACK, compression
+│   └── discovery/         # SRV / TSDNS / direct address resolution
+└── query/             # ServerQuery client (not exported yet)
+examples/
+└── connect.ts  # Minimal connection example
+legacy/teamspeak-client/   # Forwarding package, no code of its own
+```
+
+## Related
+
+- **[teamspeak-go](https://github.com/honeybbq/teamspeak-go)** — The original Go implementation this library is ported from
+
+## Acknowledgments
+
+Protocol knowledge was primarily informed by the [TSLib](https://github.com/Splamy/TS3AudioBot) implementation in [TS3AudioBot](https://github.com/Splamy/TS3AudioBot) by Splamy. Huge thanks to the TS3AudioBot project and its contributors.
+
+## Disclaimer
+
+TeamSpeak is a registered trademark of [TeamSpeak Systems GmbH](https://teamspeak.com/). This project is not affiliated with, endorsed by, or associated with TeamSpeak Systems GmbH in any way.
+
+This library is a **clean-room implementation** developed from publicly available documentation, protocol analysis of network traffic, and independent research. No proprietary TeamSpeak SDK code, headers, or libraries were used in its creation.
+
+## Contributing
+
+See [CONTRIBUTING.md](https://github.com/HoneyBBQ/teamspeak-js/blob/main/.github/CONTRIBUTING.md) for setup, checks and the integration suite.
 
 ## License
 
-MIT
+[MIT](https://github.com/HoneyBBQ/teamspeak-js/blob/main/LICENSE)

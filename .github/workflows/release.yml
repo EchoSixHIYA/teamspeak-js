@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
-      - name: Check the changelogs have a section for the tag
+      - name: Check the changelog has a section for the tag
         run: node scripts/release-notes.mts "$GITHUB_REF_NAME" > /dev/null
 
   ci:
@@ -68,15 +68,17 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - run: pnpm install --frozen-lockfile
 
-      # The packages depend on each other's exact version, so publishing one
-      # at a version the tag does not name would ship a broken dependency.
+      # @honeybbq/teamspeak-client depends on the exact version of
+      # @honeybbq/teamspeak, so publishing one at a version the tag does not
+      # name would ship a broken dependency.
       - name: Check the tag matches every package
         run: |
           node -e '
             const fs = require("node:fs");
             const want = process.argv[1];
-            for (const dir of fs.readdirSync("packages")) {
-              const pkg = JSON.parse(fs.readFileSync(`packages/${dir}/package.json`, "utf8"));
+            const dirs = [".", ...fs.readdirSync("legacy").map((dir) => `legacy/${dir}`)];
+            for (const dir of dirs) {
+              const pkg = JSON.parse(fs.readFileSync(`${dir}/package.json`, "utf8"));
               if (pkg.private) continue;
               if (pkg.version !== want) {
                 console.error(`${pkg.name} is at ${pkg.version}, but the tag is v${want}`);
@@ -98,6 +100,8 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - run: pnpm build
+      # In dependency order, so @honeybbq/teamspeak (the repository root) is
+      # on npm before the package under legacy/ that forwards to it.
       - name: Publish
         run: pnpm -r publish --access public --no-git-checks --tag "${{ steps.dist.outputs.tag }}"
         env:
@@ -117,9 +121,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
-      # The notes are the packages' changelogs, which need no dependencies
-      # installed. Fails, and so stops the release, when a changelog has no
-      # section for the tag.
+      # The notes are the changelog of @honeybbq/teamspeak, which needs no
+      # dependencies installed. Fails, and so stops the release, when it has
+      # no section for the tag.
       - name: Write the release notes
         run: node scripts/release-notes.mts "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
       - name: Release

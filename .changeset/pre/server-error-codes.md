@@ -1,6 +1,5 @@
 ---
-"@honeybbq/teamspeak-core": major
-"@honeybbq/teamspeak-client": major
+"@honeybbq/teamspeak": major
 ---
 
 `ServerError` carries the server's code as a number, `code`, in place of the string `id`, along with `extraMessage` and `failedPermissionId`. The new `ErrorCode` table names every code (`err.code === ErrorCode.ChannelInvalidPassword`).

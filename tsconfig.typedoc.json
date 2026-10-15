@@ -5,10 +5,7 @@
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
-    "isolatedDeclarations": false,
-    "paths": {
-      "@honeybbq/teamspeak-core": ["./packages/core/src/index.ts"]
-    }
+    "isolatedDeclarations": false
   },
-  "include": ["packages/client/src/index.ts"]
+  "include": ["src/core/index.ts", "src/client/index.ts"]
 }

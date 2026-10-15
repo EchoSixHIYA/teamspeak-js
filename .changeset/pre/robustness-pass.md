@@ -1,6 +1,5 @@
 ---
-"@honeybbq/teamspeak-core": patch
-"@honeybbq/teamspeak-client": patch
+"@honeybbq/teamspeak": patch
 ---
 
 File transfers, cancellation and a few error details now behave the way the platform's own APIs do:

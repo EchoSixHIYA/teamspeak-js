@@ -1,6 +1,5 @@
 ---
-"@honeybbq/teamspeak-core": major
-"@honeybbq/teamspeak-client": major
+"@honeybbq/teamspeak": major
 ---
 
 - `EAXTagMismatchError` and `FakeSignatureMismatchError` are no longer exported: they never reached a caller. `CryptoInitError` is now thrown, for a handshake that fails on what the server sent.

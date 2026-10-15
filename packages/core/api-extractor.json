@@ -1,9 +1,0 @@
-{
-  "extends": "../../api-extractor.base.json",
-  "compiler": {
-    "overrideTsconfig": {
-      "extends": "../../tsconfig.base.json",
-      "files": ["./dist/index.d.ts"]
-    }
-  }
-}

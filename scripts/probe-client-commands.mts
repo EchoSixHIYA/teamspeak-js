@@ -17,8 +17,8 @@
  * This only tells whether a command is accepted. How its data comes back is
  * scripts/probe-response-shapes.mts.
  */
-import { generateIdentitySync } from "../packages/client/src/crypto/identity.js";
-import { Client } from "../packages/client/src/client.js";
+import { generateIdentitySync } from "../src/client/crypto/identity.js";
+import { Client } from "../src/client/client.js";
 
 const quiet = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 const c = new Client(
@@ -191,7 +191,7 @@ for (let i = 0; i < candidates.length; i++) {
     await client.connect();
     await client.waitConnected(AbortSignal.timeout(10_000));
   }
-  const [name, cmd] = candidates[i]!;
+  const [name, cmd] = candidates[i];
   try {
     const rows = await client.execCommandWithResponse(cmd, 3000);
     available.push(name);

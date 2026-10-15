@@ -1,11 +1,20 @@
 # Changesets
 
 Every change a user would notice gets a changeset: `pnpm changeset`, pick the
-packages and the bump, describe it for the changelog. `pnpm changeset version`
+package and the bump, describe it for the changelog. `pnpm changeset version`
 turns them into version bumps and CHANGELOG entries.
 
-The packages are one fixed group: they always share a version and are released
-together, which is what lets them depend on each other's exact version.
+Write the changeset for the person upgrading. A change that breaks an import or
+a call says what to write instead.
+
+`@honeybbq/teamspeak` is the package that holds the code, so a changeset names
+it. `@honeybbq/teamspeak-client` only forwards to it, and the two are one fixed
+group: they always share a version and are released together. Name the
+forwarding package as well only when its own behavior changes.
+
+Entries link to their pull request and commit, which needs a token with read
+access to GitHub: `pnpm version-packages` takes it from `gh auth token`, or
+from `GITHUB_TOKEN` when that is set.
 
 The repository is in prerelease mode (`pre.json`, tag `beta`): `pnpm changeset
 version` makes `1.0.0-beta.N` versions until `pnpm changeset pre exit` ends it.

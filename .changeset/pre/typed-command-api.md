@@ -1,6 +1,5 @@
 ---
-"@honeybbq/teamspeak-core": major
-"@honeybbq/teamspeak-client": major
+"@honeybbq/teamspeak": major
 ---
 
 The typed commands, settled for 1.0 and in line with teamspeak-go:
