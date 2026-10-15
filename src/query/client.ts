@@ -648,14 +648,7 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
           signal,
         });
       case "ssh":
-        return connectSsh({
-          host: transport.host,
-          port: transport.port,
-          username: transport.username,
-          password: transport.password,
-          connection: transport.connection,
-          signal,
-        });
+        return connectSsh({ ...transport.connect, signal });
       case "web":
         return new WebQueryTransport({
           url: transport.url,

@@ -244,6 +244,10 @@ const targets: Target[] = [
         port: 10122,
         username: "serveradmin",
         password: process.env["TS6SSH_PASSWORD"] ?? "probepass1",
+        // A throwaway container on this machine, whose key changes with every
+        // container: there is no recorded key to check it against, and nobody
+        // else to answer the loopback port.
+        insecureIgnoreHostKey: true,
       }),
   },
 ];

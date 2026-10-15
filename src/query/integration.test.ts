@@ -15,10 +15,19 @@
  * `TEAMSPEAK_QUERY_SSH_PORT` is set: TeamSpeak 3 does not publish it, and
  * TeamSpeak 6 leaves it off by default.
  *
+ * SSH verifies the server's host key, as the client always does. Against the
+ * `known_hosts` file `TEAMSPEAK_QUERY_SSH_KNOWN_HOSTS` names when it is set, and
+ * otherwise against the key the server presents, recorded first: there is no
+ * run that accepts any key.
+ *
  * One server at a time. The query flood limit bans an address that connects
  * too quickly, and a rerun straight after a failure can do the same.
  */
 
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { utils } from "ssh2";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
   ClientStatus,
@@ -36,7 +45,10 @@ import {
 import { Client } from "../client/client.js";
 import { generateIdentitySync } from "../client/crypto/identity.js";
 import { QueryClient } from "./client.js";
+import { SshHostKeyError } from "./errors.js";
 import type { QueryClientOptions } from "./options.js";
+import { connectSsh } from "./ssh.js";
+import type { SshHostKey } from "./ssh.js";
 import type {
   ClientEnterEvent,
   ClientMovedEvent,
@@ -61,6 +73,7 @@ const SSH_PORT = Number(process.env["TEAMSPEAK_QUERY_SSH_PORT"] ?? "0");
 const SSH_HOST = process.env["TEAMSPEAK_QUERY_SSH_HOST"] ?? QUERY_HOST;
 const SSH_USER = process.env["TEAMSPEAK_QUERY_SSH_USER"] ?? "";
 const SSH_PASSWORD = process.env["TEAMSPEAK_QUERY_SSH_PASSWORD"] ?? "";
+const SSH_KNOWN_HOSTS = process.env["TEAMSPEAK_QUERY_SSH_KNOWN_HOSTS"] ?? "";
 
 /** 5120, `command not in api key scope`: not a name `ErrorCode` gives. */
 const NOT_IN_API_KEY_SCOPE = 5120;
@@ -80,6 +93,34 @@ const KINDS: readonly Kind[] = [
 ];
 
 const SKIP = VOICE_ADDR === undefined || KINDS.length === 0;
+
+/** The `known_hosts` file the SSH transport verifies against; set once the suite starts. */
+let sshKnownHosts = "";
+
+/** A line of a `known_hosts` file for the SSH server at `host`:`port`, holding `key`. */
+function knownHostsLine(key: Pick<SshHostKey, "keyType" | "key">): string {
+  return `[${SSH_HOST}]:${SSH_PORT} ${key.keyType} ${Buffer.from(key.key).toString("base64")}\n`;
+}
+
+/**
+ * The key the SSH server presents. The check runs before the login, so a probe
+ * that refuses the key has seen it and sent nothing.
+ */
+async function presentedSshKey(): Promise<SshHostKey> {
+  let presented: SshHostKey | undefined;
+  await connectSsh({
+    host: SSH_HOST,
+    port: SSH_PORT,
+    username: SSH_USER,
+    password: SSH_PASSWORD,
+    hostKey: (key) => {
+      presented = key;
+      throw new Error("recorded, and not trusted yet");
+    },
+  }).catch(() => {});
+  if (presented === undefined) throw new Error(`the server at ${SSH_HOST}:${SSH_PORT} sent no key`);
+  return presented;
+}
 
 /** The options for one transport kind. */
 function optionsFor(kind: Kind): QueryClientOptions {
@@ -104,6 +145,7 @@ function optionsFor(kind: Kind): QueryClientOptions {
           port: SSH_PORT,
           username: SSH_USER,
           password: SSH_PASSWORD,
+          knownHosts: sshKnownHosts,
         },
         server: { id: 1 },
         nickname: "ts-js-query",
@@ -149,9 +191,23 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
   let voice: Client | undefined;
   /** The channels created here, to remove afterwards. */
   const created: ChannelID[] = [];
+  const scratch = mkdtempSync(join(tmpdir(), "query-ssh-"));
+
+  /** A `known_hosts` file holding `line`, for a connection that is meant to be refused. */
+  function knownHostsFile(name: string, line: string): string {
+    const path = join(scratch, name);
+    writeFileSync(path, line);
+    return path;
+  }
 
   beforeAll(async () => {
     if (SKIP) return;
+    if (KINDS.includes("ssh")) {
+      sshKnownHosts =
+        SSH_KNOWN_HOSTS !== ""
+          ? SSH_KNOWN_HOSTS
+          : knownHostsFile("recorded", knownHostsLine(await presentedSshKey()));
+    }
     for (const kind of KINDS) {
       const client = new QueryClient(optionsFor(kind));
       await connectWithRetries(client);
@@ -169,6 +225,7 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
     // tests are about, and a leave is one of them.
     if (voice !== undefined) await voice.disconnect().catch(() => {});
     for (const client of clients.values()) await client.disconnect().catch(() => {});
+    rmSync(scratch, { recursive: true, force: true });
   }, 60_000);
 
   /** A voice client, connected once and reused: antiflood counts every connect. */
@@ -346,6 +403,66 @@ describe.skipIf(SKIP)("Integration — ServerQuery client", () => {
     await expect(web.registerNotifications("textserver")).rejects.toMatchObject({
       code: NOT_IN_API_KEY_SCOPE,
     });
+  }, 30_000);
+
+  // The point of the check: a server that is not the one recorded is refused
+  // before the login goes anywhere, whether it presents another key or the
+  // address is not the recorded one at all.
+  it("refuses an SSH server whose host key is not the recorded one", async () => {
+    if (!KINDS.includes("ssh")) return;
+    const stranger = utils.generateKeyPairSync("ed25519");
+    const [keyType, encoded] = stranger.public.trim().split(/\s+/);
+    const wrongKey = knownHostsFile(
+      "stranger",
+      `[${SSH_HOST}]:${SSH_PORT} ${keyType} ${encoded}\n`,
+    );
+    const client = new QueryClient({
+      transport: {
+        kind: "ssh",
+        host: SSH_HOST,
+        port: SSH_PORT,
+        username: SSH_USER,
+        password: SSH_PASSWORD,
+        knownHosts: wrongKey,
+      },
+    });
+
+    const error = await client
+      .connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) })
+      .catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(SshHostKeyError);
+    expect((error as SshHostKeyError).message).toContain("something else is answering");
+    expect(client.status).toBe(ClientStatus.Disconnected);
+    console.log(`ssh with the wrong key recorded: ${(error as Error).message}`);
+  }, 30_000);
+
+  it("refuses an SSH server that is not in the known_hosts file", async () => {
+    if (!KINDS.includes("ssh")) return;
+    const presented = await presentedSshKey();
+    // The right key, recorded for another port: what a mistyped port looks like.
+    const elsewhere = knownHostsFile(
+      "other-port",
+      `[${SSH_HOST}]:${SSH_PORT + 1} ${presented.keyType} ${Buffer.from(presented.key).toString("base64")}\n`,
+    );
+    const client = new QueryClient({
+      transport: {
+        kind: "ssh",
+        host: SSH_HOST,
+        port: SSH_PORT,
+        username: SSH_USER,
+        password: SSH_PASSWORD,
+        knownHosts: elsewhere,
+      },
+    });
+
+    const error = await client
+      .connect({ signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) })
+      .catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(SshHostKeyError);
+    expect((error as SshHostKeyError).message).toContain("is not in");
+    console.log(`ssh with the port not recorded: ${(error as Error).message}`);
   }, 30_000);
 
   it("reports the same channels over every transport it can use", async () => {

@@ -175,7 +175,7 @@ describe("QueryClient options", () => {
     expect(
       () =>
         new QueryClient({
-          transport: { kind: "ssh", host: "h", username: "u", password: "p" },
+          transport: { kind: "ssh", host: "h", username: "u", password: "p", hostKey: () => {} },
           login: { name: "u", password: "p" },
         }),
     ).toThrow(TypeError);
@@ -633,11 +633,10 @@ describe("QueryClient transport seams", () => {
     const channel = fakeStream();
     const opened: string[] = [];
     const client = new QueryClient({
+      // A supplied connection carries no login: it authenticated already.
       transport: {
         kind: "ssh",
         host: "ts.example.com",
-        username: "serveradmin",
-        password: "pw",
         connection: fakeSsh(channel, opened),
       },
       events: false,
@@ -669,8 +668,6 @@ describe("QueryClient transport seams", () => {
       transport: {
         kind: "ssh",
         host: "h",
-        username: "u",
-        password: "p",
         connection: async () => {
           made++;
           return fakeSsh(channel, []);
