@@ -6,3 +6,4 @@ packages/*/temp/
 .DS_Store
 ts3-fixture.env
 docs-site/
+packages/teamspeak/README.md

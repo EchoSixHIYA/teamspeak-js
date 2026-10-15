@@ -2,17 +2,17 @@
 
 TeamSpeak SDKs for TypeScript, in one repository and released together.
 
-| Package                                         | What it is                                                                                        |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [`@honeybbq/teamspeak-client`](packages/client) | A clean-room client that connects over the voice protocol, the way the TeamSpeak application does |
-| [`@honeybbq/teamspeak-core`](packages/core)     | What the clients share: the command language, ids, errors, and the typed commands                 |
+| Package                                                                                               | What it is                                                                                        |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [`@honeybbq/teamspeak-client`](https://github.com/HoneyBBQ/teamspeak-js/tree/main/packages/teamspeak) | A clean-room client that connects over the voice protocol, the way the TeamSpeak application does |
+| [`@honeybbq/teamspeak-core`](https://github.com/HoneyBBQ/teamspeak-js/tree/main/packages/teamspeak)   | What the clients share: the command language, ids, errors, and the typed commands                 |
 
 Browse the [API reference](https://honeybbq.github.io/teamspeak-js/).
 
 Install the client and nothing else; it pulls in the core and re-exports all of
 it. 1.0 is in beta, so for now that means `npm install @honeybbq/teamspeak-client@beta`.
 
-A ServerQuery client, [`@honeybbq/teamspeak-serverquery`](packages/serverquery),
+A ServerQuery client, [`@honeybbq/teamspeak-serverquery`](https://github.com/HoneyBBQ/teamspeak-js/tree/main/packages/teamspeak/src/query),
 is being written and isn't published yet. It will run the same typed commands.
 There's a Go version of all this too:
 [teamspeak-go](https://github.com/honeybbq/teamspeak-go).

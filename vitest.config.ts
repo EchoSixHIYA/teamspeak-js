@@ -3,7 +3,14 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     projects: [
-      "packages/*",
+      {
+        test: {
+          name: "@honeybbq/teamspeak",
+          environment: "node",
+          root: "packages/teamspeak",
+          include: ["src/**/*.test.ts"],
+        },
+      },
       {
         test: {
           name: "scripts",

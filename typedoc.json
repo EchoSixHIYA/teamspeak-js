@@ -1,31 +1,49 @@
 {
   "$schema": "https://typedoc.org/schema.json",
-  // Users import @honeybbq/teamspeak-client, which does
-  // `export * from "@honeybbq/teamspeak-core"`. The entry point is therefore
-  // the client's index.ts alone, and tsconfig.typedoc.json maps the core
-  // package to its source. TypeDoc then sees core's declarations as part of the
-  // client module: every symbol (Client, listChannels, ErrorCode,
-  // PermissionName, ...) appears once, on one site, and {@link}s between the
-  // two packages resolve. The "packages" strategy would instead give one
-  // module per package and list the client's `export *` as external
-  // re-exports, so a user would have to know which package holds what.
-  // The mapping also means no build is needed before running typedoc.
+  // One module per entry point users import: `@honeybbq/teamspeak` (the core)
+  // and `@honeybbq/teamspeak/client`, each named by an `@module` tag in its
+  // entry file. The client's declarations refer to the core through the
+  // package's own name, which resolves to the sources, so {@link}s between
+  // the two entries work and no build is needed before running typedoc.
   "name": "teamspeak-js",
-  "entryPoints": ["packages/client/src/index.ts"],
+  "entryPoints": ["packages/teamspeak/src/core/index.ts", "packages/teamspeak/src/client/index.ts"],
   "tsconfig": "tsconfig.typedoc.json",
-  "readme": "packages/client/README.md",
+  "readme": "README.md",
   "projectDocuments": ["docs/migrating-to-1.0.md", "docs/voice-protocol-responses.md"],
-  // Project documents would otherwise wrap the one entry point in an "index"
-  // module and prefix every page with "index.".
-  "alwaysCreateEntryPointModule": false,
   "out": "docs-site",
   "excludePrivate": true,
   "excludeInternal": true,
   "excludeNotDocumented": false,
   "githubPages": true,
-  // ClientStatus is `typeof clientStatusValues`; that helper const is private to
-  // the client's types.ts, and its members are documented on ClientStatus.
-  // ConnectPhase follows the same pattern, in trace.ts.
-  "intentionallyNotExported": ["clientStatusValues", "connectPhaseValues"],
+  // Each enumeration is `typeof xValues`, a helper const that is private to its
+  // file; its members are documented on the exported const of the same
+  // shape (Codec, ErrorCode, ClientStatus, ConnectPhase, ...). The
+  // `__object.*` entries are the members of those helpers that other types
+  // refer to, as KickReason does to Reason.KickChannel.
+  "intentionallyNotExported": [
+    "clientStatusValues",
+    "connectPhaseValues",
+    "clientTypeValues",
+    "codecValues",
+    "commandNameValues",
+    "errorCodeValues",
+    "groupNameModeValues",
+    "groupTypeValues",
+    "logLevelValues",
+    "notificationNameValues",
+    "permissionNameValues",
+    "permissionTargetValues",
+    "privilegeKeyTypeValues",
+    "propertyNameValues",
+    "reasonValues",
+    "textMessageTargetValues",
+    "__object.Channel",
+    "__object.ChannelClient",
+    "__object.ChannelGroup",
+    "__object.Client",
+    "__object.KickChannel",
+    "__object.KickServer",
+    "__object.ServerGroup"
+  ],
   "treatWarningsAsErrors": true
 }

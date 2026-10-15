@@ -2,7 +2,7 @@
  * Fails when a symbol a package exports has no doc comment, or when the
  * published declarations do not compile.
  *
- * Walks each package's public entry points with the TypeScript compiler API
+ * Walks each public entry point with the TypeScript compiler API
  * over the built declarations, so it sees exactly what a user imports —
  * re-exports followed, internals that `stripInternal` removed left out — and
  * checks every exported symbol and its members. typedoc would do this, but
@@ -19,9 +19,9 @@ const require = createRequire(import.meta.url);
 const ts = require("typescript-api") as typeof import("typescript");
 
 const entries = [
-  "packages/core/dist/index.d.ts",
-  "packages/client/dist/index.d.ts",
-  "packages/serverquery/dist/index.d.ts",
+  "packages/teamspeak/dist/core/index.d.ts",
+  "packages/teamspeak/dist/client/index.d.ts",
+  "packages/teamspeak-client/dist/index.d.ts",
 ].map((p) => resolve(p));
 
 const program = ts.createProgram(entries, { skipLibCheck: true, noEmit: true });

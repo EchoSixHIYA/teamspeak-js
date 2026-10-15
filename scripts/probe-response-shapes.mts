@@ -22,13 +22,13 @@
  * `privilegekeyadd tokentype=0 tokenid1=<server admin sgid> tokenid2=0`.
  */
 import { Readable } from "node:stream";
-import { initFileUpload } from "../packages/core/src/api/files.js";
-import { Client } from "../packages/client/src/client.js";
-import { asChannelID } from "../packages/core/src/command/ids.js";
-import { escape } from "../packages/core/src/command/command.js";
-import { parseCommand } from "../packages/core/src/command/parser.js";
-import { generateIdentitySync } from "../packages/client/src/crypto/identity.js";
-import { packetType, PacketType } from "../packages/client/src/transport/packet.js";
+import { initFileUpload } from "../packages/teamspeak/src/core/api/files.js";
+import { Client } from "../packages/teamspeak/src/client/client.js";
+import { asChannelID } from "../packages/teamspeak/src/core/command/ids.js";
+import { escape } from "../packages/teamspeak/src/core/command/command.js";
+import { parseCommand } from "../packages/teamspeak/src/core/command/parser.js";
+import { generateIdentitySync } from "../packages/teamspeak/src/client/crypto/identity.js";
+import { packetType, PacketType } from "../packages/teamspeak/src/client/transport/packet.js";
 
 const addr = process.env["ADDR"] ?? "127.0.0.1:9987";
 const privilegeKey = process.env["PRIVILEGE_KEY"] ?? "";
