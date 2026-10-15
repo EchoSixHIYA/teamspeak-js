@@ -526,6 +526,24 @@ may send a value newer than the table.
 `DatagramSocket` describes the part of a socket the client uses; should a
 later release use more, the new members will be optional.
 
+### Supported environments
+
+| Environment | Supported                                                                      |
+| ----------- | ------------------------------------------------------------------------------ |
+| Node.js     | The active and maintenance LTS releases, from 22.12; CI tests 22.12, 24 and 26 |
+| TypeScript  | 5.2 and newer, for the published types                                         |
+| Modules     | ESM only                                                                       |
+
+When a Node.js release reaches end of life, a minor release may raise
+`engines.node` past it; that is not a breaking change. The published types use
+`Disposable`, so the `lib` option must include `esnext.disposable` (or `es2026`
+or `esnext`), and the subpath exports need `moduleResolution` set to `node16`,
+`nodenext` or `bundler`. CI type-checks a consumer of the packed package with
+TypeScript 5.2. Raising that minimum follows TypeScript's own support window,
+happens in a minor release, and comes with a changelog note.
+
+### Differences from the Go SDK
+
 The [Go SDK](https://github.com/honeybbq/teamspeak-go) makes the same calls
 with the same semantics, apart from what the languages make differ:
 
