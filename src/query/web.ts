@@ -10,7 +10,7 @@ import type { QueryTransport } from "./transport.js";
  * `ServerError` instead.
  */
 export class WebQueryHttpError extends TeamspeakError {
-  /** {@inheritDoc TeamspeakError.kind} */
+  /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
   static override readonly kind: string = "WebQueryHttpError";
   static {
     Object.defineProperty(this.prototype, "name", {

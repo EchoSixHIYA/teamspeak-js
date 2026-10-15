@@ -2,6 +2,58 @@ import { MissingDependencyError, QueryAuthError } from "./errors.js";
 import { StreamTransport } from "./stream.js";
 import type { QueryStream } from "./stream.js";
 
+/**
+ * The part of an SSH client this transport uses: `ssh2`'s `Client` is one, and
+ * so is anything else with these methods.
+ *
+ * Declared here rather than imported from `@types/ssh2`, which a caller
+ * without the optional peer dependency does not have: the types are a
+ * devDependency and are not published with the package. A later release may
+ * widen this, and every new member will be optional, so an implementation
+ * written today keeps compiling.
+ */
+export interface SshClient {
+  /** Begin the connection; `ready` is emitted once the handshake is done. */
+  connect(config: {
+    host: string;
+    port: number;
+    username: string;
+    password: string;
+    readyTimeout: number;
+  }): void;
+  /** Open a shell channel, or report why it could not be opened. */
+  shell(pty: false, callback: (error: Error | undefined, channel: SshChannel) => void): void;
+  /** End the connection. */
+  end(): void;
+  /** Listen for the handshake completing, once. */
+  once(event: "ready", listener: () => void): unknown;
+  /** Listen for the next failure, once. */
+  once(event: "error", listener: (error: Error) => void): unknown;
+  /** Listen for each failure. */
+  on(event: "error", listener: (error: Error) => void): unknown;
+  /** Stop listening for failures. */
+  off(event: "error", listener: (error: Error) => void): unknown;
+}
+
+/** The channel an SSH client's shell opens: a byte stream, and the errors on it. */
+export interface SshChannel extends QueryStream {
+  /** Report a failure on the stream, as a socket would: the transport reads it. */
+  emit(event: "error", error: Error): unknown;
+  /** Listen for the stream closing, once. */
+  once(event: "close", listener: () => void): unknown;
+}
+
+/**
+ * An SSH client this transport uses instead of loading `ssh2` itself: either
+ * one that is connected already, or a factory that makes one.
+ *
+ * A caller that holds its own connected client — authenticated through an
+ * agent, a jump host or a key file this transport knows nothing about — hands
+ * it over. A factory is asked for one per connection attempt, which a
+ * reconnection needs.
+ */
+export type SshConnection = SshClient | (() => Promise<SshClient>);
+
 /** Where a ServerQuery over SSH listens, and who logs in. */
 export interface SshOptions {
   /** The server's host. */
@@ -14,38 +66,15 @@ export interface SshOptions {
   readonly password: string;
   /** Abandons the connection attempt. */
   readonly signal?: AbortSignal | undefined;
-}
-
-/**
- * The part of `ssh2` this transport uses. Typed here rather than imported from
- * `@types/ssh2`, which a caller without the optional peer dependency does not
- * have: the types are a devDependency and are not published with the package.
- */
-interface SshModule {
-  Client: new () => SshClient;
-}
-
-interface SshChannel extends QueryStream {
-  /** Report a failure on the stream, as a socket would: the transport reads it. */
-  emit(event: "error", error: Error): unknown;
-  /** Listen for the stream closing, once. */
-  once(event: "close", listener: () => void): unknown;
-}
-
-interface SshClient {
-  connect(config: {
-    host: string;
-    port: number;
-    username: string;
-    password: string;
-    readyTimeout: number;
-  }): void;
-  shell(pty: false, callback: (error: Error | undefined, channel: SshChannel) => void): void;
-  end(): void;
-  once(event: "ready", listener: () => void): unknown;
-  once(event: "error", listener: (error: Error) => void): unknown;
-  on(event: "error", listener: (error: Error) => void): unknown;
-  off(event: "error", listener: (error: Error) => void): unknown;
+  /**
+   * The SSH client to use, or a factory for one; `ssh2` by default.
+   *
+   * The seam into the transport. Supplying a client that is already connected
+   * skips the handshake, so the host, port and credentials here are then only
+   * what the caller says they are. Deliberately narrow, so a later release can
+   * widen it without breaking an implementation written today.
+   */
+  readonly connection?: SshConnection | undefined;
 }
 
 /**
@@ -54,7 +83,7 @@ interface SshClient {
  * make it a requirement of the whole entry point — including the TCP and
  * WebQuery transports, which need nothing but Node.
  */
-async function loadSsh2(): Promise<SshModule> {
+async function loadSsh2(): Promise<{ Client: new () => SshClient }> {
   try {
     return await import("ssh2");
   } catch (error) {
@@ -77,12 +106,12 @@ async function loadSsh2(): Promise<SshModule> {
  * is not checked.
  */
 export async function connectSsh(options: SshOptions): Promise<StreamTransport> {
-  const { host, port = 10022, username, password, signal } = options;
+  const { host, port = 10022, username, password, signal, connection } = options;
   signal?.throwIfAborted();
-  const { Client } = await loadSsh2();
+  const ssh = await clientFor(connection);
+  signal?.throwIfAborted();
 
   return new Promise((resolve, reject) => {
-    const ssh = new Client();
     let settled = false;
     const failed = (error: Error): void => {
       if (settled) return;
@@ -107,8 +136,7 @@ export async function connectSsh(options: SshOptions): Promise<StreamTransport> 
           : error,
       );
     };
-    ssh.once("error", onAuthError);
-    ssh.once("ready", () => {
+    const openShell = (): void => {
       ssh.shell(false, (error, channel) => {
         if (error) {
           ssh.end();
@@ -124,8 +152,26 @@ export async function connectSsh(options: SshOptions): Promise<StreamTransport> 
         channel.once("close", () => ssh.end());
         resolve(new StreamTransport(channel, () => ssh.end()));
       });
-    });
+    };
+
     signal?.addEventListener("abort", onAbort, { once: true });
+    if (connection !== undefined) {
+      // A client the caller handed over is one they say is connected, and one
+      // from their own factory is dialled on their terms: neither is connected
+      // here, and neither can be a wrong credential this module knows of.
+      openShell();
+      return;
+    }
+    ssh.once("error", onAuthError);
+    ssh.once("ready", openShell);
     ssh.connect({ host, port, username, password, readyTimeout: 10_000 });
   });
+}
+
+/** The client to talk over: the caller's, their factory's, or a fresh `ssh2`. */
+async function clientFor(connection: SshConnection | undefined): Promise<SshClient> {
+  if (typeof connection === "function") return connection();
+  if (connection !== undefined) return connection;
+  const { Client } = await loadSsh2();
+  return new Client();
 }

@@ -1,5 +1,7 @@
 import type { CommandMiddleware, Logger, ReconnectOptions, ServerID } from "@honeybbq/teamspeak";
 import type { QueryTransport } from "./transport.js";
+import type { TcpConnector } from "./tcp.js";
+import type { SshConnection } from "./ssh.js";
 
 /**
  * The connection a `QueryClient` talks over, as a description rather than an
@@ -18,6 +20,11 @@ export type QueryTransportOptions =
       readonly host: string;
       /** The raw query port; 10011 by default. */
       readonly port?: number | undefined;
+      /**
+       * Opens the connection; `net.createConnection` by default. See
+       * {@link TcpOptions.connect}.
+       */
+      readonly connect?: TcpConnector | undefined;
     }
   | {
       /** A ServerQuery over SSH. */
@@ -30,6 +37,11 @@ export type QueryTransportOptions =
       readonly username: string;
       /** The query login's password. */
       readonly password: string;
+      /**
+       * The SSH client to use, or a factory for one; `ssh2` by default. See
+       * {@link SshOptions.connection}.
+       */
+      readonly connection?: SshConnection | undefined;
     }
   | {
       /** TeamSpeak 6's HTTP WebQuery. */
@@ -146,13 +158,19 @@ const CATEGORIES: ReadonlySet<string> = new Set([
 
 /** A transport with its defaults filled, and its fields copied. */
 export type ResolvedTransport =
-  | { readonly kind: "tcp"; readonly host: string; readonly port: number }
+  | {
+      readonly kind: "tcp";
+      readonly host: string;
+      readonly port: number;
+      readonly connect: TcpConnector | undefined;
+    }
   | {
       readonly kind: "ssh";
       readonly host: string;
       readonly port: number;
       readonly username: string;
       readonly password: string;
+      readonly connection: SshConnection | undefined;
     }
   | {
       readonly kind: "web";
@@ -211,17 +229,35 @@ function transportOptions(transport: unknown): ResolvedTransport {
     case "tcp": {
       const host = nonEmpty(options["host"], "transport.host");
       const raw = port(options["port"], "transport.port");
-      return { kind: "tcp", host, port: raw < 0 ? 10011 : raw };
+      const connect = options["connect"];
+      if (connect !== undefined && typeof connect !== "function") {
+        throw new TypeError("transport.connect is a function");
+      }
+      return {
+        kind: "tcp",
+        host,
+        port: raw < 0 ? 10011 : raw,
+        connect: connect as TcpConnector | undefined,
+      };
     }
     case "ssh": {
       const host = nonEmpty(options["host"], "transport.host");
       const raw = port(options["port"], "transport.port");
+      const connection = options["connection"];
+      if (
+        connection !== undefined &&
+        typeof connection !== "function" &&
+        (typeof connection !== "object" || connection === null)
+      ) {
+        throw new TypeError("transport.connection is an SSH client or a factory for one");
+      }
       return {
         kind: "ssh",
         host,
         port: raw < 0 ? 10022 : raw,
         username: nonEmpty(options["username"], "transport.username"),
         password: nonEmpty(options["password"], "transport.password"),
+        connection: connection as SshConnection | undefined,
       };
     }
     case "web": {

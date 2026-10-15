@@ -1,3 +1,4 @@
+import { Duplex } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { QueryClient } from "./index.js";
 import type {
@@ -5,6 +6,8 @@ import type {
   QueryEventCategory,
   QueryTransport,
   QueryTransportOptions,
+  SshChannel,
+  SshClient,
 } from "./index.js";
 import {
   CommandTimeoutError,
@@ -97,6 +100,56 @@ async function connected(options: Partial<QueryClientOptions> = {}): Promise<{
   await client.connect();
   transport.auto = undefined;
   return { client, transport, baseline: transport.sent.length };
+}
+
+/**
+ * A byte stream a transport reads and writes, with nothing on the other end.
+ * `TcpConnector` and an SSH shell both hand one back.
+ */
+function fakeStream(): Duplex & SshChannel & { feed(text: string): void } {
+  const stream = new Duplex({
+    read() {},
+    write(_chunk, _encoding, callback) {
+      callback();
+    },
+  }) as Duplex & SshChannel & { feed(text: string): void };
+  stream.feed = (text) => stream.emit("data", Buffer.from(text));
+  return stream;
+}
+
+/**
+ * The transport of a client the test has just connected, which is not
+ * `undefined` then — and is what the accessor exists to hand over.
+ */
+function liveTransport(client: QueryClient): QueryTransport {
+  const transport = client.transport;
+  if (transport === undefined) throw new Error("the client has no transport");
+  return transport;
+}
+
+/** An SSH client that opens a shell over `channel`; the rest is never used. */
+function fakeSsh(channel: SshChannel, opened: string[]): SshClient {
+  return {
+    connect() {
+      opened.push("connect");
+    },
+    shell(_pty, callback) {
+      opened.push("shell");
+      callback(undefined, channel);
+    },
+    end() {
+      opened.push("end");
+    },
+    once() {
+      return this;
+    },
+    on() {
+      return this;
+    },
+    off() {
+      return this;
+    },
+  };
 }
 
 /** Poll until `done`, which a reconnection needs: its delay is its own. */
@@ -538,6 +591,127 @@ describe("QueryClient commands", () => {
     expect(await granted).toEqual([
       { clientftfid: "3", serverftfid: "1", ftkey: "k", port: "30033" },
     ]);
+  });
+});
+
+// The seams: a caller with its own socket, its own SSH client, or neither.
+describe("QueryClient transport seams", () => {
+  it("opens a tcp connection through the connect it was given", async () => {
+    const stream = fakeStream();
+    const dialled: Array<[string, number]> = [];
+    const client = new QueryClient({
+      transport: {
+        kind: "tcp",
+        host: "ts.example.com",
+        port: 10011,
+        connect: (host, port) => {
+          dialled.push([host, port]);
+          return stream;
+        },
+      },
+      events: false,
+    });
+
+    expect(client.transport).toBeUndefined();
+    const connecting = client.connect();
+    await waitFor(() => dialled.length === 1);
+    // The server's two-line banner, then the version the setup asks for.
+    stream.feed("TS3\n\rWelcome to the TeamSpeak 3 ServerQuery interface.\n\r");
+    await waitFor(() => client.transport !== undefined);
+    liveTransport(client).onLine?.("version=3.13.8 build=1 platform=Linux");
+    liveTransport(client).onLine?.("error id=0 msg=ok");
+    await connecting;
+
+    expect(dialled).toEqual([["ts.example.com", 10011]]);
+    // The live transport is readable, and says what it can do.
+    expect(liveTransport(client).supportsNotifications).toBe(true);
+    await client.disconnect();
+    expect(client.transport).toBeUndefined();
+  });
+
+  it("uses an SSH client it was handed, without a handshake of its own", async () => {
+    const channel = fakeStream();
+    const opened: string[] = [];
+    const client = new QueryClient({
+      transport: {
+        kind: "ssh",
+        host: "ts.example.com",
+        username: "serveradmin",
+        password: "pw",
+        connection: fakeSsh(channel, opened),
+      },
+      events: false,
+    });
+
+    const connecting = client.connect();
+    await waitFor(() => opened.includes("shell"));
+    channel.feed("TS3\n\rWelcome to the TeamSpeak 3 ServerQuery interface.\n\r");
+    await waitFor(() => client.transport !== undefined);
+    liveTransport(client).onLine?.("version=6.0.0-beta13.1 build=1 platform=Linux");
+    liveTransport(client).onLine?.("error id=0 msg=ok");
+    await connecting;
+
+    // `connect` is what dials and authenticates; a client the caller handed
+    // over is one they say is connected already.
+    expect(opened).not.toContain("connect");
+    expect(client.serverFamily).toBe("ts6");
+    await client.disconnect();
+    // The session is released once the channel is closed, which is what
+    // releases an SSH connection the caller handed over.
+    channel.destroy();
+    await waitFor(() => opened.includes("end"));
+  });
+
+  it("asks an SSH factory for a client, and rejects a connect that is not one", async () => {
+    const channel = fakeStream();
+    let made = 0;
+    const client = new QueryClient({
+      transport: {
+        kind: "ssh",
+        host: "h",
+        username: "u",
+        password: "p",
+        connection: async () => {
+          made++;
+          return fakeSsh(channel, []);
+        },
+      },
+      events: false,
+    });
+
+    const connecting = client.connect();
+    await waitFor(() => made === 1);
+    channel.feed("TS3\n\rWelcome.\n\r");
+    await waitFor(() => client.transport !== undefined);
+    liveTransport(client).onLine?.("version=3.13.8 build=1 platform=Linux");
+    liveTransport(client).onLine?.("error id=0 msg=ok");
+    await connecting;
+
+    expect(made).toBe(1);
+    await client.disconnect();
+
+    expect(
+      () =>
+        new QueryClient({
+          transport: {
+            kind: "tcp",
+            host: "h",
+            connect: "nope",
+          } as unknown as QueryTransportOptions,
+        }),
+    ).toThrow(TypeError);
+    expect(
+      () =>
+        new QueryClient({
+          transport: {
+            kind: "ssh",
+            host: "h",
+            username: "u",
+            password: "p",
+            connection: 3,
+          } as unknown as QueryTransportOptions,
+        }),
+    ).toThrow(TypeError);
   });
 });
 

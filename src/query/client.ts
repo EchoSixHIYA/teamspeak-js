@@ -213,6 +213,22 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
   }
 
   /**
+   * The transport carrying this connection, or `undefined` when there is none.
+   *
+   * Read-only, and the transport is the interface the client itself talks
+   * over — counts of what went out and came in, and which connection it is,
+   * can be read from it for metrics. The socket underneath is not exposed:
+   * a caller that needs it supplies the seam instead (the `connect` option of
+   * a `tcp` transport, or `connection` of an `ssh` one), where it is theirs to
+   * keep.
+   *
+   * @experimental Part of the entry, which may change in a minor release.
+   */
+  get transport(): QueryTransport | undefined {
+    return this.#transport ?? undefined;
+  }
+
+  /**
    * The notification categories this connection registered for: what `events`
    * asked for, and empty when the transport delivers no notifications or the
    * client is not connected.
@@ -625,13 +641,19 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
     const transport: ResolvedTransport = this.#options.transport;
     switch (transport.kind) {
       case "tcp":
-        return connectTcp({ host: transport.host, port: transport.port, signal });
+        return connectTcp({
+          host: transport.host,
+          port: transport.port,
+          connect: transport.connect,
+          signal,
+        });
       case "ssh":
         return connectSsh({
           host: transport.host,
           port: transport.port,
           username: transport.username,
           password: transport.password,
+          connection: transport.connection,
           signal,
         });
       case "web":
