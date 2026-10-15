@@ -95,8 +95,8 @@ still the right way to record a breaking change.
 [.changeset/README.md](../.changeset/README.md) has the details. Changes nobody
 would notice, such as tests, CI and internal refactors, do not need one.
 
-The changelog links each entry to its pull request and commit and thanks its
-author, so a changeset has no `pr:`, `commit:` or `author:` lines. A maintainer
+The changelog links each entry to its pull request and commit, and thanks the
+author of a first contribution, so a changeset has no `pr:`, `commit:` or `author:` lines. A maintainer
 may write or edit a changeset for you, so a first pull request does not need to
 learn changesets.
 
