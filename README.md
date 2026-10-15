@@ -513,6 +513,64 @@ The uid hash matters because TS3 hashes a client's public key with SHA-1 and TS6
 with SHA-256 — a client that assumes either one computes an identifier the other
 server never sends.
 
+## ServerQuery
+
+The `@experimental` subpath `@honeybbq/teamspeak/query` administers a server
+the way the voice protocol cannot: the same typed commands the core exports,
+plus the ones only an administrator may run, over the three transports a
+ServerQuery speaks.
+
+| Transport | Where        | Server           | Login               | Notifications |
+| --------- | ------------ | ---------------- | ------------------- | ------------- |
+| `tcp`     | 10011        | TeamSpeak 3 only | the `login` command | yes           |
+| `ssh`     | 10022        | both             | the SSH login       | yes           |
+| `web`     | 10080 (HTTP) | TeamSpeak 6      | the api key         | **no**        |
+
+Only raw TCP and SSH carry notifications: the server pushes them down the same
+connection. WebQuery has no session to push to and refuses to register, so the
+client never tries, and a listener for a server event there throws rather than
+sitting silent. `connected` and `disconnected` work on every transport, since
+they come from the client itself.
+
+```typescript
+import { QueryClient } from "@honeybbq/teamspeak/query";
+import { listChannels } from "@honeybbq/teamspeak";
+
+const client = new QueryClient({
+  transport: { kind: "tcp", host: "ts.example.com" }, // 10011
+  login: { name: "serveradmin", password: process.env.QUERY_PASSWORD! },
+  server: { id: 1 },
+  nickname: "bot",
+  events: { categories: ["textserver", "textprivate"] },
+  reconnect: { backoff: { initialDelayMs: 1_000 } },
+});
+
+client.on("textMessage", (message) => console.log(message.invokerName, message.message));
+
+await client.connect();
+
+for (const channel of await listChannels(client)) console.log(channel.name);
+
+await client.disconnect();
+```
+
+The three transports are figures of speech the client rebuilds on every
+connection, which is what makes reconnecting possible; `custom` opens one
+itself, for a proxy, a tunnel or a test. Each built-in transport also offers
+the seam into its own connection — `connect` for `tcp`, returning a `Duplex`,
+and `connection` for `ssh`, taking a client or a factory for one — so an
+application behind a TLS terminator or a SOCKS proxy, or one that already
+holds an SSH client, can supply it. `ssh2` is an optional peer dependency:
+without it the other two transports still work, and an `ssh` transport throws
+a `MissingDependencyError` naming the package.
+
+`serverFamily` reports which generation the server is, read from its own
+`version` answer, and `transport` reads back the live connection for metrics.
+
+**`@experimental`**: this entry point is new, and its API may change in a
+minor release — the options, the transport union and the event map are all
+still settling. Pin a version and read the changelog if you depend on it.
+
 ## Compatibility
 
 The package follows semver from 1.0. A few sets are open by nature and may
@@ -564,7 +622,7 @@ with the same semantics, apart from what the languages make differ:
 | `@honeybbq/teamspeak`          | What every TeamSpeak connection shares: the command language, ids, errors, the typed commands, the event types and the status and reconnection types |
 | `@honeybbq/teamspeak/client`   | The voice client, identities, file transfers, diagnostics and its retry policy                                                                       |
 | `@honeybbq/teamspeak/versions` | Client versions a server accepts, for the client's `version` option; data only, one export each                                                      |
-| `@honeybbq/teamspeak/query`    | A ServerQuery client running the same typed commands; coming in a 1.x release                                                                        |
+| `@honeybbq/teamspeak/query`    | The ServerQuery client, running the same typed commands over raw TCP, SSH or WebQuery; `@experimental`                                               |
 
 Each entry exports only its own symbols. The client entry does not re-export
 the core, so a program imports the `Client` from `@honeybbq/teamspeak/client`
