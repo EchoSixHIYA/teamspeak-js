@@ -22,7 +22,7 @@ describe("handleNotification", () => {
         },
       };
 
-      const result = handleNotification(cmd, 1, clients, "Bot");
+      const result = handleNotification(cmd, 1, clients);
 
       expect(result.kind).toBe("clientEnter");
       if (result.kind !== "clientEnter") return;
@@ -39,8 +39,8 @@ describe("handleNotification", () => {
       };
       const plain = { name: "notifyclientmoved", params: { clid: "7", ctid: "1" } };
 
-      const a = handleNotification(kick, 1, makeClients(), "Bot");
-      const b = handleNotification(plain, 1, makeClients(), "Bot");
+      const a = handleNotification(kick, 1, makeClients());
+      const b = handleNotification(plain, 1, makeClients());
 
       expect(a.kind === "clientMoved" && a.event.reasonMessage).toBe("bye");
       expect(b.kind === "clientMoved" && b.event.reasonMessage).toBe("");
@@ -53,7 +53,7 @@ describe("handleNotification", () => {
       (ctid) => {
         const cmd = { name: "notifyclientmoved", params: { clid: "7", ctid, reasonid: "1" } };
 
-        const result = handleNotification(cmd, 1, makeClients(), "Bot");
+        const result = handleNotification(cmd, 1, makeClients());
 
         expect(result.kind).toBe("clientMoved");
         if (result.kind !== "clientMoved") return;
@@ -67,7 +67,7 @@ describe("handleNotification", () => {
         params: { clid: "7", ctid: "18446744073709551615" },
       };
 
-      const result = handleNotification(cmd, 1, makeClients(), "Bot");
+      const result = handleNotification(cmd, 1, makeClients());
 
       expect(result.kind === "clientMoved" && result.event.targetChannelID).toBe(
         18446744073709551615n,
@@ -86,7 +86,7 @@ describe("handleNotification", () => {
           msg: "hello",
         },
       };
-      const result = handleNotification(cmd, 1, makeClients(), "Bot");
+      const result = handleNotification(cmd, 1, makeClients());
       expect(result.kind).toBe("poked");
       if (result.kind !== "poked") return;
       expect(result.event.invokerID).toBe(5);
@@ -105,7 +105,7 @@ describe("handleNotification", () => {
           msg: "",
         },
       };
-      const result = handleNotification(cmd, 1, makeClients(), "Bot");
+      const result = handleNotification(cmd, 1, makeClients());
       expect(result.kind).toBe("poked");
       if (result.kind !== "poked") return;
       expect(result.event.message).toBe("");
@@ -117,7 +117,7 @@ describe("handleNotification", () => {
         name: "notifyclientpoke",
         params: {},
       };
-      const result = handleNotification(cmd, 1, makeClients(), "Bot");
+      const result = handleNotification(cmd, 1, makeClients());
       expect(result.kind).toBe("poked");
       if (result.kind !== "poked") return;
       expect(result.event.invokerID).toBe(0);
@@ -132,7 +132,7 @@ describe("handleNotification", () => {
       name: "notifysomethingelse",
       params: {},
     };
-    const result = handleNotification(cmd, 1, makeClients(), "Bot");
+    const result = handleNotification(cmd, 1, makeClients());
     expect(result.kind).toBe("unknown");
   });
 
@@ -142,7 +142,7 @@ describe("handleNotification", () => {
     (name) => {
       const clients = makeClients();
       for (const params of [{ clid: "0", ctid: "1" }, { ctid: "1" }]) {
-        expect(handleNotification({ name, params }, 0, clients, "Bot").kind).toBe("unknown");
+        expect(handleNotification({ name, params }, 0, clients).kind).toBe("unknown");
       }
       expect(clients.size).toBe(0);
     },
@@ -161,16 +161,15 @@ describe("notifytextmessage", () => {
       },
       1,
       clients,
-      "Bot",
     );
 
-    const result = handleNotification(cmd, 1, clients, "Bot");
+    const result = handleNotification(cmd, 1, clients);
 
     expect(result.kind === "textMessage" && result.message.invokerGroups).toEqual([6n, 9n]);
   });
 
   it("leaves them undefined for a sender it has not seen", () => {
-    const result = handleNotification(cmd, 1, makeClients(), "Bot");
+    const result = handleNotification(cmd, 1, makeClients());
 
     expect(result.kind === "textMessage" && result.message.invokerGroups).toBeUndefined();
   });

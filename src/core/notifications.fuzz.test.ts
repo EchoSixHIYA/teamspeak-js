@@ -99,7 +99,7 @@ describe("notifications from the server", () => {
       fc.property(notification, known, fc.integer({ min: 0, max: 20 }), (cmd, entries, self) => {
         const clients = listOf(entries);
         const before = new Set(clients.keys());
-        const result = handleNotification(cmd, self, clients, "Bot");
+        const result = handleNotification(cmd, self, clients);
 
         // The client list gains at most the client that entered, and loses
         // at most the one that left; nothing else touches its keys.
@@ -138,12 +138,7 @@ describe("notifications from the server", () => {
             clid: String(clid),
             ctid: String(ctid),
           });
-          const result = handleNotification(
-            { name: "notifyclientmoved", params },
-            0,
-            clients,
-            "Bot",
-          );
+          const result = handleNotification({ name: "notifyclientmoved", params }, 0, clients);
 
           expect(result.kind).toBe("clientMoved");
           for (const [id, client] of clients) {
@@ -167,12 +162,7 @@ describe("notifications from the server", () => {
             invokerid: String(invoker),
             msg,
           });
-          const result = handleNotification(
-            { name: "notifytextmessage", params },
-            0,
-            clients,
-            "Bot",
-          );
+          const result = handleNotification({ name: "notifytextmessage", params }, 0, clients);
 
           expect(result.kind).toBe("textMessage");
           if (result.kind !== "textMessage") return;
@@ -194,7 +184,7 @@ describe("notifications from the server", () => {
         ctid,
       });
       expect(() =>
-        handleNotification({ name: "notifyclientmoved", params }, 0, new Map(), "Bot"),
+        handleNotification({ name: "notifyclientmoved", params }, 0, new Map()),
       ).not.toThrow();
     }
   });

@@ -174,7 +174,7 @@ import type {
 } from "../src/core/index.js";
 import { parseCommand, splitCommandRows } from "../src/core/internal.js";
 import { Client } from "../src/client/client.js";
-import { handleNotification } from "../src/client/notifications.js";
+import { handleNotification } from "../src/core/internal.js";
 import { generateIdentitySync } from "../src/client/crypto/identity.js";
 import { uploadFileData, downloadFileData } from "../src/client/transfer.js";
 import { QueryClient } from "../src/query/client.js";
@@ -1379,12 +1379,7 @@ async function events(
         return t[key as string];
       },
     });
-    const result = handleNotification(
-      { name: n.name, params },
-      selfClidOf(me.clientID),
-      clients,
-      "",
-    );
+    const result = handleNotification({ name: n.name, params }, selfClidOf(me.clientID), clients);
     const kind =
       result.kind === "clientEnter"
         ? "clientEnter"

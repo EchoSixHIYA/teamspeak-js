@@ -1,14 +1,29 @@
-import type { Command } from "../core/internal.js";
+/**
+ * The notifications a server pushes, read as the events every client
+ * delivers.
+ *
+ * The voice protocol and ServerQuery carry the same notifications — a move is
+ * `notifyclientmoved` on both — and only their framing differs, which each
+ * client's own reader takes care of. So the parsing lives here, and both
+ * clients call it rather than keeping a copy each.
+ *
+ * A result is one notification's worth: the event it makes, plus what only the
+ * client can decide, such as whether a client that left view was itself.
+ */
+
+import { asChannelID, asClientID, asUID } from "./command/ids.js";
+import { parseClient } from "./api/parse.js";
+import { parseInt10, parseUint16, parseUint64 } from "./helpers.js";
+import type { Command } from "./command/command.js";
 import type {
   ClientEnterEvent,
   ClientLeaveEvent,
   ClientMovedEvent,
-  TextMessageEvent,
   PokeEvent,
-} from "@honeybbq/teamspeak";
-import { parseClient, parseUint64, parseUint16, parseInt10 } from "../core/internal.js";
-import { asChannelID, asClientID, asUID } from "@honeybbq/teamspeak";
+  TextMessageEvent,
+} from "./events.js";
 
+/** What one notification amounts to. */
 export type NotificationResult =
   | { kind: "clientEnter"; info: ClientEnterEvent }
   | { kind: "clientLeave"; event: ClientLeaveEvent; isSelf: boolean }
@@ -17,11 +32,17 @@ export type NotificationResult =
   | { kind: "poked"; event: PokeEvent }
   | { kind: "unknown" };
 
+/**
+ * Read a notification. `cmd` is the parsed notification line, `selfCLID` this
+ * client's own id (0 when it is not known yet), and `clients` the clients the
+ * caller knows, which the enter and leave notifications keep current and the
+ * others read: a text message carries no groups, and a move of the client's
+ * own carries no invoker.
+ */
 export function handleNotification(
   cmd: Command,
   selfCLID: number,
   clients: Map<number, ClientEnterEvent>,
-  _nickname: string,
 ): NotificationResult {
   switch (cmd.name) {
     case "notifycliententerview":
@@ -84,6 +105,11 @@ function handleClientMoved(
   const existing = clients.get(clid);
   if (existing) clients.set(clid, { ...existing, channelID: ctid });
 
+  // A move the client made itself names no invoker, so the fields are empty;
+  // the client it knows by `clid` is who that was.
+  const invokerID = asClientID(parseUint16(cmd.params["invokerid"] ?? ""));
+  const invoker = clients.get(invokerID === 0 ? clid : invokerID);
+
   return {
     kind: "clientMoved",
     event: {
@@ -91,9 +117,9 @@ function handleClientMoved(
       targetChannelID: ctid,
       reason: parseInt10(cmd.params["reasonid"] ?? ""),
       reasonMessage: cmd.params["reasonmsg"] ?? "",
-      invokerID: asClientID(parseUint16(cmd.params["invokerid"] ?? "")),
-      invokerName: cmd.params["invokername"] ?? "",
-      invokerUID: asUID(cmd.params["invokeruid"] ?? ""),
+      invokerID,
+      invokerName: cmd.params["invokername"] ?? invoker?.nickname ?? "",
+      invokerUID: asUID(cmd.params["invokeruid"] ?? invoker?.uid ?? ""),
     },
   };
 }
