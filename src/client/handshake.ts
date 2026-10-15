@@ -5,6 +5,7 @@ import { identityPrivateKey } from "./crypto/identity.js";
 import { parseServerCapabilities } from "./capabilities.js";
 import { cryptoInit2 } from "./handshake/crypt-init2.js";
 import { PacketType } from "./transport/packet.js";
+import type { ClientVersion } from "@honeybbq/teamspeak";
 import type { ClientInternals } from "./client.js";
 
 /** Handle the `clientinitiv` message (P-256 based crypto path). */
@@ -106,6 +107,19 @@ export function prepareClientPassword(password: string): string {
   return createHash("sha1").update(password).digest().toString("base64");
 }
 
+/**
+ * The version `clientinit` sends unless the `version` option says otherwise.
+ *
+ * A literal on purpose: `@honeybbq/teamspeak/versions` holds over a thousand
+ * constants, and the client must not load them. A test holds this equal to the
+ * table's `Windows_3_X_X_5680278000`.
+ */
+export const defaultClientVersion: ClientVersion = {
+  platform: "Windows",
+  version: "3.?.? [Build: 5680278000]",
+  sign: "DX5NIYLvfJEUjuIbCidnoeozxIDRRkpq3I9vVMBmE9L2qnekOoBzSenkzsg2lC9CMv8K5hkEzhr2TYUYSwUXCg==",
+};
+
 export function sendClientInit(client: ClientInternals): void {
   const cmd = buildClientInitCommand(client);
   client.handler.sendPacket(PacketType.Command, Buffer.from(cmd), 0);
@@ -119,18 +133,15 @@ function buildClientInitCommand(client: ClientInternals): string {
 
   return buildCommandOrdered("clientinit", [
     ["client_nickname", client.nickname],
-    ["client_version", "3.?.? [Build: 5680278000]"],
-    ["client_platform", "Windows"],
+    ["client_version", initOptions.version.version],
+    ["client_platform", initOptions.version.platform],
     ["client_input_hardware", "1"],
     ["client_output_hardware", "1"],
     ["client_default_channel", initOptions.defaultChannel],
     ["client_default_channel_password", initOptions.defaultChannelPasswordHash],
     ["client_server_password", initOptions.serverPasswordHash],
     ["client_meta_data", ""],
-    [
-      "client_version_sign",
-      "DX5NIYLvfJEUjuIbCidnoeozxIDRRkpq3I9vVMBmE9L2qnekOoBzSenkzsg2lC9CMv8K5hkEzhr2TYUYSwUXCg==",
-    ],
+    ["client_version_sign", initOptions.version.sign],
     ["client_key_offset", String(client.crypt.identity.offset)],
     ["client_nickname_phonetic", ""],
     ["client_default_token", ""],

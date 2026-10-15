@@ -23,6 +23,7 @@
   "files": [
     "dist/core",
     "dist/client",
+    "dist/versions",
     "src",
     "!src/**/*.test.ts",
     "!src/client/testing",
@@ -33,6 +34,7 @@
   "exports": {
     ".": "./src/core/index.ts",
     "./client": "./src/client/index.ts",
+    "./versions": "./src/versions/index.ts",
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -45,6 +47,10 @@
       "./client": {
         "types": "./dist/client/index.d.ts",
         "default": "./dist/client/index.js"
+      },
+      "./versions": {
+        "types": "./dist/versions/index.d.ts",
+        "default": "./dist/versions/index.js"
       },
       "./package.json": "./package.json"
     },

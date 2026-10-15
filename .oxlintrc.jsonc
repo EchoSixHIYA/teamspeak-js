@@ -108,6 +108,15 @@
         "no-restricted-imports": [
           "error",
           {
+            // The one thing versions takes from the package is the type its
+            // entries have; a type import is erased, so it loads nothing.
+            "paths": [
+              {
+                "name": "@honeybbq/teamspeak",
+                "allowImportNames": ["ClientVersion"],
+                "message": "versions imports only the ClientVersion type from the core.",
+              },
+            ],
             "patterns": [
               {
                 "group": [
@@ -117,8 +126,9 @@
                   "**/client/**",
                   "**/query",
                   "**/query/**",
+                  "@honeybbq/teamspeak/*",
                 ],
-                "message": "versions is standalone and imports nothing from core, client or query.",
+                "message": "versions imports only the ClientVersion type from \"@honeybbq/teamspeak\", nothing from core, client or query.",
               },
             ],
           },

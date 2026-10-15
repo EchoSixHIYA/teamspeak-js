@@ -91,6 +91,31 @@ jobs:
       # land without showing up in the commit that makes it. To accept a
       # deliberate change: pnpm api:report
       - run: pnpm api:check
+      # A client version that was exported can be in use: a pull request may
+      # add entries, never remove one.
+      - name: Check no client version was removed
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --depth=1 origin main
+          node --input-type=module -e '
+            import { execFileSync } from "node:child_process";
+            import { readFileSync } from "node:fs";
+            const file = "src/versions/index.ts";
+            const names = (text) => new Set([...text.matchAll(/^export const (\w+)/gm)].map((m) => m[1]));
+            let before;
+            try {
+              before = execFileSync("git", ["show", `origin/main:${file}`], { encoding: "utf8" });
+            } catch {
+              console.log(`${file} is not on main yet`);
+              process.exit(0);
+            }
+            const after = names(readFileSync(file, "utf8"));
+            const removed = [...names(before)].filter((n) => !after.has(n));
+            if (removed.length > 0) {
+              console.error(`removed from ${file}: ${removed.join(", ")}`);
+              process.exit(1);
+            }
+          '
       - name: Check the packed package
         run: |
           mkdir -p "$RUNNER_TEMP/packs"

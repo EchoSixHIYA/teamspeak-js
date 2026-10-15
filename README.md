@@ -387,6 +387,28 @@ Connection auth options:
 - `defaultChannel`: default channel name requested during `clientinit`
 - `defaultChannelPassword`: plain-text password for `defaultChannel`; sent as the TeamSpeak protocol hash
 
+### Client version
+
+By default `clientinit` sends a recent Windows version. The `version` option
+sends another, and `@honeybbq/teamspeak/versions` has one export for each
+version that is known to work, named `<Platform>_<version>_<build>`:
+
+```typescript
+import { Client } from "@honeybbq/teamspeak/client";
+import { Windows_3_6_2_1695203293 } from "@honeybbq/teamspeak/versions";
+
+const client = new Client(identity, "ts.example.com", "Bot", {
+  version: Windows_3_6_2_1695203293,
+});
+```
+
+A `ClientVersion` is a platform, a version string and a signature, and only
+the ones in that entry carry a signature a server accepts. A server refuses a
+build below its configured minimum, so an old version fails to connect on a
+server that has raised it. `new Client` throws when a field is empty or the
+signature is not the base64 of 64 bytes. Importing `@honeybbq/teamspeak/client`
+does not load the table; only the entry you import it from does.
+
 ### Tracing
 
 `trace` takes hooks that are called at each milestone of the client's life, for timing, metrics, logs or a progress display. For each connection attempt, the one `connect()` starts and each one the reconnect loop makes, the milestones come in this order: `resolveStart`, `resolveDone`, `connectStart`, `connectDone`, `handshakeDone`, `sessionStart`, `welcomeDone`. An attempt that never gets a session ends with `attemptFailed` instead, which says in which phase (`"open"`, `"handshake"` or `"join"`) and why. When a session ends, `sessionEnd` is called with the cause (`undefined` after `disconnect()`), preceded on a `disconnect()` by `disconnectStart` and `disconnectDone`, which says whether the server acknowledged the goodbye. `reconnectScheduled` fires when the reconnect loop is about to wait for its next attempt, and `reconnectStopped` when it ends without a session. Every attempt ends with exactly one of `sessionStart` and `attemptFailed`, and every session with exactly one `sessionEnd`.
@@ -520,11 +542,12 @@ with the same semantics, apart from what the languages make differ:
 
 ## Entry points
 
-| Import from                  | What it is                                                                                                        |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `@honeybbq/teamspeak`        | What every TeamSpeak connection shares: the command language, ids, errors, the typed commands and the event types |
-| `@honeybbq/teamspeak/client` | The voice client, identities, file transfers, diagnostics and reconnection                                        |
-| `@honeybbq/teamspeak/query`  | A ServerQuery client running the same typed commands; coming in a 1.x release                                     |
+| Import from                    | What it is                                                                                                        |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `@honeybbq/teamspeak`          | What every TeamSpeak connection shares: the command language, ids, errors, the typed commands and the event types |
+| `@honeybbq/teamspeak/client`   | The voice client, identities, file transfers, diagnostics and reconnection                                        |
+| `@honeybbq/teamspeak/versions` | Client versions a server accepts, for the client's `version` option; data only, one export each                   |
+| `@honeybbq/teamspeak/query`    | A ServerQuery client running the same typed commands; coming in a 1.x release                                     |
 
 Each entry exports only its own symbols. The client entry does not re-export
 the core, so a program imports the `Client` from `@honeybbq/teamspeak/client`

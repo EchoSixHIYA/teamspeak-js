@@ -39,6 +39,7 @@ import { sendPrivateMessage, whoAmI } from "@honeybbq/teamspeak";
 import { ErrorCode, getServerInfo, listServerGroups } from "@honeybbq/teamspeak";
 import { asChannelID, asClientDBID, asClientID, asUID } from "@honeybbq/teamspeak";
 import type { ClientEnterEvent } from "@honeybbq/teamspeak";
+import { Windows_3_6_3_1701166057 } from "../versions/index.js";
 
 const ADDR = process.env["TEAMSPEAK_ADDR"];
 const SERVER_PASSWORD = process.env["TEAMSPEAK_SERVER_PASSWORD"] ?? "";
@@ -515,6 +516,22 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     console.log("clientinfo keys:", Object.keys(info).sort().join(", "));
     expect(info["client_nickname"]).toBeDefined();
   }, 15_000);
+
+  it("connects as a version from the table, and the server reports it", async () => {
+    const peer = new Client(generateIdentitySync(8), ADDR!, "ts-js-version", {
+      serverPassword: SERVER_PASSWORD,
+      defaultChannel: DEFAULT_CHANNEL,
+      defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
+      version: Windows_3_6_3_1701166057,
+    });
+    peers.set("ts-js-version", peer);
+    await connectWithRetries(peer);
+
+    const info = await getClientInfo(peer, peer.clientID);
+
+    expect(info["client_version"]).toBe(Windows_3_6_3_1701166057.version);
+    expect(info["client_platform"]).toBe(Windows_3_6_3_1701166057.platform);
+  }, 30_000);
 
   it("clientMove — joins a password-protected channel", async () => {
     // Opt-in: needs a channel whose password the bot does not have permission
