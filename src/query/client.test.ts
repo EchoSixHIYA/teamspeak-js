@@ -175,7 +175,7 @@ describe("QueryClient options", () => {
     expect(
       () =>
         new QueryClient({
-          transport: { kind: "ssh", host: "h", username: "u", password: "p" },
+          transport: { kind: "ssh", host: "h", username: "u", password: "p", hostKey: () => {} },
           login: { name: "u", password: "p" },
         }),
     ).toThrow(TypeError);

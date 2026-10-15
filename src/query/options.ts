@@ -1,7 +1,8 @@
 import type { CommandMiddleware, Logger, ReconnectOptions, ServerID } from "@honeybbq/teamspeak";
 import type { QueryTransport } from "./transport.js";
 import type { TcpConnector } from "./tcp.js";
-import type { SshConnection } from "./ssh.js";
+import { hostKeyPolicy } from "./ssh.js";
+import type { SshConnection, SshHostKeyVerifier } from "./ssh.js";
 
 /**
  * The connection a `QueryClient` talks over, as a description rather than an
@@ -37,6 +38,22 @@ export type QueryTransportOptions =
       readonly username: string;
       /** The query login's password. */
       readonly password: string;
+      /**
+       * Your own check of the server's host key, which throws to refuse it.
+       * See {@link SshOptions.hostKey}. Exactly one of this, `knownHosts` and
+       * `insecureIgnoreHostKey` is required, unless `connection` is given.
+       */
+      readonly hostKey?: SshHostKeyVerifier | undefined;
+      /**
+       * A `known_hosts` file to check the server's host key against. See
+       * {@link SshOptions.knownHosts}.
+       */
+      readonly knownHosts?: string | undefined;
+      /**
+       * Accept any host key, which gives up the protection the key is for. See
+       * {@link SshOptions.insecureIgnoreHostKey}.
+       */
+      readonly insecureIgnoreHostKey?: true | undefined;
       /**
        * The SSH client to use, or a factory for one; `ssh2` by default. See
        * {@link SshOptions.connection}.
@@ -170,6 +187,9 @@ export type ResolvedTransport =
       readonly port: number;
       readonly username: string;
       readonly password: string;
+      readonly hostKey: SshHostKeyVerifier | undefined;
+      readonly knownHosts: string | undefined;
+      readonly insecureIgnoreHostKey: true | undefined;
       readonly connection: SshConnection | undefined;
     }
   | {
@@ -251,13 +271,23 @@ function transportOptions(transport: unknown): ResolvedTransport {
       ) {
         throw new TypeError("transport.connection is an SSH client or a factory for one");
       }
+      const trust = {
+        hostKey: options["hostKey"] as SshHostKeyVerifier | undefined,
+        knownHosts: options["knownHosts"] as string | undefined,
+        insecureIgnoreHostKey: options["insecureIgnoreHostKey"] as true | undefined,
+        connection: connection as SshConnection | undefined,
+      };
+      // Asked here as well as when connecting: a client that could never
+      // connect, for want of a decision about the host key, is the caller's
+      // mistake and is reported when the client is made.
+      hostKeyPolicy(trust);
       return {
         kind: "ssh",
         host,
         port: raw < 0 ? 10022 : raw,
         username: nonEmpty(options["username"], "transport.username"),
         password: nonEmpty(options["password"], "transport.password"),
-        connection: connection as SshConnection | undefined,
+        ...trust,
       };
     }
     case "web": {

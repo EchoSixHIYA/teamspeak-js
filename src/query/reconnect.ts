@@ -1,5 +1,5 @@
 import { AlreadyConnectedError, ErrorCode, ServerError } from "@honeybbq/teamspeak";
-import { MissingDependencyError, QueryAuthError } from "./errors.js";
+import { MissingDependencyError, QueryAuthError, SshHostKeyError } from "./errors.js";
 
 /**
  * Server errors where retrying cannot help.
@@ -39,7 +39,8 @@ const TRANSIENT_SERVER_ERRORS: ReadonlySet<number> = new Set([ErrorCode.ClientIs
  * password. ServerQuery has neither a session to be kicked from nor a
  * handshake to fail, so the rule is about the commands `connect()` runs: a
  * refused `login` or `use` is not retried, nor is an ssh account the server
- * will not authenticate, nor a missing `ssh2`. Everything else — a refused
+ * will not authenticate, nor a host key that was not accepted, nor a missing
+ * `ssh2`. Everything else — a refused
  * TCP connection, a dropped one, an HTTP failure, a server that stopped
  * answering — is.
  *
@@ -51,6 +52,9 @@ export function defaultShouldRetry(error: Error | undefined): boolean {
   // An account the server refused, or a transport that is on the wrong side
   // of a firewall: both stay refused.
   if (error instanceof QueryAuthError) return false;
+  // A key that was refused stays refused: the file or the caller's check says
+  // the same thing next time, and a changed key is not one to keep knocking on.
+  if (error instanceof SshHostKeyError) return false;
   if (error instanceof MissingDependencyError) return false;
   if (error instanceof ServerError) {
     return !PERMANENT_SERVER_ERRORS.has(error.code);

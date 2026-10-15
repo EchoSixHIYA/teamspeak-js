@@ -137,6 +137,9 @@ export type QueryTransportOptions = {
     readonly port?: number | undefined;
     readonly username: string;
     readonly password: string;
+    readonly hostKey?: SshHostKeyVerifier | undefined;
+    readonly knownHosts?: string | undefined;
+    readonly insecureIgnoreHostKey?: true | undefined;
     readonly connection?: SshConnection | undefined;
 } | {
     readonly kind: "web";
@@ -162,6 +165,7 @@ export interface SshClient {
         username: string;
         password: string;
         readyTimeout: number;
+        hostVerifier: (key: Uint8Array) => boolean;
     }): void;
     end(): void;
     off(event: "error", listener: (error: Error) => void): unknown;
@@ -175,9 +179,33 @@ export interface SshClient {
 export type SshConnection = SshClient | (() => Promise<SshClient>);
 
 // @public
+export interface SshHostKey {
+    readonly fingerprint: string;
+    readonly host: string;
+    readonly key: Uint8Array;
+    readonly keyType: string;
+    readonly port: number;
+}
+
+// @public
+export class SshHostKeyError extends TeamspeakError {
+    constructor(host: string, port: number, message: string, options?: ErrorOptions);
+    readonly host: string;
+    // (undocumented)
+    static readonly kind: string;
+    readonly port: number;
+}
+
+// @public
+export type SshHostKeyVerifier = (key: SshHostKey) => void;
+
+// @public
 export interface SshOptions {
     readonly connection?: SshConnection | undefined;
     readonly host: string;
+    readonly hostKey?: SshHostKeyVerifier | undefined;
+    readonly insecureIgnoreHostKey?: true | undefined;
+    readonly knownHosts?: string | undefined;
     readonly password: string;
     readonly port?: number | undefined;
     readonly signal?: AbortSignal | undefined;

@@ -8,9 +8,9 @@ It runs the same typed commands the core already exports — `listChannels`,
 `createChannel`, `moveClient` and the rest — over a ServerQuery connection
 instead of a voice one, plus the commands only an administrator has. The
 transport is one of three: raw TCP (`{ kind: "tcp", host }`, the default port
-10011, TeamSpeak 3 only), SSH (`{ kind: "ssh", host, username, password }`), or
-TeamSpeak 6's WebQuery (`{ kind: "web", url, apiKey }`). `custom` takes an
-opener of your own.
+10011, TeamSpeak 3 only), SSH (`{ kind: "ssh", host, username, password,
+knownHosts }`), or TeamSpeak 6's WebQuery (`{ kind: "web", url, apiKey }`).
+`custom` takes an opener of your own.
 
 ```typescript
 import { QueryClient } from "@honeybbq/teamspeak/query";
@@ -38,6 +38,15 @@ server-side, where the voice protocol wants `base64(sha1(password))`. The
 client does that conversion for you, so a password moves between the two
 unchanged.
 
+SSH checks the server's host key before it sends the login, and has no default
+for how, because the login is normally `serveradmin`'s and a client that accepts
+any key hands it to whatever answers the port. Give exactly one of `knownHosts`
+(the path of an OpenSSH `known_hosts` file, with plain, `[host]:port` and hashed
+entries and `@revoked` honoured), `hostKey` (your own check, which throws to
+refuse a key) or `insecureIgnoreHostKey: true`; with none of them the client
+refuses to be built, naming all three. A key that is refused fails the
+connection with an `SshHostKeyError` before anything is sent.
+
 `ssh2` is an optional peer dependency. Raw TCP and WebQuery need nothing but
 Node, so it is only installed if you use the SSH transport; without it that
 transport throws a `MissingDependencyError` naming the package, and the other
@@ -45,8 +54,8 @@ two keep working.
 
 Reconnecting is opt-in, as for the voice client, and shares the same
 `ReconnectOptions`. Its default retries everything except what cannot change:
-a `login` or `use` the server refused, and an SSH account it will not
-authenticate.
+a `login` or `use` the server refused, an SSH account it will not
+authenticate, and an SSH host key that was refused.
 
 This entry is marked `@experimental`. It is new, and its API may change in a
 minor release: the options, the transport union and the event map are all

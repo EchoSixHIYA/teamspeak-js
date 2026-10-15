@@ -653,6 +653,9 @@ export class QueryClient implements CommandExecutor, AsyncDisposable {
           port: transport.port,
           username: transport.username,
           password: transport.password,
+          hostKey: transport.hostKey,
+          knownHosts: transport.knownHosts,
+          insecureIgnoreHostKey: transport.insecureIgnoreHostKey,
           connection: transport.connection,
           signal,
         });

@@ -1,0 +1,489 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient } from "./client.js";
+import { SshHostKeyError } from "./errors.js";
+import { defaultShouldRetry } from "./reconnect.js";
+import { connectSsh } from "./ssh.js";
+import type { SshClient, SshHostKey, SshOptions } from "./ssh.js";
+
+/**
+ * `ssh2` stands in for itself, so that what `connectSsh` hands to `connect` can
+ * be read and ssh2's own answer to it played back. What ssh2 really does with
+ * that answer is the handshake test's to show, over a real connection.
+ */
+const fake = vi.hoisted(() => {
+  type Listener = (argument?: unknown) => void;
+
+  class FakeClient {
+    static instances: FakeClient[] = [];
+    config: Parameters<SshClient["connect"]>[0] | undefined;
+    ended = false;
+    #once = new Map<string, Listener[]>();
+
+    constructor() {
+      FakeClient.instances.push(this);
+    }
+    connect(config: Parameters<SshClient["connect"]>[0]): void {
+      this.config = config;
+    }
+    once(event: string, listener: Listener): this {
+      this.#once.set(event, [...(this.#once.get(event) ?? []), listener]);
+      return this;
+    }
+    on(): this {
+      return this;
+    }
+    off(): this {
+      return this;
+    }
+    end(): void {
+      this.ended = true;
+    }
+    /** ssh2 reporting `event`, as it does for a refused key and for a refused password. */
+    emit(event: string, argument?: unknown): void {
+      for (const listener of this.#once.get(event) ?? []) listener(argument);
+      this.#once.delete(event);
+    }
+  }
+  return { FakeClient };
+});
+
+vi.mock("ssh2", () => ({ Client: fake.FakeClient }));
+
+const KEY_A = "AAAAC3NzaC1lZDI1NTE5AAAAIG8wzdJYXD226kBpXj8Ay+FFg9a18j6WglEOCRGS/IUt";
+const KEY_B = "AAAAC3NzaC1lZDI1NTE5AAAAIGklKXDhBbE2nuXoAI+ZsvE526I+VwGs/1gF6Pk7Vx4y";
+const FINGERPRINT_A = "SHA256:6cFaaAKd236Vs7mhSLRU8vzg0ea64h7nxKmkZgBce9k";
+
+const PASSWORD = "hunter2-the-query-password";
+const blob = (encoded: string): Uint8Array => new Uint8Array(Buffer.from(encoded, "base64"));
+
+const files = mkdtempSync(join(tmpdir(), "query-ssh-"));
+afterAll(() => rmSync(files, { recursive: true, force: true }));
+
+function knownHostsFile(name: string, ...lines: string[]): string {
+  const path = join(files, name);
+  writeFileSync(path, `${lines.join("\n")}\n`);
+  return path;
+}
+
+beforeEach(() => {
+  fake.FakeClient.instances.length = 0;
+});
+
+/** Start a connection and wait until ssh2 has been told to connect; its result is read later. */
+async function dial(options: Partial<SshOptions>) {
+  // A test may dial twice, and the second must not be taken for the first.
+  const before = fake.FakeClient.instances.length;
+  const abort = new AbortController();
+  const outcome = connectSsh({
+    host: "ts.example.com",
+    username: "serveradmin",
+    password: PASSWORD,
+    signal: abort.signal,
+    ...options,
+  }).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  await vi.waitFor(() => {
+    expect(fake.FakeClient.instances.length).toBeGreaterThan(before);
+    expect(fake.FakeClient.instances.at(-1)?.config).toBeDefined();
+  });
+  const client = fake.FakeClient.instances.at(-1)!;
+  return {
+    client,
+    /** What ssh2 asked the verifier, and the answer it got back. */
+    ask: (encoded: string): boolean => client.config!.hostVerifier(blob(encoded)),
+    /** ssh2 reporting that it ended the connection over the key, as it does after a `false`. */
+    denied: (): void =>
+      client.emit(
+        "error",
+        Object.assign(new Error("Host denied (verification failed)"), { level: "handshake" }),
+      ),
+    outcome,
+    abort,
+  };
+}
+
+describe("connectSsh with no decision about the host key", () => {
+  it("fails closed, naming all three options and why, before anything is opened", async () => {
+    const attempt = connectSsh({ host: "ts.example.com", username: "u", password: PASSWORD });
+    await expect(attempt).rejects.toThrow("hostKey");
+    await expect(attempt).rejects.toThrow("knownHosts");
+    await expect(attempt).rejects.toThrow("insecureIgnoreHostKey");
+    await expect(attempt).rejects.toThrow("credential");
+    await expect(attempt).rejects.not.toBeInstanceOf(TypeError);
+    expect(fake.FakeClient.instances).toHaveLength(0);
+  });
+
+  it("does not put the password in what it says", async () => {
+    const error = await connectSsh({ host: "h", username: "u", password: PASSWORD }).catch(
+      (failure: unknown) => failure,
+    );
+    expect((error as Error).message).not.toContain(PASSWORD);
+  });
+});
+
+describe("connectSsh with more than one", () => {
+  const hostKey = () => {};
+  const knownHosts = "/some/known_hosts";
+
+  it.each([
+    ["hostKey and knownHosts", { hostKey, knownHosts }],
+    ["hostKey and insecureIgnoreHostKey", { hostKey, insecureIgnoreHostKey: true as const }],
+    ["knownHosts and insecureIgnoreHostKey", { knownHosts, insecureIgnoreHostKey: true as const }],
+    ["all three", { hostKey, knownHosts, insecureIgnoreHostKey: true as const }],
+  ])("is a TypeError for %s, and opens nothing", async (_name, choice) => {
+    const attempt = connectSsh({ host: "h", username: "u", password: PASSWORD, ...choice });
+    await expect(attempt).rejects.toBeInstanceOf(TypeError);
+    await expect(attempt).rejects.toThrow("exactly one of");
+    expect(fake.FakeClient.instances).toHaveLength(0);
+  });
+
+  it("is a TypeError for a value that is not one of them", async () => {
+    const bad = (choice: object) =>
+      connectSsh({ host: "h", username: "u", password: PASSWORD, ...choice });
+    await expect(bad({ hostKey: "no" })).rejects.toBeInstanceOf(TypeError);
+    await expect(bad({ knownHosts: "" })).rejects.toBeInstanceOf(TypeError);
+    // Not a switch: false is not "off", it is not a decision at all.
+    await expect(bad({ insecureIgnoreHostKey: false })).rejects.toThrow("not a switch");
+    expect(fake.FakeClient.instances).toHaveLength(0);
+  });
+});
+
+describe("the check ssh2 is given", () => {
+  it("hands the caller's check the key, as this package describes it, and accepts when it returns", async () => {
+    const seen: SshHostKey[] = [];
+    const { ask, abort, outcome } = await dial({
+      port: 2222,
+      hostKey: (key) => void seen.push(key),
+    });
+
+    expect(ask(KEY_A)).toBe(true);
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      host: "ts.example.com",
+      port: 2222,
+      keyType: "ssh-ed25519",
+      fingerprint: FINGERPRINT_A,
+    });
+    expect(Buffer.from(seen[0]!.key).toString("base64")).toBe(KEY_A);
+    abort.abort(new Error("done"));
+    await outcome;
+  });
+
+  it("hands over a copy of the key, so a check cannot change what ssh2 holds", async () => {
+    const original = blob(KEY_A);
+    const { client, abort, outcome } = await dial({
+      hostKey: (key) => {
+        key.key.fill(0);
+      },
+    });
+    client.config!.hostVerifier(original);
+    expect(Buffer.from(original).toString("base64")).toBe(KEY_A);
+    abort.abort(new Error("done"));
+    await outcome;
+  });
+
+  it("uses the port it was given, or 10022", async () => {
+    const seen: number[] = [];
+    const { ask, abort, outcome } = await dial({ hostKey: (key) => void seen.push(key.port) });
+    ask(KEY_A);
+    expect(seen).toEqual([10022]);
+    abort.abort(new Error("done"));
+    await outcome;
+  });
+
+  it("refuses when the check throws, and fails the connection with the reason", async () => {
+    const reason = new Error("not the key in the inventory");
+    const { ask, denied, outcome } = await dial({
+      hostKey: () => {
+        throw reason;
+      },
+    });
+
+    expect(ask(KEY_A)).toBe(false);
+    denied();
+
+    const error = (await outcome) as SshHostKeyError;
+    expect(error).toBeInstanceOf(SshHostKeyError);
+    expect(error.cause).toBe(reason);
+    expect(error).toMatchObject({ host: "ts.example.com", port: 10022 });
+    expect(error.message).toContain("not the key in the inventory");
+    expect(error.message).toContain("no login was sent");
+    expect(error.message).not.toContain(PASSWORD);
+  });
+
+  it("refuses when the check throws something that is not an error", async () => {
+    const { ask, denied, outcome } = await dial({
+      hostKey: () => {
+        const notAnError: unknown = "no";
+        throw notAnError;
+      },
+    });
+    expect(ask(KEY_A)).toBe(false);
+    denied();
+    const error = (await outcome) as SshHostKeyError;
+    expect(error).toBeInstanceOf(SshHostKeyError);
+    expect((error.cause as Error).message).toBe("no");
+  });
+
+  it.each([
+    ["false, ssh2's own way of saying no", () => false],
+    ["true, ssh2's own way of saying yes", () => true],
+    ["a value of any kind", () => "ok"],
+  ])("refuses a check that returns %s, rather than guess which was meant", async (_name, check) => {
+    const { ask, denied, outcome } = await dial({ hostKey: check });
+    expect(ask(KEY_A)).toBe(false);
+    denied();
+    const error = (await outcome) as SshHostKeyError;
+    expect(error).toBeInstanceOf(SshHostKeyError);
+    expect(error.message).toContain("return nothing to accept the key and throw to refuse it");
+  });
+
+  it("refuses an async check, whose rejection would come too late to stop anything", async () => {
+    // TypeScript lets this through: an async function is assignable to a
+    // callback that returns void, and a refusal it throws would be lost.
+    const asyncCheck: unknown = async () => {
+      throw new Error("rejected after the handshake went on");
+    };
+    const { ask, denied, outcome } = await dial({ hostKey: asyncCheck as () => void });
+    expect(ask(KEY_A)).toBe(false);
+    denied();
+    expect(await outcome).toBeInstanceOf(SshHostKeyError);
+    // The rejection nobody awaits must not surface as an unhandled one, which
+    // would fail this run; let it settle first.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+
+  it("refuses a key it cannot read, without asking the check", async () => {
+    const asked = vi.fn<() => void>();
+    const { client, denied, outcome } = await dial({ hostKey: asked });
+    expect(client.config!.hostVerifier(new Uint8Array([1, 2]))).toBe(false);
+    denied();
+    expect(asked).not.toHaveBeenCalled();
+    expect(await outcome).toBeInstanceOf(SshHostKeyError);
+  });
+
+  it("is told apart from a refused password, which stays an authentication failure", async () => {
+    const { ask, client, outcome } = await dial({ hostKey: () => {} });
+    expect(ask(KEY_A)).toBe(true);
+    client.emit(
+      "error",
+      Object.assign(new Error("All configured authentication methods failed"), {
+        level: "client-authentication",
+      }),
+    );
+    const error = (await outcome) as Error;
+    expect(error).not.toBeInstanceOf(SshHostKeyError);
+    expect(error.constructor.name).toBe("QueryAuthError");
+  });
+
+  it("always passes ssh2 a verifier, so no client falls back to its own default", async () => {
+    const { client, abort, outcome } = await dial({ insecureIgnoreHostKey: true });
+    expect(typeof client.config!.hostVerifier).toBe("function");
+    abort.abort(new Error("done"));
+    await outcome;
+  });
+});
+
+describe("insecureIgnoreHostKey", () => {
+  it("accepts any key", async () => {
+    const { ask, abort, outcome } = await dial({ insecureIgnoreHostKey: true });
+    expect(ask(KEY_A)).toBe(true);
+    expect(ask(KEY_B)).toBe(true);
+    abort.abort(new Error("done"));
+    await outcome;
+  });
+});
+
+describe("knownHosts", () => {
+  it("accepts the key the file records for the host, and for [host]:port", async () => {
+    const path = knownHostsFile(
+      "plain",
+      `[ts.example.com]:10022 ssh-ed25519 ${KEY_A}`,
+      `[other.example.com]:2222 ssh-ed25519 ${KEY_B}`,
+    );
+    const first = await dial({ knownHosts: path });
+    expect(first.ask(KEY_A)).toBe(true);
+    first.abort.abort(new Error("done"));
+    await first.outcome;
+
+    const second = await dial({ host: "other.example.com", port: 2222, knownHosts: path });
+    expect(second.ask(KEY_B)).toBe(true);
+    second.abort.abort(new Error("done"));
+    await second.outcome;
+  });
+
+  it("refuses a key that differs from the recorded one, naming both", async () => {
+    const path = knownHostsFile("changed", `[ts.example.com]:10022 ssh-ed25519 ${KEY_B}`);
+    const { ask, denied, outcome } = await dial({ knownHosts: path });
+    expect(ask(KEY_A)).toBe(false);
+    denied();
+    const error = (await outcome) as SshHostKeyError;
+    expect(error).toBeInstanceOf(SshHostKeyError);
+    expect((error.cause as Error).message).toContain(FINGERPRINT_A);
+    expect((error.cause as Error).message).toContain("records");
+  });
+
+  it("refuses a host the file does not mention", async () => {
+    const path = knownHostsFile("elsewhere", `elsewhere.example.com ssh-ed25519 ${KEY_A}`);
+    const { ask, denied, outcome } = await dial({ knownHosts: path });
+    expect(ask(KEY_A)).toBe(false);
+    denied();
+    const error = (await outcome) as SshHostKeyError;
+    expect((error.cause as Error).message).toContain("[ts.example.com]:10022 is not in");
+  });
+
+  it("does not take an entry for port 22 as the one for the query port", async () => {
+    // `ssh-keyscan` without -p records the SSH server on 22, which is another
+    // server than the one on 10022 and may hold another key.
+    const path = knownHostsFile("port-22", `ts.example.com ssh-ed25519 ${KEY_A}`);
+    const { ask, denied, outcome } = await dial({ knownHosts: path });
+    expect(ask(KEY_A)).toBe(false);
+    denied();
+    const error = (await outcome) as SshHostKeyError;
+    expect((error.cause as Error).message).toContain("[ts.example.com]:10022 is not in");
+  });
+
+  it("refuses a revoked key", async () => {
+    const path = knownHostsFile(
+      "revoked",
+      `[ts.example.com]:10022 ssh-ed25519 ${KEY_A}`,
+      `@revoked * ssh-ed25519 ${KEY_A}`,
+    );
+    const { ask, denied, outcome } = await dial({ knownHosts: path });
+    expect(ask(KEY_A)).toBe(false);
+    denied();
+    expect(((await outcome) as SshHostKeyError).cause).toMatchObject({
+      message: expect.stringContaining("revoked") as unknown,
+    });
+  });
+
+  it("reads the file again for each attempt, so a reconnection sees what it says then", async () => {
+    const path = knownHostsFile("rotated", `[ts.example.com]:10022 ssh-ed25519 ${KEY_A}`);
+    const before = await dial({ knownHosts: path });
+    expect(before.ask(KEY_A)).toBe(true);
+    before.abort.abort(new Error("done"));
+    await before.outcome;
+
+    writeFileSync(path, `[ts.example.com]:10022 ssh-ed25519 ${KEY_B}\n`);
+    const after = await dial({ knownHosts: path });
+    expect(after.ask(KEY_A)).toBe(false);
+    expect(after.ask(KEY_B)).toBe(true);
+    after.abort.abort(new Error("done"));
+    await after.outcome;
+  });
+
+  it("fails the connection, opening nothing, when the file cannot be read", async () => {
+    const attempt = connectSsh({
+      host: "ts.example.com",
+      username: "u",
+      password: PASSWORD,
+      knownHosts: join(files, "does-not-exist"),
+    });
+    await expect(attempt).rejects.toBeInstanceOf(SshHostKeyError);
+    await expect(attempt).rejects.toThrow("cannot be checked");
+    await expect(attempt).rejects.toThrow("does-not-exist");
+    expect(fake.FakeClient.instances).toHaveLength(0);
+  });
+
+  it("fails the connection, opening nothing, when a line cannot be read", async () => {
+    const path = knownHostsFile("broken", "ts.example.com ssh-ed25519 not-base64!!");
+    const attempt = connectSsh({
+      host: "ts.example.com",
+      username: "u",
+      password: PASSWORD,
+      knownHosts: path,
+    });
+    await expect(attempt).rejects.toBeInstanceOf(SshHostKeyError);
+    await expect(attempt).rejects.toThrow(`${path}:1`);
+    expect(fake.FakeClient.instances).toHaveLength(0);
+  });
+});
+
+describe("a connection the caller supplies", () => {
+  const connection = (): Promise<SshClient> => Promise.reject(new Error("not reached"));
+
+  it("takes no host key option, which nothing would read", async () => {
+    for (const choice of [
+      { hostKey: () => {} },
+      { knownHosts: "/some/known_hosts" },
+      { insecureIgnoreHostKey: true as const },
+    ]) {
+      await expect(
+        connectSsh({ host: "h", username: "u", password: PASSWORD, connection, ...choice }),
+      ).rejects.toThrow("has no effect with connection");
+    }
+  });
+});
+
+describe("QueryClient", () => {
+  const transport = { kind: "ssh" as const, host: "h", username: "u", password: PASSWORD };
+
+  it("refuses to be built with no decision, naming all three options", () => {
+    expect(() => new QueryClient({ transport })).toThrow("hostKey");
+    expect(() => new QueryClient({ transport })).toThrow("knownHosts");
+    expect(() => new QueryClient({ transport })).toThrow("insecureIgnoreHostKey");
+    expect(() => new QueryClient({ transport })).not.toThrow(TypeError);
+  });
+
+  it("refuses two of them with a TypeError", () => {
+    expect(
+      () => new QueryClient({ transport: { ...transport, hostKey: () => {}, knownHosts: "/k" } }),
+    ).toThrow(TypeError);
+  });
+
+  it("builds with exactly one", () => {
+    expect(() => new QueryClient({ transport: { ...transport, hostKey: () => {} } })).not.toThrow();
+    expect(() => new QueryClient({ transport: { ...transport, knownHosts: "/k" } })).not.toThrow();
+    expect(
+      () => new QueryClient({ transport: { ...transport, insecureIgnoreHostKey: true } }),
+    ).not.toThrow();
+  });
+
+  it("builds with a connection and none of them", () => {
+    expect(
+      () =>
+        new QueryClient({
+          transport: { ...transport, connection: () => Promise.reject(new Error("x")) },
+        }),
+    ).not.toThrow();
+  });
+
+  it("hands the choice on to the connection it makes, and ends in a refusal when the key is refused", async () => {
+    const client = new QueryClient({
+      transport: {
+        ...transport,
+        hostKey: () => {
+          throw new Error("unexpected key");
+        },
+      },
+    });
+    const connecting = client.connect().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    await vi.waitFor(() => expect(fake.FakeClient.instances.at(-1)?.config).toBeDefined());
+    const ssh = fake.FakeClient.instances.at(-1)!;
+    expect(ssh.config!.hostVerifier(blob(KEY_A))).toBe(false);
+    ssh.emit(
+      "error",
+      Object.assign(new Error("Host denied (verification failed)"), { level: "handshake" }),
+    );
+
+    const error = await connecting;
+    expect(error).toBeInstanceOf(SshHostKeyError);
+    expect(defaultShouldRetry(error as Error)).toBe(false);
+    expect(client.status).toBe("disconnected");
+  });
+});
+
+describe("defaultShouldRetry", () => {
+  it("does not retry a host key that was refused: it stays refused", () => {
+    expect(defaultShouldRetry(new SshHostKeyError("h", 22, "no"))).toBe(false);
+  });
+});

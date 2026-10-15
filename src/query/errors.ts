@@ -34,6 +34,46 @@ export class MissingDependencyError extends TeamspeakError {
 }
 
 /**
+ * An SSH server's host key was not accepted, so nothing was sent to it: the
+ * caller's check refused it, or the `known_hosts` file it named does not know
+ * the host, records another key, revokes this one, or could not be read.
+ *
+ * The check runs before the login, so the query password has not left the
+ * process. What the check said is kept as this error's `cause`: an unknown host
+ * is told apart from a changed key there, and a changed key may be somebody
+ * else answering the port. Retrying cannot help, so the default reconnection
+ * policy does not.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export class SshHostKeyError extends TeamspeakError {
+  /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
+  static override readonly kind: string = "SshHostKeyError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "SshHostKeyError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
+
+  /** The host that was dialled. */
+  readonly host: string;
+  /** The port that was dialled. */
+  readonly port: number;
+
+  constructor(host: string, port: number, message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.host = host;
+    this.port = port;
+  }
+}
+
+/**
  * The server refused an SSH login: a wrong query login name or password, or an
  * account the server does not accept over SSH.
  *
