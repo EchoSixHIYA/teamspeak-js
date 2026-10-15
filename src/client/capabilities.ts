@@ -12,16 +12,9 @@
  * round trip.
  */
 
-import { asServerID, type IconID, type ServerID } from "@honeybbq/teamspeak";
+import { asServerID, type IconID, type ServerFamily, type ServerID } from "@honeybbq/teamspeak";
 import { parseIconID, parseUint64 } from "../core/internal.js";
 import { uidAlgorithmForVersion, type UIDAlgorithm } from "./crypto/identity.js";
-
-/**
- * The server generation a version string belongs to. May gain members in a
- * minor release, as server generations appear: a `switch` over it needs a
- * default case.
- */
-export type ServerFamily = "ts3" | "ts6" | "unknown";
 
 /** What a server said about itself in the handshake. */
 export interface ServerCapabilities {

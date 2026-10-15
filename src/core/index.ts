@@ -58,6 +58,7 @@ export {
   CommandTimeoutError,
   NotConnectedError,
   NoDataError,
+  AlreadyConnectedError,
 } from "./errors.js";
 export { ErrorCode } from "./errorcode.js";
 export { Reason } from "./reason.js";
@@ -83,9 +84,12 @@ export { NotificationName } from "./notification-name.js";
 export { PropertyName } from "./property-name.js";
 export type { Permission } from "./permission.js";
 
-export { noopLogger, consoleLogger } from "./types.js";
+export { noopLogger, consoleLogger, ClientStatus } from "./types.js";
 export type {
   ClientVersion,
+  Listener,
+  ServerFamily,
+  Unsubscribe,
   CommandMiddleware,
   FileDownloadInfo,
   FileUploadInfo,
@@ -102,7 +106,15 @@ export type {
   PokeEvent,
   VoiceDataEvent,
   NotificationEvent,
+  ConnectedEvent,
+  DisconnectedEvent,
+  ServerEventMap,
+  SessionEventMap,
 } from "./events.js";
+
+// Reconnection policy, whose retry decision each client supplies.
+export { backoffDelay, defaultBackoffPolicy } from "./reconnect.js";
+export type { BackoffPolicy, ReconnectOptions } from "./reconnect.js";
 
 // Typed commands, one module per area of the protocol.
 export * from "./api/channels.js";

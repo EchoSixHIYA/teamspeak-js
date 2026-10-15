@@ -3,7 +3,6 @@ import { afterEach, describe, it, expect } from "vitest";
 import { createSocket, type Socket } from "node:dgram";
 import {
   Client,
-  ClientStatus,
   RemovedError,
   defaultShouldRetry,
   generateIdentitySync,
@@ -14,6 +13,7 @@ import {
 import { PacketType, type Packet } from "./transport/packet.js";
 import { FakeSocket, completeCryptoInit, dummyPacket } from "./testing/fake-server.js";
 import {
+  ClientStatus,
   type KickedEvent,
   type Logger,
   NotConnectedError,

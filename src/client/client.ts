@@ -7,11 +7,8 @@ import {
   type ResolvedAddr,
   type EventMiddleware,
   type AddrResolver,
-  type Listener,
   type ServerEvent,
   type ServerEventName,
-  type Unsubscribe,
-  ClientStatus,
 } from "./types.js";
 import { ConnectPhase, type ClientTrace } from "./trace.js";
 import { callHook } from "./hooks.js";
@@ -27,13 +24,19 @@ import {
   type UID,
   asChannelID,
   asClientID,
+  type Listener,
   type Logger,
+  type ReconnectOptions,
+  type Unsubscribe,
+  AlreadyConnectedError,
+  backoffDelay,
+  ClientStatus,
   ErrorCode,
   Reason,
   TeamspeakError,
   noopLogger,
 } from "@honeybbq/teamspeak";
-import { AlreadyConnectedError, HandshakeError, RemovedError } from "./errors.js";
+import { HandshakeError, RemovedError } from "./errors.js";
 import { abortable, abortReason } from "./abort.js";
 import type { Identity } from "./crypto/index.js";
 import { Crypt } from "./crypto/index.js";
@@ -42,7 +45,7 @@ import { PacketHandler } from "./transport/handler.js";
 import { PacketType } from "./transport/packet.js";
 import type { Packet } from "./transport/packet.js";
 import { CommandTracker, appendReturnCode } from "./commands.js";
-import { encodeRequest, parseServerError } from "../core/internal.js";
+import { encodeRequest, parseServerError, resolveBackoffPolicy } from "../core/internal.js";
 import { uploadFileData, downloadFileData, type FileTransferOptions } from "./transfer.js";
 import { buildCommandChain, buildEventChain } from "./events.js";
 import { processInit1 } from "./handshake/crypt-handshake.js";
@@ -68,14 +71,7 @@ import type { SocketFactory, FileTransferSocketFactory } from "./types.js";
 import { unknownServerCapabilities, type ServerCapabilities } from "./capabilities.js";
 import { joinHostPort, parseConnectAddress, splitHostPort } from "./address.js";
 import { commandChannel, incomingChannel, type CommandTrace } from "./diagnostics.js";
-import {
-  backoffDelay,
-  defaultShouldRetry,
-  resolveBackoffPolicy,
-  type ReconnectOptions,
-} from "./reconnect.js";
-
-export { ClientStatus };
+import { defaultShouldRetry } from "./reconnect.js";
 
 /**
  * What clientinit sends about the connection, with the passwords already in
@@ -834,7 +830,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * listener's rejection is not caught, and surfaces as an unhandled
    * rejection.
    */
-  on<K extends keyof EventMap>(event: K, listener: Listener<K>): Unsubscribe {
+  on<K extends keyof EventMap>(event: K, listener: Listener<EventMap, K>): Unsubscribe {
     const subscription: Subscription = {
       listener: listener as (payload: unknown) => void,
       removed: false,
@@ -856,11 +852,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
   }
 
   /** Listen for the next occurrence of an event only. */
-  once<K extends keyof EventMap>(event: K, listener: Listener<K>): Unsubscribe {
+  once<K extends keyof EventMap>(event: K, listener: Listener<EventMap, K>): Unsubscribe {
     const unsubscribe = this.on(event, ((payload: EventMap[K]) => {
       unsubscribe();
       listener(payload);
-    }) as Listener<K>);
+    }) as Listener<EventMap, K>);
     return unsubscribe;
   }
 
@@ -919,7 +915,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         return;
       }
       buffered.push(payload);
-    }) as Listener<K>);
+    }) as Listener<EventMap, K>);
     // Ends after what is already buffered, which arrived before the disconnect.
     const stopOnDisconnect =
       event === "disconnected"

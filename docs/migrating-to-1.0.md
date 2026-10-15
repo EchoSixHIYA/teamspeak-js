@@ -6,22 +6,26 @@ the CHANGELOG; this guide is the path through them.
 In 1.0 the packages are one: `@honeybbq/teamspeak`, with two entry points.
 Install it, and import from the entry that holds what you need.
 
-| Entry                        | What it holds                                                                                                              |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `@honeybbq/teamspeak`        | The command language, branded ids, errors and `ErrorCode`, the typed commands such as `listChannels`, and the event types  |
-| `@honeybbq/teamspeak/client` | The voice `Client`, identities, file transfer data, diagnostics, reconnection, and the errors only the voice client throws |
+| Entry                        | What it holds                                                                                                                                                                            |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@honeybbq/teamspeak`        | The command language, branded ids, errors and `ErrorCode`, the typed commands such as `listChannels`, the event types, and what every client shares: `ClientStatus`, reconnection policy |
+| `@honeybbq/teamspeak/client` | The voice `Client`, identities, file transfer data, diagnostics, the retry policy, and the errors only the voice client throws                                                           |
 
 Both are ESM-only, as 0.x was; on Node 22.12 and later `require()` loads them
 too. Each entry exports only its own symbols. The code samples below name
 symbols without import lines: `Client`, `Identity`, `generateIdentity`,
-`parseIdentity`, `uidFromPublicKey`, `ClientStatus`, the voice client's errors
+`parseIdentity`, `uidFromPublicKey`, the voice client's errors
 (`HandshakeError`, `ConnectionTimeoutError`, `RemovedError`,
 `InvalidAddressError`, `InvalidIdentityError`, `FileTransferError`),
-`defaultShouldRetry`, `defaultBackoffPolicy`, `backoffDelay` and
-`unknownServerCapabilities` come from `@honeybbq/teamspeak/client`; everything
-else, the typed commands, ids, `ServerError`, `ErrorCode`, `NotConnectedError`,
-`NoDataError`, `CommandTimeoutError`, `CommandMiddleware`, the event types and
-`escape`, comes from `@honeybbq/teamspeak`.
+`defaultShouldRetry`, `EventMap` and `unknownServerCapabilities` come from
+`@honeybbq/teamspeak/client`; everything else, the typed commands, ids,
+`ServerError`, `ErrorCode`, `NotConnectedError`, `NoDataError`,
+`CommandTimeoutError`, `CommandMiddleware`, the event types and `escape`,
+comes from `@honeybbq/teamspeak`. That includes what every kind of client
+shares: `ClientStatus`, `Unsubscribe`, `Listener`, `ConnectedEvent`,
+`DisconnectedEvent`, `ServerEventMap`, `SessionEventMap`, `ServerFamily`,
+`AlreadyConnectedError`, `ReconnectOptions`, `BackoffPolicy`,
+`defaultBackoffPolicy` and `backoffDelay`.
 
 ## The package was renamed
 
@@ -29,11 +33,11 @@ else, the typed commands, ids, `ServerError`, `ErrorCode`, `NotConnectedError`,
 package, `@honeybbq/teamspeak`. The 0.x client re-exported the core; the new
 client entry does not, so an import splits in two:
 
-| You imported                                                                                                       | Import it from now on        |
-| ------------------------------------------------------------------------------------------------------------------ | ---------------------------- |
-| `Client`, `Identity`, `ClientStatus`, the client's errors, `commandChannel`, ... from `@honeybbq/teamspeak-client` | `@honeybbq/teamspeak/client` |
-| `listChannels`, `ErrorCode`, `TeamspeakError`, ids, events, ... from `@honeybbq/teamspeak-client`                  | `@honeybbq/teamspeak`        |
-| anything from `@honeybbq/teamspeak-core`                                                                           | `@honeybbq/teamspeak`        |
+| You imported                                                                                                                          | Import it from now on        |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `Client`, `Identity`, the client's errors, `commandChannel`, ... from `@honeybbq/teamspeak-client`                                    | `@honeybbq/teamspeak/client` |
+| `listChannels`, `ErrorCode`, `ClientStatus`, `ReconnectOptions`, `TeamspeakError`, ids, events, ... from `@honeybbq/teamspeak-client` | `@honeybbq/teamspeak`        |
+| anything from `@honeybbq/teamspeak-core`                                                                                              | `@honeybbq/teamspeak`        |
 
 ```ts
 // before
