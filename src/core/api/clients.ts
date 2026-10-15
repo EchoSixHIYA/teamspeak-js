@@ -287,7 +287,7 @@ const updateNames: WireNames<ClientUpdateOptions> = {
  * `clientupdate` addresses the calling client implicitly — there is no clid
  * parameter on the wire, which is why this takes no id.
  *
- * `update` is what to send; the command's `signal` and `timeout` go in
+ * `update` is what to send; the command's `signal` and `timeoutMs` go in
  * `options`, a separate last argument — set among the fields, they are not
  * read.
  */
@@ -319,7 +319,7 @@ const editNames: WireNames<ClientEditOptions> = {
  * Change another client's editable attributes. Only the fields you set are
  * sent.
  *
- * `edit` is what to send; the command's `signal` and `timeout` go in
+ * `edit` is what to send; the command's `signal` and `timeoutMs` go in
  * `options`, a separate last argument — set among the fields, they are not
  * read.
  */
@@ -507,7 +507,7 @@ export async function listClientDatabase(
  * The walk ends when the server answers a page past the last record with
  * error 1281, or with a page shorter than an earlier one; any other error is
  * thrown from the loop. Each page is a separate `clientdblist`, given the
- * options' signal and timeout, so records added or removed meanwhile can be
+ * options' signal and timeoutMs, so records added or removed meanwhile can be
  * skipped or seen twice.
  */
 export function iterateClientDatabase(
@@ -565,7 +565,7 @@ const databaseEditNames: WireNames<ClientDatabaseEditOptions> = {
 /**
  * Change a database record. Only the fields you set are sent.
  *
- * `edit` is what to send; the command's `signal` and `timeout` go in
+ * `edit` is what to send; the command's `signal` and `timeoutMs` go in
  * `options`, a separate last argument — set among the fields, they are not
  * read.
  */

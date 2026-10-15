@@ -274,7 +274,7 @@ export interface ClientOptions {
    * to a third party; without it a dot-less name is resolved like any host.
    * Ignored with a custom `resolver`.
    */
-  readonly resolveNicknames?: boolean | undefined;
+  readonly nicknameLookup?: boolean | undefined;
   /** Replaces the SRV and TSDNS resolution `connect()` performs. */
   readonly resolver?: AddrResolver | undefined;
   /**

@@ -264,7 +264,7 @@ describe("the command throttle", () => {
     for (let i = 0; i < 8; i++) await client.execNoWait("clientupdate");
 
     const started = Date.now();
-    await expect(client.exec("whoami", { timeout: 30 })).rejects.toBeInstanceOf(
+    await expect(client.exec("whoami", { timeoutMs: 30 })).rejects.toBeInstanceOf(
       CommandTimeoutError,
     );
     expect(Date.now() - started).toBeLessThan(200);

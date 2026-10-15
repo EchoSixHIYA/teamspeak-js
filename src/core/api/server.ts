@@ -585,7 +585,7 @@ export interface ServerGroupPermission {
 /**
  * Set a permission on a server group.
  *
- * `grant` is what to send; the command's `signal` and `timeout` go in
+ * `grant` is what to send; the command's `signal` and `timeoutMs` go in
  * `options`, a separate last argument — set among the fields, they are not
  * read.
  */

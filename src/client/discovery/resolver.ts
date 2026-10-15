@@ -28,20 +28,20 @@ export const MAX_DISCOVERY_RESPONSE: number = 8 * 1024;
 /** How the default resolver resolves. */
 export interface ResolverOptions {
   /** Look dot-less names up at named.myteamspeak.com; off by default. */
-  readonly resolveNicknames?: boolean | undefined;
+  readonly nicknameLookup?: boolean | undefined;
 }
 
 export class Resolver {
   readonly #cache = new Map<string, ResolvedAddr[]>();
-  readonly #resolveNicknames: boolean;
+  readonly #nicknameLookup: boolean;
 
   constructor(options: ResolverOptions = {}) {
-    this.#resolveNicknames = options.resolveNicknames ?? false;
+    this.#nicknameLookup = options.nicknameLookup ?? false;
   }
 
   /**
    * Resolve as the TeamSpeak application does: a server nickname (only with
-   * `resolveNicknames`), then SRV, then TSDNS, then the address as given. The
+   * `nicknameLookup`), then SRV, then TSDNS, then the address as given. The
    * whole resolution is bounded: past the budget, or when a step fails, the
    * address as given is the answer.
    */
@@ -79,7 +79,7 @@ export class Resolver {
     // A dot-less name may be a server nickname, which only the TeamSpeak
     // service can answer: asking it sends the name to a third party, so it is
     // opt-in. Otherwise the name is resolved like any host.
-    if (nicknames && this.#resolveNicknames && !host.includes(".") && host !== "localhost") {
+    if (nicknames && this.#nicknameLookup && !host.includes(".") && host !== "localhost") {
       const nickAddr = await resolveNickname(host, signal);
       signal.throwIfAborted();
       if (nickAddr) return this.#resolve(nickAddr, signal, false);

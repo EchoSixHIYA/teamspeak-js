@@ -447,7 +447,7 @@ describe("unencrypted packets once connected", () => {
   it("still takes plaintext acknowledgements, as TS3 and TS6 send them", async () => {
     const { client, socket } = await connectedClient();
     const crypt = clientInternals(client).crypt;
-    const answer = client.exec("whoami", { timeout: 2_000 });
+    const answer = client.exec("whoami", { timeoutMs: 2_000 });
     await settle();
     const sent = socket.sent.at(-1)!;
     const id = (sent[8]! << 8) | sent[9]!;

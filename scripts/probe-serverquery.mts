@@ -331,7 +331,7 @@ class Recorder implements CommandExecutor {
     };
     this.calls.push(call);
     try {
-      const rows = await this.client.send(request, { timeout: 8000, ...options });
+      const rows = await this.client.send(request, { timeoutMs: 8000, ...options });
       call.rows = rows.length;
       call.outcome = rows.length > 0 ? "rows" : "ok";
       call.keys = [...new Set(rows.flatMap((row) => Object.keys(row)))];

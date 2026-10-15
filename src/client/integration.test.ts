@@ -261,7 +261,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     await expect(listChannels(sharedClient, { signal: AbortSignal.abort(reason) })).rejects.toBe(
       reason,
     );
-    expect((await listChannels(sharedClient, { timeout: 10_000 })).length).toBeGreaterThan(0);
+    expect((await listChannels(sharedClient, { timeoutMs: 10_000 })).length).toBeGreaterThan(0);
   }, 15_000);
 
   it("whoAmI — names this connection", async () => {

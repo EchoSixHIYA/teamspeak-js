@@ -26,7 +26,7 @@ Upgrading from 0.x? The package was renamed; see the [migration guide](https://g
 - **Event-driven API** — Register handlers for text messages, client enter/leave, channel moves, kicks, etc.
 - **Voice data** — Send Opus voice packets (codec 4 & 5)
 - **File transfers** — Upload, download, and delete files on the server
-- **Address resolution** — SRV records, TSDNS, and direct addresses; server nicknames on request (`resolveNicknames: true`), since that lookup goes to named.myteamspeak.com
+- **Address resolution** — SRV records, TSDNS, and direct addresses; server nicknames on request (`nicknameLookup: true`), since that lookup goes to named.myteamspeak.com
 - **Middleware** — Pluggable command and event middleware chains
 - **Built-in rate limiter** — Token-bucket throttling to prevent server-side flood kicks
 - **Identity management** — Generate, import/export, and upgrade security level of identities
@@ -193,7 +193,7 @@ range: 0–65535 for a `ClientID` and the file transfer ids, 0–2^32−1 for a
 `PermissionID` (an `IconID` also takes the signed form), 0–2^64−1 for the
 `bigint` ids. Required arguments are positional; everything optional
 goes in one options object, always the last argument, which also carries
-`signal` and `timeout` to abandon the command or bound how long it waits.
+`signal` and `timeoutMs` to abandon the command or bound how long it waits.
 
 ```typescript
 import {
@@ -237,7 +237,7 @@ for await (const entry of iterateClientDatabase(client)) {
 A command that sends content — `createChannel`'s channel, `editChannel`'s
 settings, `updateClient`, `editClient`, `editClientDatabase`,
 `addServerGroupPermission`'s grant, `addBan`'s `BanFields` — takes it as its own
-argument, and `{ signal, timeout }` as a separate one after it: set among the
+argument, and `{ signal, timeoutMs }` as a separate one after it: set among the
 content, they are not read.
 
 Options objects use camelCase names (`maxClients` for `channel_maxclients`),
@@ -275,7 +275,7 @@ exists to return something — `createChannel`'s id, `initFileUpload`'s key,
 `getClientInfo`'s fields — throws a `NoDataError` when the server answers
 without it, rather than returning an id of 0 or an empty object.
 
-For anything outside the typed set, `client.exec(line, { signal?, timeout? })`
+For anything outside the typed set, `client.exec(line, { signal?, timeoutMs? })`
 sends a raw command line and resolves to the rows that answer it.
 
 ### File Transfers

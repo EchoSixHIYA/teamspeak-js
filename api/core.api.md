@@ -625,7 +625,7 @@ const commandNameValues: {
 // @public
 export interface CommandOptions {
     readonly signal?: AbortSignal | undefined;
-    readonly timeout?: number | undefined;
+    readonly timeoutMs?: number | undefined;
 }
 
 // @public

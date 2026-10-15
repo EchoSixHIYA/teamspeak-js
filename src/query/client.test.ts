@@ -141,7 +141,7 @@ describe("QueryClient", () => {
     const transport = new FakeTransport();
     const client = new QueryClient(transport);
 
-    const slow = client.exec("slow", { timeout: 10 });
+    const slow = client.exec("slow", { timeoutMs: 10 });
     await expect(slow).rejects.toBeInstanceOf(CommandTimeoutError);
 
     const next = client.exec("next");
@@ -253,7 +253,7 @@ describe("QueryClient", () => {
     const transport = new SlowTransport();
     const client = new QueryClient(transport);
 
-    await expect(client.exec("slow", { timeout: 5 })).rejects.toBeInstanceOf(CommandTimeoutError);
+    await expect(client.exec("slow", { timeoutMs: 5 })).rejects.toBeInstanceOf(CommandTimeoutError);
     const next = client.exec("next");
     await new Promise((r) => setTimeout(r, 50));
     transport.receive("mine=1", "error id=0 msg=ok");

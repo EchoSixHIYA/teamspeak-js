@@ -119,7 +119,7 @@ and `honeybbq:teamspeak:packet` diagnostics channels instead.
 
 The helpers 0.x had are typed functions taking the client first and branded
 ids. Required arguments are positional; everything optional is in one last
-options object, which also carries `{ signal, timeout }`:
+options object, which also carries `{ signal, timeoutMs }`:
 
 | 0.x                                                        | 1.0                                                                                                                      |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -131,30 +131,30 @@ options object, which also carries `{ signal, timeout }`:
 | `fileTransferDeleteFile(client, cid, paths)`               | `deleteFile(client, cid, paths)`                                                                                         |
 | `client.fileTransferInitUpload(cid, path, password, size)` | `initFileUpload(client, cid, path, size, { password })`                                                                  |
 | `client.fileTransferInitDownload(cid, path, password)`     | `initFileDownload(client, cid, path, { password })`                                                                      |
-| `client.execCommandWithResponse(line, ms)`                 | `client.exec(line, { timeout: ms })`                                                                                     |
-| `client.execCommand(line, ms)`                             | `client.exec(line, { timeout: ms })`                                                                                     |
+| `client.execCommandWithResponse(line, ms)`                 | `client.exec(line, { timeoutMs: ms })`                                                                                   |
+| `client.execCommand(line, ms)`                             | `client.exec(line, { timeoutMs: ms })`                                                                                   |
 | `client.sendCommandNoWait(line)`                           | `client.execNoWait(line)`                                                                                                |
 
 If you used a 1.0 prerelease, these took positional optional arguments and now
 take them in the options object:
 
-| Before                                                                                            | Now                                                            |
-| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `listClients(c, include, options)`                                                                | `listClients(c, { ...include, ...options })`                   |
-| `moveClient(c, clid, cid, password)`                                                              | `moveClient(c, clid, cid, { password })`                       |
-| `kickClient(c, clid, reason, message)`                                                            | `kickClient(c, clid, reason, { reasonMessage })`               |
-| `moveChannel(c, cid, parent, order)`                                                              | `moveChannel(c, cid, parent, { order })`                       |
-| `deleteChannel(c, cid, force)`                                                                    | `deleteChannel(c, cid, { force })`                             |
-| `deleteServerGroup` / `deleteChannelGroup(c, id, force)`                                          | `(c, id, { force })`                                           |
-| `addClientPermission(c, dbid, perm, value, skip)`                                                 | `addClientPermission(c, dbid, perm, value, { skip })`          |
-| `listFiles(c, cid, path?, password?)`                                                             | `listFiles(c, cid, path, { password })`                        |
-| `getFileInfo`, `deleteFile`, `createDirectory(…, password)`                                       | `(…, { password })`                                            |
-| `renameFile(c, cid, old, new, rename, options)`                                                   | `renameFile(c, cid, old, new, { ...rename, ...options })`      |
-| `initFileUpload` / `initFileDownload(…, upload, options)`                                         | `(…, { password, ..., signal })`                               |
-| `stopFileTransfer(c, id, removePartialFile)`                                                      | `stopFileTransfer(c, id, { removePartialFile })`               |
-| `listComplaints(c, dbid)`                                                                         | `listComplaints(c, { targetDatabaseID })`                      |
-| `listBindings(c, subsystem)`                                                                      | `listBindings(c, { subsystem })`                               |
-| `banClient`, `viewLog`, `listClientDatabase`, `listServerGroupClients`, `listChannelGroupClients` | their options and `{ signal, timeout }` merged into one object |
+| Before                                                                                            | Now                                                              |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `listClients(c, include, options)`                                                                | `listClients(c, { ...include, ...options })`                     |
+| `moveClient(c, clid, cid, password)`                                                              | `moveClient(c, clid, cid, { password })`                         |
+| `kickClient(c, clid, reason, message)`                                                            | `kickClient(c, clid, reason, { reasonMessage })`                 |
+| `moveChannel(c, cid, parent, order)`                                                              | `moveChannel(c, cid, parent, { order })`                         |
+| `deleteChannel(c, cid, force)`                                                                    | `deleteChannel(c, cid, { force })`                               |
+| `deleteServerGroup` / `deleteChannelGroup(c, id, force)`                                          | `(c, id, { force })`                                             |
+| `addClientPermission(c, dbid, perm, value, skip)`                                                 | `addClientPermission(c, dbid, perm, value, { skip })`            |
+| `listFiles(c, cid, path?, password?)`                                                             | `listFiles(c, cid, path, { password })`                          |
+| `getFileInfo`, `deleteFile`, `createDirectory(…, password)`                                       | `(…, { password })`                                              |
+| `renameFile(c, cid, old, new, rename, options)`                                                   | `renameFile(c, cid, old, new, { ...rename, ...options })`        |
+| `initFileUpload` / `initFileDownload(…, upload, options)`                                         | `(…, { password, ..., signal })`                                 |
+| `stopFileTransfer(c, id, removePartialFile)`                                                      | `stopFileTransfer(c, id, { removePartialFile })`                 |
+| `listComplaints(c, dbid)`                                                                         | `listComplaints(c, { targetDatabaseID })`                        |
+| `listBindings(c, subsystem)`                                                                      | `listBindings(c, { subsystem })`                                 |
+| `banClient`, `viewLog`, `listClientDatabase`, `listServerGroupClients`, `listChannelGroupClients` | their options and `{ signal, timeoutMs }` merged into one object |
 
 A ban's fields are a `BanFields` (`ip`, `name`, `uid`, `reason`, `durationMs`),
 which `addBan` takes as `BanOptions` and which carries no `signal` or
@@ -162,7 +162,7 @@ which `addBan` takes as `BanOptions` and which carries no `signal` or
 command that sends content (`createChannel`, `editChannel`, `updateClient`,
 `editClient`, `editClientDatabase`, `addServerGroupPermission`).
 `BanClientOptions` is `BanFields`' `durationMs` and `reason` with
-`{ signal, timeout }`.
+`{ signal, timeoutMs }`.
 
 `initFileUpload` no longer replaces a file already at the path unless passed
 `overwrite: true`; it used to by default. `renameFile` sends its
@@ -358,7 +358,7 @@ takes its signal in an options object, and returns `ResolvedAddr`s whose
 ## Address resolution
 
 A dot-less address (`mybox`) was sent to named.myteamspeak.com as a server
-nickname. That lookup is now opt-in, with `resolveNicknames: true`; without it
+nickname. That lookup is now opt-in, with `nicknameLookup: true`; without it
 the name is resolved like any host. Resolution as a whole is bounded at ten
 seconds, after which the address is used as given; the client holds a custom
 `resolver` to the same budget, through the `signal` it passes in.

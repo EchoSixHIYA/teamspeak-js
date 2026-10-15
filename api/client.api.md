@@ -114,8 +114,8 @@ export interface ClientOptions {
     readonly eventMiddleware?: readonly EventMiddleware[] | undefined;
     readonly fileTransferSocketFactory?: FileTransferSocketFactory | undefined;
     readonly logger?: Logger | undefined;
+    readonly nicknameLookup?: boolean | undefined;
     readonly reconnect?: ReconnectOptions | undefined;
-    readonly resolveNicknames?: boolean | undefined;
     readonly resolver?: AddrResolver | undefined;
     readonly serverPassword?: string | undefined;
     readonly socketFactory?: SocketFactory | undefined;

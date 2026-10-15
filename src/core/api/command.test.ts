@@ -483,10 +483,10 @@ describe("bans", () => {
     const { signal } = new AbortController();
     // @ts-expect-error: a ban carries no signal.
     await addBan(client, { uid: asUID("x"), signal });
-    await addBan(client, { uid: asUID("x") }, { signal, timeout: 5 });
-    await banClient(client, asClientID(5), { reason: "x", signal, timeout: 5 });
+    await addBan(client, { uid: asUID("x") }, { signal, timeoutMs: 5 });
+    await banClient(client, asClientID(5), { reason: "x", signal, timeoutMs: 5 });
 
-    expect(options).toEqual([undefined, { signal, timeout: 5 }, { signal, timeout: 5 }]);
+    expect(options).toEqual([undefined, { signal, timeoutMs: 5 }, { signal, timeoutMs: 5 }]);
   });
 
   // The voice protocol reports no ban id.
@@ -790,22 +790,22 @@ describe("iterateClientDatabase", () => {
     expect(seen).toEqual([1n, 2n]);
   });
 
-  it("gives every page the signal and timeout, but not the page size", async () => {
+  it("gives every page the signal and timeoutMs, but not the page size", async () => {
     const { signal } = new AbortController();
     const { client, options } = recordingClient(page(1), emptyResult());
-    await collect(iterateClientDatabase(client, { pageSize: 5, signal, timeout: 1234 }));
+    await collect(iterateClientDatabase(client, { pageSize: 5, signal, timeoutMs: 1234 }));
 
     expect(options).toEqual([
-      { signal, timeout: 1234 },
-      { signal, timeout: 1234 },
+      { signal, timeoutMs: 1234 },
+      { signal, timeoutMs: 1234 },
     ]);
   });
 });
 
 describe("CommandOptions", () => {
-  it("reaches send as its signal and timeout", async () => {
+  it("reaches send as its signal and timeoutMs", async () => {
     const { signal } = new AbortController();
-    const commandOptions = { signal, timeout: 500 };
+    const commandOptions = { signal, timeoutMs: 500 };
     const { client, options } = recordingClient([], [], [{ cid: "9" }]);
 
     await listChannels(client, commandOptions);
@@ -813,7 +813,7 @@ describe("CommandOptions", () => {
     await createChannel(client, { name: "x" }, commandOptions);
     await listFiles(client, asChannelID(1), "/", { password: "", ...commandOptions });
 
-    // The executor sees the signal and timeout, never a command's own options.
+    // The executor sees the signal and timeoutMs, never a command's own options.
     expect(options).toEqual([commandOptions, commandOptions, commandOptions, commandOptions]);
   });
 

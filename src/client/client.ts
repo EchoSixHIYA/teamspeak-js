@@ -393,8 +393,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#addr = addr;
     this.#nickname = nickname;
     this.#logger = options.logger ?? noopLogger;
-    this.#resolver =
-      options.resolver ?? new Resolver({ resolveNicknames: options.resolveNicknames });
+    this.#resolver = options.resolver ?? new Resolver({ nicknameLookup: options.nicknameLookup });
     this.#clientInitOptions = normalizeClientInitOptions(options);
     this.#socketFactory = options.socketFactory;
     this.#fileTransferSocketFactory = options.fileTransferSocketFactory;
@@ -643,7 +642,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
       // On the internal path: the status already says Disconnected.
       const answered = this.#exec(
         "clientdisconnect reasonmsg=Shutdown",
-        { signal, timeout: DISCONNECT_TIMEOUT_MS },
+        { signal, timeoutMs: DISCONNECT_TIMEOUT_MS },
         true,
       ).then(
         () => true,
@@ -758,7 +757,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     options: CommandOptions,
     internal: boolean,
   ): Promise<Array<Record<string, string>>> {
-    const { signal, timeout = DEFAULT_COMMAND_TIMEOUT_MS } = options;
+    const { signal, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = options;
     signal?.throwIfAborted();
     // A command sent on no socket used to vanish and surface 10 seconds later
     // as a timeout, which reads like a slow server rather than a usage error.
@@ -777,7 +776,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // Started before the throttle: the timeout bounds the whole command, its
     // wait for a turn included, and so does the signal.
     const givenUp = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new CommandTimeoutError(parsed?.name ?? "")), timeout);
+      timer = setTimeout(() => reject(new CommandTimeoutError(parsed?.name ?? "")), timeoutMs);
       onAbort = () => reject(abortReason(signal!));
       signal?.addEventListener("abort", onAbort, { once: true });
     });

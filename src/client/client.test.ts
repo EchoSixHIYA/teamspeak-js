@@ -381,7 +381,7 @@ describe("diagnostics channels", () => {
     };
     commandChannel.subscribe(handlers);
     try {
-      const answered = client.exec("clientmove clid=5 cid=1 cpw=secret", { timeout: 1_000 });
+      const answered = client.exec("clientmove clid=5 cid=1 cpw=secret", { timeoutMs: 1_000 });
       await new Promise((r) => setImmediate(r));
       clientInternals(client).handler.onPacket?.(commandPacket("error id=0 msg=ok return_code=1"));
       await answered;
