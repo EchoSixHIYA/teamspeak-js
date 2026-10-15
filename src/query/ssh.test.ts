@@ -4,9 +4,16 @@ import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "./client.js";
 import { SshHostKeyError } from "./errors.js";
+import type { QueryTransportOptions } from "./options.js";
 import { defaultShouldRetry } from "./reconnect.js";
 import { connectSsh } from "./ssh.js";
-import type { SshClient, SshHostKey, SshOptions } from "./ssh.js";
+import type {
+  SshClient,
+  SshConnectOptions,
+  SshHostKey,
+  SshHostKeyPolicy,
+  SshOptions,
+} from "./ssh.js";
 
 /**
  * `ssh2` stands in for itself, so that what `connectSsh` hands to `connect` can
@@ -72,17 +79,62 @@ beforeEach(() => {
   fake.FakeClient.instances.length = 0;
 });
 
+/**
+ * Dial options that compile: the policy's own arm, built by reaching for the
+ * one member it has.
+ *
+ * The arms are mutually exclusive, so a spread of the union would not narrow;
+ * this says which member is the policy, and the others are then `never` by
+ * construction rather than by assertion.
+ */
+function dialOptions(
+  policy: SshHostKeyPolicy,
+  overrides: {
+    readonly host?: string | undefined;
+    readonly port?: number | undefined;
+    readonly password?: string | undefined;
+  } = {},
+): SshConnectOptions {
+  const address = {
+    host: overrides.host ?? "ts.example.com",
+    username: "serveradmin",
+    password: overrides.password ?? PASSWORD,
+    ...(overrides.port === undefined ? {} : { port: overrides.port }),
+  };
+  if ("hostKey" in policy) return { ...address, hostKey: policy.hostKey };
+  if ("knownHosts" in policy) return { ...address, knownHosts: policy.knownHosts };
+  return { ...address, insecureIgnoreHostKey: true };
+}
+
+/**
+ * Options a caller the types do not reach would hand over: a JavaScript program
+ * or an `as` cast. The runtime check is exactly for these, so the tests that
+ * drive it say so here instead of scattering casts through the cases.
+ */
+function unchecked(options: Record<string, unknown>): SshOptions {
+  return options as unknown as SshOptions;
+}
+
+/** The same, for the options a `QueryClient` is built with. */
+function uncheckedTransport(options: Record<string, unknown>): QueryTransportOptions {
+  return options as unknown as QueryTransportOptions;
+}
+
 /** Start a connection and wait until ssh2 has been told to connect; its result is read later. */
-async function dial(options: Partial<SshOptions>) {
+async function dial(
+  policy: SshHostKeyPolicy,
+  overrides: {
+    readonly host?: string | undefined;
+    readonly port?: number | undefined;
+    readonly password?: string | undefined;
+  } = {},
+) {
   // A test may dial twice, and the second must not be taken for the first.
   const before = fake.FakeClient.instances.length;
   const abort = new AbortController();
   const outcome = connectSsh({
-    host: "ts.example.com",
-    username: "serveradmin",
-    password: PASSWORD,
+    ...dialOptions(policy, overrides),
     signal: abort.signal,
-    ...options,
   }).then(
     () => undefined,
     (error: unknown) => error,
@@ -109,7 +161,9 @@ async function dial(options: Partial<SshOptions>) {
 
 describe("connectSsh with no decision about the host key", () => {
   it("fails closed, naming all three options and why, before anything is opened", async () => {
-    const attempt = connectSsh({ host: "ts.example.com", username: "u", password: PASSWORD });
+    const attempt = connectSsh(
+      unchecked({ host: "ts.example.com", username: "u", password: PASSWORD }),
+    );
     await expect(attempt).rejects.toThrow("hostKey");
     await expect(attempt).rejects.toThrow("knownHosts");
     await expect(attempt).rejects.toThrow("insecureIgnoreHostKey");
@@ -119,9 +173,9 @@ describe("connectSsh with no decision about the host key", () => {
   });
 
   it("does not put the password in what it says", async () => {
-    const error = await connectSsh({ host: "h", username: "u", password: PASSWORD }).catch(
-      (failure: unknown) => failure,
-    );
+    const error = await connectSsh(
+      unchecked({ host: "h", username: "u", password: PASSWORD }),
+    ).catch((failure: unknown) => failure);
     expect((error as Error).message).not.toContain(PASSWORD);
   });
 });
@@ -136,7 +190,9 @@ describe("connectSsh with more than one", () => {
     ["knownHosts and insecureIgnoreHostKey", { knownHosts, insecureIgnoreHostKey: true as const }],
     ["all three", { hostKey, knownHosts, insecureIgnoreHostKey: true as const }],
   ])("is a TypeError for %s, and opens nothing", async (_name, choice) => {
-    const attempt = connectSsh({ host: "h", username: "u", password: PASSWORD, ...choice });
+    const attempt = connectSsh(
+      unchecked({ host: "h", username: "u", password: PASSWORD, ...choice }),
+    );
     await expect(attempt).rejects.toBeInstanceOf(TypeError);
     await expect(attempt).rejects.toThrow("exactly one of");
     expect(fake.FakeClient.instances).toHaveLength(0);
@@ -144,7 +200,7 @@ describe("connectSsh with more than one", () => {
 
   it("is a TypeError for a value that is not one of them", async () => {
     const bad = (choice: object) =>
-      connectSsh({ host: "h", username: "u", password: PASSWORD, ...choice });
+      connectSsh(unchecked({ host: "h", username: "u", password: PASSWORD, ...choice }));
     await expect(bad({ hostKey: "no" })).rejects.toBeInstanceOf(TypeError);
     await expect(bad({ knownHosts: "" })).rejects.toBeInstanceOf(TypeError);
     // Not a switch: false is not "off", it is not a decision at all.
@@ -156,10 +212,10 @@ describe("connectSsh with more than one", () => {
 describe("the check ssh2 is given", () => {
   it("hands the caller's check the key, as this package describes it, and accepts when it returns", async () => {
     const seen: SshHostKey[] = [];
-    const { ask, abort, outcome } = await dial({
-      port: 2222,
-      hostKey: (key) => void seen.push(key),
-    });
+    const { ask, abort, outcome } = await dial(
+      { hostKey: (key) => void seen.push(key) },
+      { port: 2222 },
+    );
 
     expect(ask(KEY_A)).toBe(true);
 
@@ -312,7 +368,7 @@ describe("knownHosts", () => {
     first.abort.abort(new Error("done"));
     await first.outcome;
 
-    const second = await dial({ host: "other.example.com", port: 2222, knownHosts: path });
+    const second = await dial({ knownHosts: path }, { host: "other.example.com", port: 2222 });
     expect(second.ask(KEY_B)).toBe(true);
     second.abort.abort(new Error("done"));
     await second.outcome;
@@ -379,12 +435,7 @@ describe("knownHosts", () => {
   });
 
   it("fails the connection, opening nothing, when the file cannot be read", async () => {
-    const attempt = connectSsh({
-      host: "ts.example.com",
-      username: "u",
-      password: PASSWORD,
-      knownHosts: join(files, "does-not-exist"),
-    });
+    const attempt = connectSsh(dialOptions({ knownHosts: join(files, "does-not-exist") }));
     await expect(attempt).rejects.toBeInstanceOf(SshHostKeyError);
     await expect(attempt).rejects.toThrow("cannot be checked");
     await expect(attempt).rejects.toThrow("does-not-exist");
@@ -393,12 +444,7 @@ describe("knownHosts", () => {
 
   it("fails the connection, opening nothing, when a line cannot be read", async () => {
     const path = knownHostsFile("broken", "ts.example.com ssh-ed25519 not-base64!!");
-    const attempt = connectSsh({
-      host: "ts.example.com",
-      username: "u",
-      password: PASSWORD,
-      knownHosts: path,
-    });
+    const attempt = connectSsh(dialOptions({ knownHosts: path }));
     await expect(attempt).rejects.toBeInstanceOf(SshHostKeyError);
     await expect(attempt).rejects.toThrow(`${path}:1`);
     expect(fake.FakeClient.instances).toHaveLength(0);
@@ -415,14 +461,28 @@ describe("a connection the caller supplies", () => {
       { insecureIgnoreHostKey: true as const },
     ]) {
       await expect(
-        connectSsh({ host: "h", username: "u", password: PASSWORD, connection, ...choice }),
+        connectSsh(
+          unchecked({ host: "h", username: "u", password: PASSWORD, connection, ...choice }),
+        ),
       ).rejects.toThrow("has no effect with connection");
     }
   });
 });
 
 describe("QueryClient", () => {
-  const transport = { kind: "ssh" as const, host: "h", username: "u", password: PASSWORD };
+  const dialing = { kind: "ssh" as const, host: "h", username: "u", password: PASSWORD };
+  /** The same, for a caller the types do not reach: `new QueryClient` is where the runtime check runs. */
+  const transport = uncheckedTransport({
+    kind: "ssh",
+    host: "h",
+    username: "u",
+    password: PASSWORD,
+  });
+
+  it("takes the transport of a caller the types do not reach, and checks it at construction", () => {
+    // The type would refuse this; a JavaScript caller has no type to refuse it.
+    expect(() => new QueryClient({ transport })).toThrow("hostKey");
+  });
 
   it("refuses to be built with no decision, naming all three options", () => {
     expect(() => new QueryClient({ transport })).toThrow("hostKey");
@@ -433,15 +493,18 @@ describe("QueryClient", () => {
 
   it("refuses two of them with a TypeError", () => {
     expect(
-      () => new QueryClient({ transport: { ...transport, hostKey: () => {}, knownHosts: "/k" } }),
+      () =>
+        new QueryClient({
+          transport: uncheckedTransport({ ...dialing, hostKey: () => {}, knownHosts: "/k" }),
+        }),
     ).toThrow(TypeError);
   });
 
   it("builds with exactly one", () => {
-    expect(() => new QueryClient({ transport: { ...transport, hostKey: () => {} } })).not.toThrow();
-    expect(() => new QueryClient({ transport: { ...transport, knownHosts: "/k" } })).not.toThrow();
+    expect(() => new QueryClient({ transport: { ...dialing, hostKey: () => {} } })).not.toThrow();
+    expect(() => new QueryClient({ transport: { ...dialing, knownHosts: "/k" } })).not.toThrow();
     expect(
-      () => new QueryClient({ transport: { ...transport, insecureIgnoreHostKey: true } }),
+      () => new QueryClient({ transport: { ...dialing, insecureIgnoreHostKey: true } }),
     ).not.toThrow();
   });
 
@@ -449,7 +512,8 @@ describe("QueryClient", () => {
     expect(
       () =>
         new QueryClient({
-          transport: { ...transport, connection: () => Promise.reject(new Error("x")) },
+          // A supplied connection carries no login: it is authenticated already.
+          transport: { kind: "ssh", host: "h", connection: () => Promise.reject(new Error("x")) },
         }),
     ).not.toThrow();
   });
@@ -457,7 +521,7 @@ describe("QueryClient", () => {
   it("hands the choice on to the connection it makes, and ends in a refusal when the key is refused", async () => {
     const client = new QueryClient({
       transport: {
-        ...transport,
+        ...dialing,
         hostKey: () => {
           throw new Error("unexpected key");
         },

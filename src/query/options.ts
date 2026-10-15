@@ -1,8 +1,8 @@
 import type { CommandMiddleware, Logger, ReconnectOptions, ServerID } from "@honeybbq/teamspeak";
 import type { QueryTransport } from "./transport.js";
 import type { TcpConnector } from "./tcp.js";
-import { hostKeyPolicy } from "./ssh.js";
-import type { SshConnection, SshHostKeyVerifier } from "./ssh.js";
+import { hostKeyDecision } from "./ssh.js";
+import type { SshConnectOptions, SshConnection } from "./ssh.js";
 
 /**
  * The connection a `QueryClient` talks over, as a description rather than an
@@ -27,39 +27,10 @@ export type QueryTransportOptions =
        */
       readonly connect?: TcpConnector | undefined;
     }
-  | {
+  | ({
       /** A ServerQuery over SSH. */
       readonly kind: "ssh";
-      /** The server's host. */
-      readonly host: string;
-      /** The SSH query port; 10022 by default. */
-      readonly port?: number | undefined;
-      /** The query login name, such as `serveradmin`. */
-      readonly username: string;
-      /** The query login's password. */
-      readonly password: string;
-      /**
-       * Your own check of the server's host key, which throws to refuse it.
-       * See {@link SshOptions.hostKey}. Exactly one of this, `knownHosts` and
-       * `insecureIgnoreHostKey` is required, unless `connection` is given.
-       */
-      readonly hostKey?: SshHostKeyVerifier | undefined;
-      /**
-       * A `known_hosts` file to check the server's host key against. See
-       * {@link SshOptions.knownHosts}.
-       */
-      readonly knownHosts?: string | undefined;
-      /**
-       * Accept any host key, which gives up the protection the key is for. See
-       * {@link SshOptions.insecureIgnoreHostKey}.
-       */
-      readonly insecureIgnoreHostKey?: true | undefined;
-      /**
-       * The SSH client to use, or a factory for one; `ssh2` by default. See
-       * {@link SshOptions.connection}.
-       */
-      readonly connection?: SshConnection | undefined;
-    }
+    } & SshConnectOptions)
   | {
       /** TeamSpeak 6's HTTP WebQuery. */
       readonly kind: "web";
@@ -183,14 +154,8 @@ export type ResolvedTransport =
     }
   | {
       readonly kind: "ssh";
-      readonly host: string;
-      readonly port: number;
-      readonly username: string;
-      readonly password: string;
-      readonly hostKey: SshHostKeyVerifier | undefined;
-      readonly knownHosts: string | undefined;
-      readonly insecureIgnoreHostKey: true | undefined;
-      readonly connection: SshConnection | undefined;
+      /** What `connectSsh` is given, with the port filled in; one arm of {@link SshConnectOptions}. */
+      readonly connect: SshConnectOptions;
     }
   | {
       readonly kind: "web";
@@ -271,24 +236,32 @@ function transportOptions(transport: unknown): ResolvedTransport {
       ) {
         throw new TypeError("transport.connection is an SSH client or a factory for one");
       }
-      const trust = {
-        hostKey: options["hostKey"] as SshHostKeyVerifier | undefined,
-        knownHosts: options["knownHosts"] as string | undefined,
-        insecureIgnoreHostKey: options["insecureIgnoreHostKey"] as true | undefined,
-        connection: connection as SshConnection | undefined,
-      };
       // Asked here as well as when connecting: a client that could never
       // connect, for want of a decision about the host key, is the caller's
       // mistake and is reported when the client is made.
-      hostKeyPolicy(trust);
-      return {
-        kind: "ssh",
-        host,
-        port: raw < 0 ? 10022 : raw,
+      const decision = hostKeyDecision(options);
+      const address = { host, port: raw < 0 ? 10022 : raw };
+      // Built from the decision rather than copied, so each arm is made of
+      // exactly what it takes and the union needs no cast.
+      if (decision.kind === "connection") {
+        return {
+          kind: "ssh",
+          connect: { ...address, connection: connection as SshConnection },
+        };
+      }
+      const login = {
+        ...address,
         username: nonEmpty(options["username"], "transport.username"),
         password: nonEmpty(options["password"], "transport.password"),
-        ...trust,
       };
+      switch (decision.kind) {
+        case "verifier":
+          return { kind: "ssh", connect: { ...login, hostKey: decision.verify } };
+        case "knownHosts":
+          return { kind: "ssh", connect: { ...login, knownHosts: decision.path } };
+        case "insecure":
+          return { kind: "ssh", connect: { ...login, insecureIgnoreHostKey: true } };
+      }
     }
     case "web": {
       const fetchFn: unknown = options["fetch"];

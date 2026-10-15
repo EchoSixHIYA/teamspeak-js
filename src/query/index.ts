@@ -48,10 +48,18 @@ export { connectSsh } from "./ssh.js";
 export type {
   SshChannel,
   SshClient,
+  SshConnectOptions,
   SshConnection,
+  SshDialOptions,
+  SshDialTarget,
   SshHostKey,
+  SshHostKeyCallbackPolicy,
+  SshHostKeyPolicy,
   SshHostKeyVerifier,
+  SshInsecureHostKeyPolicy,
+  SshKnownHostsPolicy,
   SshOptions,
+  SshSuppliedConnectionOptions,
 } from "./ssh.js";
 export { WebQueryHttpError, WebQueryTransport } from "./web.js";
 export type { WebQueryOptions } from "./web.js";

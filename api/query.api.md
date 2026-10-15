@@ -131,17 +131,9 @@ export type QueryTransportOptions = {
     readonly host: string;
     readonly port?: number | undefined;
     readonly connect?: TcpConnector | undefined;
-} | {
+} | ({
     readonly kind: "ssh";
-    readonly host: string;
-    readonly port?: number | undefined;
-    readonly username: string;
-    readonly password: string;
-    readonly hostKey?: SshHostKeyVerifier | undefined;
-    readonly knownHosts?: string | undefined;
-    readonly insecureIgnoreHostKey?: true | undefined;
-    readonly connection?: SshConnection | undefined;
-} | {
+} & SshConnectOptions) | {
     readonly kind: "web";
     readonly url: string;
     readonly apiKey: string;
@@ -179,12 +171,34 @@ export interface SshClient {
 export type SshConnection = SshClient | (() => Promise<SshClient>);
 
 // @public
+export type SshConnectOptions = SshDialOptions | SshSuppliedConnectionOptions;
+
+// @public
+export type SshDialOptions = SshDialTarget & SshHostKeyPolicy;
+
+// @public
+export interface SshDialTarget {
+    readonly connection?: never;
+    readonly host: string;
+    readonly password: string;
+    readonly port?: number | undefined;
+    readonly username: string;
+}
+
+// @public
 export interface SshHostKey {
     readonly fingerprint: string;
     readonly host: string;
     readonly key: Uint8Array;
     readonly keyType: string;
     readonly port: number;
+}
+
+// @public
+export interface SshHostKeyCallbackPolicy {
+    readonly hostKey: SshHostKeyVerifier;
+    readonly insecureIgnoreHostKey?: never;
+    readonly knownHosts?: never;
 }
 
 // @public
@@ -197,19 +211,40 @@ export class SshHostKeyError extends TeamspeakError {
 }
 
 // @public
+export type SshHostKeyPolicy = SshHostKeyCallbackPolicy | SshKnownHostsPolicy | SshInsecureHostKeyPolicy;
+
+// @public
 export type SshHostKeyVerifier = (key: SshHostKey) => void;
 
 // @public
-export interface SshOptions {
-    readonly connection?: SshConnection | undefined;
-    readonly host: string;
-    readonly hostKey?: SshHostKeyVerifier | undefined;
-    readonly insecureIgnoreHostKey?: true | undefined;
-    readonly knownHosts?: string | undefined;
-    readonly password: string;
-    readonly port?: number | undefined;
+export interface SshInsecureHostKeyPolicy {
+    readonly hostKey?: never;
+    readonly insecureIgnoreHostKey: true;
+    readonly knownHosts?: never;
+}
+
+// @public
+export interface SshKnownHostsPolicy {
+    readonly hostKey?: never;
+    readonly insecureIgnoreHostKey?: never;
+    readonly knownHosts: string;
+}
+
+// @public
+export type SshOptions = SshConnectOptions & {
     readonly signal?: AbortSignal | undefined;
-    readonly username: string;
+};
+
+// @public
+export interface SshSuppliedConnectionOptions {
+    readonly connection: SshConnection;
+    readonly host: string;
+    readonly hostKey?: never;
+    readonly insecureIgnoreHostKey?: never;
+    readonly knownHosts?: never;
+    readonly password?: never;
+    readonly port?: number | undefined;
+    readonly username?: never;
 }
 
 // @public

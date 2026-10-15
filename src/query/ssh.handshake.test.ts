@@ -7,7 +7,7 @@ import { Server, utils } from "ssh2";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { QueryAuthError, SshHostKeyError } from "./errors.js";
 import { connectSsh } from "./ssh.js";
-import type { SshHostKey } from "./ssh.js";
+import type { SshConnectOptions, SshHostKey, SshHostKeyPolicy } from "./ssh.js";
 
 /**
  * `connectSsh` against a real SSH server in this process: the real `ssh2`
@@ -75,8 +75,23 @@ beforeEach(() => {
   shells.length = 0;
 });
 
-function options(extra: object) {
-  return { host: "127.0.0.1", port, username: USER, password: PASSWORD, ...extra };
+/**
+ * Dial options that compile: the policy's own arm, built by reaching for the one
+ * member it has, with the server's address and login filled in.
+ */
+function options(
+  policy: SshHostKeyPolicy,
+  overrides: { readonly password?: string | undefined } = {},
+): SshConnectOptions {
+  const address = {
+    host: "127.0.0.1",
+    port,
+    username: USER,
+    password: overrides.password ?? PASSWORD,
+  };
+  if ("hostKey" in policy) return { ...address, hostKey: policy.hostKey };
+  if ("knownHosts" in policy) return { ...address, knownHosts: policy.knownHosts };
+  return { ...address, insecureIgnoreHostKey: true };
 }
 
 function knownHosts(name: string, line: string): string {
@@ -129,7 +144,7 @@ describe("connectSsh over a real handshake", () => {
   });
 
   it("refuses a check that answers the way ssh2's own does, and sends no login", async () => {
-    const attempt = connectSsh(options({ hostKey: (() => false) as () => void }));
+    const attempt = connectSsh(options({ hostKey: () => false }));
     await expect(attempt).rejects.toBeInstanceOf(SshHostKeyError);
     expect(authentications).toEqual([]);
   });
@@ -195,7 +210,7 @@ describe("connectSsh over a real handshake", () => {
   });
 
   it("still reports a wrong password as a login failure once the key is accepted", async () => {
-    const attempt = connectSsh(options({ hostKey: () => {}, password: "wrong" }));
+    const attempt = connectSsh(options({ hostKey: () => {} }, { password: "wrong" }));
     await expect(attempt).rejects.toBeInstanceOf(QueryAuthError);
     expect(authentications).toContain("password");
   });

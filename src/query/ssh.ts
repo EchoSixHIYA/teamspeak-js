@@ -107,38 +107,75 @@ export interface SshHostKey {
 export type SshHostKeyVerifier = (key: SshHostKey) => void;
 
 /**
- * Where a ServerQuery over SSH listens, and who logs in.
+ * Your own check of the server's host key. Use it when the key you trust does
+ * not live in a `known_hosts` file: a fingerprint from configuration, a pinned
+ * key, a lookup somewhere else.
  *
- * The server's host key has to be checked, and there is no default: exactly one
- * of {@link SshOptions.hostKey}, {@link SshOptions.knownHosts} and
- * {@link SshOptions.insecureIgnoreHostKey} has to be given, unless
- * {@link SshOptions.connection} supplies the connection. A query login is a
- * credential, normally `serveradmin`'s, and a client that accepts any key hands
- * it to whatever answers the port.
+ * One of the three arms of {@link SshHostKeyPolicy}: giving it excludes the
+ * other two.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
  */
-export interface SshOptions {
-  /** The server's host. */
-  readonly host: string;
-  /** The SSH query port; 10022 by default. */
-  readonly port?: number | undefined;
-  /** The query login name, such as `serveradmin`. */
-  readonly username: string;
-  /** The query login's password. */
-  readonly password: string;
-  /** Abandons the connection attempt. */
-  readonly signal?: AbortSignal | undefined;
+export interface SshHostKeyCallbackPolicy {
   /**
-   * Your own check of the server's host key; see {@link SshHostKeyVerifier}.
-   * Called once per connection attempt, before the login is sent.
-   *
-   * One of three ways to decide whether the server is the one expected, and
-   * the one for a policy that is not a file: a fingerprint from configuration,
-   * a pinned key, a lookup somewhere else.
+   * The check; see {@link SshHostKeyVerifier}. Called once per connection
+   * attempt, before the login is sent.
    */
-  readonly hostKey?: SshHostKeyVerifier | undefined;
+  readonly hostKey: SshHostKeyVerifier;
+  /** Left out: `hostKey` is the policy, and a second one would not say which decides. */
+  readonly knownHosts?: never;
+  /** Left out: `hostKey` is the policy, and a second one would not say which decides. */
+  readonly insecureIgnoreHostKey?: never;
+}
+
+/**
+ * Accept whatever key the server presents. Use it for a test or a throwaway
+ * server on a network that is already trusted, and for nothing else.
+ *
+ * One of the three arms of {@link SshHostKeyPolicy}: giving it excludes the
+ * other two.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export interface SshInsecureHostKeyPolicy {
   /**
-   * A path to an OpenSSH `known_hosts` file to check the server against, in the
-   * format `ssh-keyscan` writes and `ssh-keygen -H` hashes.
+   * Only `true` is a value: this is not a switch to be left `false`, but a
+   * decision a call site makes out loud.
+   *
+   * It gives up the one thing the host key is for. Anyone who can answer the
+   * port, on the path or at the address, receives the query login and its
+   * password and is indistinguishable from the server. Use
+   * {@link SshKnownHostsPolicy.knownHosts} otherwise.
+   */
+  readonly insecureIgnoreHostKey: true;
+  /** Left out: accepting any key leaves nothing for a second policy to decide. */
+  readonly hostKey?: never;
+  /** Left out: accepting any key leaves nothing for a second policy to decide. */
+  readonly knownHosts?: never;
+}
+
+// Declared last, on purpose. When no arm matches, TypeScript names one arm's
+// missing property in the error, and which one depends on the compiler: 5.x names
+// the arm declared last. This is the arm to point a user at, and the others are
+// not: `insecureIgnoreHostKey` is the one to be least likely to be added to make
+// an error go away.
+/**
+ * Check the server against an OpenSSH `known_hosts` file. Use it for a server
+ * whose key you have recorded with `ssh-keyscan`, or already trust through
+ * `ssh`.
+ *
+ * One of the three arms of {@link SshHostKeyPolicy}: giving it excludes the
+ * other two.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export interface SshKnownHostsPolicy {
+  /**
+   * A path to the `known_hosts` file, in the format `ssh-keyscan` writes and
+   * `ssh-keygen -H` hashes.
    *
    * Read when each connection is attempted, so a reconnection sees the file as
    * it is then, and only from the path given: `~/.ssh/known_hosts` is never
@@ -148,42 +185,159 @@ export interface SshOptions {
    * key, and so is a key a `@revoked` line names. Plain, `[host]:port` and
    * hashed entries are read; a line that cannot be read fails the connection
    * rather than being skipped.
-   */
-  readonly knownHosts?: string | undefined;
-  /**
-   * Accept whatever key the server presents. Only `true` is a value: this is
-   * not a switch to be left `false`, but a decision a call site makes out loud.
    *
-   * It gives up the one thing the host key is for. Anyone who can answer the
-   * port, on the path or at the address, receives the query login and its
-   * password and is indistinguishable from the server. It is for a test or a
-   * throwaway server on a network that is already trusted; use
-   * {@link SshOptions.knownHosts} otherwise.
+   * A port other than 22 is recorded as `[host]:port`, which is what
+   * `ssh-keyscan -p` writes: an entry for port 22 does not vouch for the query
+   * port.
    */
-  readonly insecureIgnoreHostKey?: true | undefined;
-  /**
-   * The SSH client to use, or a factory for one; `ssh2` by default.
-   *
-   * The seam into the transport. Supplying a client that is already connected
-   * skips the handshake, so the host, port and credentials here are then only
-   * what the caller says they are. Deliberately narrow, so a later release can
-   * widen it without breaking an implementation written today.
-   *
-   * The host key is then checked by whoever made the connection, so none of
-   * `hostKey`, `knownHosts` or `insecureIgnoreHostKey` is given with it: an
-   * option that nothing would read is refused rather than left to suggest the
-   * key was verified.
-   */
-  readonly connection?: SshConnection | undefined;
+  readonly knownHosts: string;
+  /** Left out: `knownHosts` is the policy, and a second one would not say which decides. */
+  readonly hostKey?: never;
+  /** Left out: `knownHosts` is the policy, and a second one would not say which decides. */
+  readonly insecureIgnoreHostKey?: never;
 }
 
+/**
+ * How the server's host key is checked: exactly one of `hostKey`, `knownHosts`
+ * and `insecureIgnoreHostKey`.
+ *
+ * There is no default, and a missing or doubled choice does not compile. The
+ * query login is a credential, normally `serveradmin`'s, and a client that
+ * accepts any key hands it to whatever answers the port. The same rule is
+ * checked when the program runs, for callers that are not type checked.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export type SshHostKeyPolicy =
+  | SshHostKeyCallbackPolicy
+  | SshKnownHostsPolicy
+  | SshInsecureHostKeyPolicy;
+
+/**
+ * The address and the login of a server this transport dials itself: the part
+ * of {@link SshDialOptions} that is not the host key policy.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export interface SshDialTarget {
+  /** The server's host. */
+  readonly host: string;
+  /** The SSH query port; 10022 by default. */
+  readonly port?: number | undefined;
+  /** The query login name, such as `serveradmin`. */
+  readonly username: string;
+  /** The query login's password. */
+  readonly password: string;
+  /** Left out: a connection of your own is {@link SshSuppliedConnectionOptions}. */
+  readonly connection?: never;
+}
+
+/**
+ * Connect to a server this transport dials itself: with a login, and with a
+ * host key policy. The usual way, and the one to use unless you already hold a
+ * connected SSH client.
+ *
+ * It is {@link SshHostKeyPolicy} together with the address and the login, so
+ * leaving the policy out is a type error that names the three ways to give one.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export type SshDialOptions = SshDialTarget & SshHostKeyPolicy;
+
+/**
+ * Use an SSH client you made and connected yourself, or a factory for one:
+ * authenticated through an agent, a jump host or a key file this transport
+ * knows nothing about.
+ *
+ * Only a shell is opened on it, so no login and no host key policy are taken:
+ * the client you supply has done both already, and an option nothing would
+ * read is a type error rather than something that could suggest the key was
+ * verified here. The host and port are the server's identity, for messages.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export interface SshSuppliedConnectionOptions {
+  /** The server's host, for identity and messages: nothing is dialled. */
+  readonly host: string;
+  /** The server's SSH query port, for identity and messages; 10022 by default. */
+  readonly port?: number | undefined;
+  /**
+   * The SSH client to use, or a factory for one. A client that is already
+   * connected skips the handshake; a factory is asked for one per connection
+   * attempt, which a reconnection needs.
+   *
+   * Deliberately narrow, so a later release can widen it without breaking an
+   * implementation written today. Its host key is checked by whoever made it.
+   */
+  readonly connection: SshConnection;
+  /** Left out: the supplied client is authenticated already. */
+  readonly username?: never;
+  /** Left out: the supplied client is authenticated already. */
+  readonly password?: never;
+  /** Left out: the supplied client's host key is checked by whoever made it. */
+  readonly hostKey?: never;
+  /** Left out: the supplied client's host key is checked by whoever made it. */
+  readonly knownHosts?: never;
+  /** Left out: the supplied client's host key is checked by whoever made it. */
+  readonly insecureIgnoreHostKey?: never;
+}
+
+/**
+ * How a ServerQuery over SSH is reached, without the cancellation: one of
+ * {@link SshDialOptions} and {@link SshSuppliedConnectionOptions}.
+ *
+ * What a `QueryClient`'s `ssh` transport is built from, so that the two cannot
+ * drift apart.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export type SshConnectOptions = SshDialOptions | SshSuppliedConnectionOptions;
+
+/**
+ * Where a ServerQuery over SSH listens, who logs in, and how the server's host
+ * key is checked.
+ *
+ * One of two shapes. The usual one, {@link SshDialOptions}, takes the host, the
+ * login and exactly one of `hostKey`, `knownHosts` and `insecureIgnoreHostKey`:
+ * there is no default, because the login is a credential and a client that
+ * accepts any key hands it to whatever answers the port. The other,
+ * {@link SshSuppliedConnectionOptions}, takes an SSH client you connected
+ * yourself, and no login or policy.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export type SshOptions = SshConnectOptions & {
+  /** Abandons the connection attempt. */
+  readonly signal?: AbortSignal | undefined;
+};
+
 /** How the host key is to be decided, once the options have been read. */
-export type HostKeyPolicy =
+export type HostKeyDecision =
   | { readonly kind: "verifier"; readonly verify: SshHostKeyVerifier }
   | { readonly kind: "knownHosts"; readonly path: string }
   | { readonly kind: "insecure" }
   /** The caller supplied the connection, so the key was theirs to check. */
   | { readonly kind: "connection" };
+
+/**
+ * What the decision reads. Every member is `unknown`: the types of
+ * {@link SshOptions} already make a wrong combination a compile error, and this
+ * is for the callers they do not reach, a JavaScript program or an `as` cast.
+ */
+export interface SshChoice {
+  readonly hostKey?: unknown;
+  readonly knownHosts?: unknown;
+  readonly insecureIgnoreHostKey?: unknown;
+  readonly connection?: unknown;
+  readonly username?: unknown;
+  readonly password?: unknown;
+}
 
 /**
  * Read the trust decision out of the options, or refuse them.
@@ -193,14 +347,11 @@ export type HostKeyPolicy =
  * has not decided which is authoritative. Runs when a client is built as well
  * as when it connects, so a missing decision is heard about before the first
  * attempt.
+ *
+ * The same rule as the types state, for the callers they do not reach.
  */
-export function hostKeyPolicy(
-  options: Pick<SshOptions, "hostKey" | "knownHosts" | "insecureIgnoreHostKey" | "connection">,
-): HostKeyPolicy {
-  const { hostKey, knownHosts, connection } = options;
-  // Read as `unknown`: the type admits only `true`, and the check is for the
-  // caller whose types do not say so.
-  const insecureIgnoreHostKey: unknown = options.insecureIgnoreHostKey;
+export function hostKeyDecision(options: SshChoice): HostKeyDecision {
+  const { hostKey, knownHosts, insecureIgnoreHostKey, connection, username, password } = options;
   if (hostKey !== undefined && typeof hostKey !== "function") {
     throw new TypeError("hostKey is a function that throws to refuse a host key");
   }
@@ -228,9 +379,14 @@ export function hostKeyPolicy(
         `${given[0]} has no effect with connection, which makes the connection itself: its host key is checked by whoever made it`,
       );
     }
+    if (username !== undefined || password !== undefined) {
+      throw new TypeError(
+        "username and password have no effect with connection, which is authenticated already: nothing would send them",
+      );
+    }
     return { kind: "connection" };
   }
-  if (hostKey !== undefined) return { kind: "verifier", verify: hostKey };
+  if (hostKey !== undefined) return { kind: "verifier", verify: hostKey as SshHostKeyVerifier };
   if (knownHosts !== undefined) return { kind: "knownHosts", path: knownHosts };
   if (insecureIgnoreHostKey !== undefined) return { kind: "insecure" };
   throw new Error(
@@ -271,10 +427,20 @@ async function loadSsh2(): Promise<{ Client: new () => SshClient }> {
  * this rejects before anything is opened or dialled.
  */
 export async function connectSsh(options: SshOptions): Promise<StreamTransport> {
-  const { host, port = 10022, username, password, signal, connection } = options;
-  const policy = hostKeyPolicy(options);
+  const { host, port = 10022, signal, connection } = options;
+  const decision = hostKeyDecision(options);
+  // The login is read only where this module dials: a supplied client is
+  // authenticated already. Checked here, so a missing one fails before ssh2 is
+  // loaded or anything is opened.
+  const login =
+    connection === undefined
+      ? {
+          username: nonEmptyString(options.username, "username"),
+          password: nonEmptyString(options.password, "password"),
+        }
+      : undefined;
   signal?.throwIfAborted();
-  const verify = await verifierFor(policy, host, port);
+  const verify = await verifierFor(decision, host, port);
   const ssh = await clientFor(connection);
   signal?.throwIfAborted();
 
@@ -312,9 +478,11 @@ export async function connectSsh(options: SshOptions): Promise<StreamTransport> 
       const level = (error as { level?: unknown }).level;
       failed(
         level === "client-authentication"
-          ? new QueryAuthError(username, `SSH authentication failed for ${username}`, {
-              cause: error,
-            })
+          ? new QueryAuthError(
+              login!.username,
+              `SSH authentication failed for ${login!.username}`,
+              { cause: error },
+            )
           : error,
       );
     };
@@ -349,8 +517,9 @@ export async function connectSsh(options: SshOptions): Promise<StreamTransport> 
     ssh.connect({
       host,
       port,
-      username,
-      password,
+      // Set exactly when `connection` is not, and this is the dial path.
+      username: login!.username,
+      password: login!.password,
       readyTimeout: 10_000,
       hostVerifier: (blob) => {
         const outcome = decide(verify, host, port, blob);
@@ -361,6 +530,12 @@ export async function connectSsh(options: SshOptions): Promise<StreamTransport> 
   });
 }
 
+function nonEmptyString(value: unknown, name: string): string {
+  if (typeof value !== "string" || value === "")
+    throw new TypeError(`${name} is a non-empty string`);
+  return value;
+}
+
 /**
  * The check the options chose, ready to run: the caller's own, one over the
  * `known_hosts` file read now, or the one that accepts anything.
@@ -369,7 +544,7 @@ export async function connectSsh(options: SshOptions): Promise<StreamTransport> 
  * connection as a refused key does.
  */
 async function verifierFor(
-  policy: HostKeyPolicy,
+  policy: HostKeyDecision,
   host: string,
   port: number,
 ): Promise<SshHostKeyVerifier> {
