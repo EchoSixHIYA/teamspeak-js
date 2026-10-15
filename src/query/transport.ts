@@ -7,6 +7,20 @@
  * transport is a separate piece, and a test or a proxy can supply its own.
  */
 export interface QueryTransport {
+  /**
+   * Whether this connection can receive notifications at all.
+   *
+   * Raw TCP and SSH can: the server pushes `notify…` lines down the same
+   * connection whenever it likes. WebQuery cannot — it has no session for the
+   * server to push to, and refuses `servernotifyregister` with 5120 — so it
+   * reports false.
+   *
+   * A custom transport declares its own truth here rather than leaving the
+   * caller to guess: a client uses it to decide whether to register for
+   * notifications at all, and whether a listener for a server event can ever
+   * run.
+   */
+  readonly supportsNotifications: boolean;
   /** Send one command line; the transport adds the line terminator. */
   send(line: string): Promise<void>;
   /**

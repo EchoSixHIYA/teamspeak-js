@@ -70,6 +70,8 @@ interface WebAnswer {
  * also sends no notifications, so there is nothing to register for.
  */
 export class WebQueryTransport implements QueryTransport {
+  /** WebQuery has no session for the server to push a notification to. */
+  readonly supportsNotifications = false;
   onLine: ((line: string) => void) | null = null;
   onClose: ((error: Error | undefined) => void) | null = null;
 

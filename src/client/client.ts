@@ -45,9 +45,14 @@ import { PacketHandler } from "./transport/handler.js";
 import { PacketType } from "./transport/packet.js";
 import type { Packet } from "./transport/packet.js";
 import { CommandTracker, appendReturnCode } from "./commands.js";
-import { encodeRequest, parseServerError, resolveBackoffPolicy } from "../core/internal.js";
+import {
+  buildCommandChain,
+  encodeRequest,
+  parseServerError,
+  resolveBackoffPolicy,
+} from "../core/internal.js";
 import { uploadFileData, downloadFileData, type FileTransferOptions } from "./transfer.js";
-import { buildCommandChain, buildEventChain } from "./events.js";
+import { buildEventChain } from "./events.js";
 import { processInit1 } from "./handshake/crypt-handshake.js";
 import {
   handleHandshakeInitIV,

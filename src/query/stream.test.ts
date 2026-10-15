@@ -119,7 +119,13 @@ describe("connectTcp", () => {
     const server = createServer((socket) => {
       socket.write(BANNER);
       socket.on("data", (data) => {
-        if (data.toString().startsWith("whoami")) {
+        if (data.toString().startsWith("version")) {
+          socket.write("version=3.13.8 build=1 platform=Linux\n\rerror id=0 msg=ok\n\r");
+        } else if (data.toString().startsWith("clientlist")) {
+          socket.write("error id=1281 msg=database\\sempty\\sresult\\sset\n\r");
+        } else if (data.toString().startsWith("servernotifyregister")) {
+          socket.write("error id=0 msg=ok\n\r");
+        } else if (data.toString().startsWith("whoami")) {
           socket.write("client_id=1 client_nickname=serveradmin\n\rerror id=0 msg=ok\n\r");
         }
       });
@@ -128,11 +134,14 @@ describe("connectTcp", () => {
     await once(server, "listening");
     try {
       const { port } = server.address() as AddressInfo;
-      const client = new QueryClient(await connectTcp({ host: "127.0.0.1", port }));
+      const client = new QueryClient({
+        transport: { kind: "custom", open: () => connectTcp({ host: "127.0.0.1", port }) },
+      });
+      await client.connect();
       expect(await client.exec("whoami")).toEqual([
         { client_id: "1", client_nickname: "serveradmin" },
       ]);
-      await client.close();
+      await client.disconnect();
     } finally {
       server.close();
     }
