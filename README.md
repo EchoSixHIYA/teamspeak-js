@@ -114,6 +114,16 @@ with a `NotConnectedError` and send nothing.
 
 ### Events
 
+Name an event with an `EventName` constant, or with its string: the two are the
+same, and the listener's payload type follows either.
+
+```typescript
+import { EventName } from "@honeybbq/teamspeak/client";
+
+client.on(EventName.TextMessage, (message) => console.log(message.message));
+client.on("textMessage", (message) => console.log(message.message)); // the same
+```
+
 | Method                        | Description                        |
 | ----------------------------- | ---------------------------------- |
 | `on("connected", handler)`    | Fires when fully connected         |

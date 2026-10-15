@@ -3,7 +3,7 @@
  * `notification` event:
  *
  * ```ts
- * client.on("notification", (n) => {
+ * client.on(EventName.Notification, (n) => {
  *   if (n.name === NotificationName.ChannelEdited) { ... }
  * });
  * ```
