@@ -52,13 +52,13 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && pnpm --filter ./legacy/teamspeak-client build",
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint --deny-warnings .",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check .",
-    "typecheck": "tsc --noEmit && pnpm --filter ./legacy/teamspeak-client typecheck",
+    "typecheck": "tsc --noEmit",
     "check": "pnpm typecheck && pnpm lint && pnpm fmt:check",
     "test:integration": "vitest run src/client/integration.test.ts --reporter=verbose",
     "test:integration:ts3": "TEAMSPEAK_ADDR=127.0.0.1:9987 TEAMSPEAK_DEFAULT_CHANNEL=Alpha TEAMSPEAK_PASSWORD_CHANNEL=Secret TEAMSPEAK_PASSWORD_CHANNEL_PASSWORD=hunter2 pnpm test:integration",
@@ -79,6 +79,7 @@
     "@arethetypeswrong/cli": "^0.18.5",
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
+    "@honeybbq/teamspeak": "link:.",
     "@microsoft/api-extractor": "7.59.4",
     "@types/node": "^26.6.5",
     "fast-check": "^4.10.2",

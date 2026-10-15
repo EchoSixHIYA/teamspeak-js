@@ -23,6 +23,9 @@ importers:
       '@changesets/cli':
         specifier: ^3.0.3
         version: 3.0.3
+      '@honeybbq/teamspeak':
+        specifier: link:.
+        version: 'link:'
       '@microsoft/api-extractor':
         specifier: 7.59.4
         version: 7.59.4(@types/node@26.6.5)
@@ -62,12 +65,6 @@ importers:
       vitest:
         specifier: ^5.0.0
         version: 5.0.3(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
-
-  legacy/teamspeak-client:
-    dependencies:
-      '@honeybbq/teamspeak':
-        specifier: workspace:*
-        version: link:../..
 
 packages:
 

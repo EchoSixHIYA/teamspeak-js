@@ -13,8 +13,7 @@ import { spawnSync } from "node:child_process";
 
 const reports = "api";
 // One config and one report per public entry point: `.` and `./client`.
-// `query` is not exported yet and has none. The forwarding package declares
-// nothing of its own.
+// `query` is not exported yet and has none.
 const entries = [
   { specifier: "@honeybbq/teamspeak", name: "core", config: "api-extractor.core.json" },
   { specifier: "@honeybbq/teamspeak/client", name: "client", config: "api-extractor.client.jsonc" },

@@ -1,8 +1,7 @@
 name: Release
 
-# Pushing a tag vX.Y.Z publishes every public package at version X.Y.Z. The
-# versions themselves come from changesets (`pnpm version-packages`), which
-# keeps the packages in one fixed group.
+# Pushing a tag vX.Y.Z publishes @honeybbq/teamspeak at version X.Y.Z. The
+# version itself comes from changesets (`pnpm version-packages`).
 
 on:
   push:
@@ -68,24 +67,13 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - run: pnpm install --frozen-lockfile
 
-      # @honeybbq/teamspeak-client depends on the exact version of
-      # @honeybbq/teamspeak, so publishing one at a version the tag does not
-      # name would ship a broken dependency.
-      - name: Check the tag matches every package
+      - name: Check the tag matches the package version
         run: |
-          node -e '
-            const fs = require("node:fs");
-            const want = process.argv[1];
-            const dirs = [".", ...fs.readdirSync("legacy").map((dir) => `legacy/${dir}`)];
-            for (const dir of dirs) {
-              const pkg = JSON.parse(fs.readFileSync(`${dir}/package.json`, "utf8"));
-              if (pkg.private) continue;
-              if (pkg.version !== want) {
-                console.error(`${pkg.name} is at ${pkg.version}, but the tag is v${want}`);
-                process.exit(1);
-              }
-            }
-          ' "${GITHUB_REF_NAME#v}"
+          version=$(node -p 'require("./package.json").version')
+          if [ "$version" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "package.json is at $version, but the tag is $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
 
       # A prerelease goes out under its own dist-tag — 1.0.0-beta.1 under
       # "beta" — so `npm install` keeps resolving to the latest stable release.
@@ -100,10 +88,8 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - run: pnpm build
-      # In dependency order, so @honeybbq/teamspeak (the repository root) is
-      # on npm before the package under legacy/ that forwards to it.
       - name: Publish
-        run: pnpm -r publish --access public --no-git-checks --tag "${{ steps.dist.outputs.tag }}"
+        run: pnpm publish --access public --no-git-checks --tag "${{ steps.dist.outputs.tag }}"
         env:
           NPM_CONFIG_PROVENANCE: "true"
 
