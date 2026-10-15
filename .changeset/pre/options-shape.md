@@ -1,5 +1,5 @@
 ---
-"@honeybbq/teamspeak-client": major
+"@honeybbq/teamspeak": major
 ---
 
 - Supplying `reconnect` turns reconnecting on; `ReconnectOptions.enabled` is gone.

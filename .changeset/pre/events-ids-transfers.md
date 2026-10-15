@@ -1,5 +1,5 @@
 ---
-"@honeybbq/teamspeak-client": major
+"@honeybbq/teamspeak": major
 ---
 
 - Events and the client's own accessors use the branded ids: `clientID()` is a `ClientID`, `channelID()` a `ChannelID`, `uniqueIdentifier()` a `UID`, and every event's ids, uids and groups are branded. `clientEnter` delivers the same `ClientEntry` record `listClients` returns. `VoiceData.clientId` is `clientID`, and `sendVoice`/`sendWhisper` take a `Codec` and `ClientID`s.

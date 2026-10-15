@@ -1,6 +1,5 @@
 ---
-"@honeybbq/teamspeak-core": major
-"@honeybbq/teamspeak-client": major
+"@honeybbq/teamspeak": major
 ---
 
 The client's lifecycle, commands and events, in line with teamspeak-go:

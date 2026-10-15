@@ -1,6 +1,5 @@
 ---
-"@honeybbq/teamspeak-core": patch
-"@honeybbq/teamspeak-client": patch
+"@honeybbq/teamspeak": patch
 ---
 
 A line of rows that each named a field of their own made the rows grow with the square of the line: TeamSpeak leaves out of a row the fields unchanged from the one before, so every row took on all the fields of all the rows before it, and one line of a few hundred kilobytes from a server, or from anyone who could forge its first packets, expanded to gigabytes. The rows of a line are now held to a size in proportion to the line itself; past it, rows carry only the fields they were sent with. The rows of a real server's line never come near it.

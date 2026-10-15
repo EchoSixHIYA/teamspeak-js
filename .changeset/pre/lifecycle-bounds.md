@@ -1,5 +1,5 @@
 ---
-"@honeybbq/teamspeak-client": patch
+"@honeybbq/teamspeak": patch
 ---
 
 - `connect()` is cancellable all the way down: the address lookup and the socket being opened stop when the signal aborts or `disconnect()` interrupts, and a socket that finishes connecting afterwards is closed rather than started, so no handshake can complete, and no `connected` be emitted, after `disconnect()`.
