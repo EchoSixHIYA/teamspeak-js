@@ -280,4 +280,25 @@ describe("QueryClient", () => {
     transport.receive("ok=1", "error id=0 msg=ok");
     expect(await next).toEqual([{ ok: "1" }]);
   });
+
+  // ftinitupload answers `error id=0` and reports its refusal in the row.
+  it("reads a refused transfer negotiation as the error it is", async () => {
+    const transport = new FakeTransport();
+    const client = new QueryClient(transport);
+
+    const refused = client.exec("ftinitupload clientftfid=2 name=/a cid=1");
+    await transport.sentCount(1);
+    transport.receive(
+      "clientftfid=2 status=2058 msg=file\\sis\\sin\\suse size=0",
+      "error id=0 msg=ok",
+    );
+    await expect(refused).rejects.toMatchObject({ code: 2058 });
+
+    const granted = client.exec("ftinitupload clientftfid=3 name=/a cid=1");
+    await transport.sentCount(2);
+    transport.receive("clientftfid=3 serverftfid=1 ftkey=k port=30033", "error id=0 msg=ok");
+    expect(await granted).toEqual([
+      { clientftfid: "3", serverftfid: "1", ftkey: "k", port: "30033" },
+    ]);
+  });
 });

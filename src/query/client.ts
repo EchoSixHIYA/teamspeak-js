@@ -2,6 +2,7 @@ import type { ServerID, TeamspeakError } from "@honeybbq/teamspeak";
 import {
   CommandTimeoutError,
   NotConnectedError,
+  ServerError,
   type CommandExecutor,
   type CommandOptions,
   type CommandRequest,
@@ -19,6 +20,7 @@ import type { QueryTransport } from "./transport.js";
 const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
 
 interface Pending {
+  readonly command: string;
   readonly rows: Array<Record<string, string>>;
   resolve(rows: Array<Record<string, string>>): void;
   reject(error: unknown): void;
@@ -161,7 +163,7 @@ export class QueryClient implements CommandExecutor {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let onAbort: (() => void) | undefined;
     const answered = new Promise<Array<Record<string, string>>>((resolve, reject) => {
-      this.#pending = { rows: [], resolve, reject };
+      this.#pending = { command: parseCommand(line)?.name ?? "", rows: [], resolve, reject };
       timer = setTimeout(
         () => reject(new CommandTimeoutError(parseCommand(line)?.name ?? "")),
         timeout,
@@ -215,7 +217,8 @@ export class QueryClient implements CommandExecutor {
       this.#pending = null;
       if (!pending) return;
       const { err } = parseServerError(cmd.params);
-      if (err) pending.reject(err);
+      const refusal = err ?? transferRefusal(pending.command, pending.rows);
+      if (refusal) pending.reject(refusal);
       else pending.resolve(pending.rows);
       return;
     }
@@ -273,4 +276,25 @@ function splitRows(line: string): string[] {
     .split("|")
     .filter((row) => row !== "")
     .map((row) => prefix + row);
+}
+
+/**
+ * The refusal a file transfer negotiation reports inside a successful answer.
+ *
+ * `ftinitupload` and `ftinitdownload` answer `error id=0` even when they
+ * refuse, and say so in the row instead: `clientftfid=2 status=2058
+ * msg=file\sis\sin\suse`, with no `ftkey`. Left as it is, the typed command
+ * would find no key and report that the server sent no data, losing the
+ * reason; this turns the row into the server error it is.
+ */
+function transferRefusal(
+  command: string,
+  rows: ReadonlyArray<Record<string, string>>,
+): ServerError | undefined {
+  if (command !== "ftinitupload" && command !== "ftinitdownload") return undefined;
+  const row = rows[0];
+  if (row === undefined || row["ftkey"] !== undefined) return undefined;
+  const status = Number(row["status"]);
+  if (!Number.isInteger(status) || status === 0) return undefined;
+  return new ServerError(status, row["msg"] ?? "");
 }

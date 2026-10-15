@@ -1,3 +1,6 @@
+import { createServer } from "node:http";
+import { once } from "node:events";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { ErrorCode, ServerError, listBans, listChannels } from "@honeybbq/teamspeak";
 import { QueryClient } from "./client.js";
@@ -161,5 +164,33 @@ describe("WebQueryTransport", () => {
     await expect(client.exec("whoami", { timeout: 10 })).rejects.toMatchObject({
       name: "CommandTimeoutError",
     });
+  });
+
+  it("reaches a server over node:http when no fetch is given", async () => {
+    let seen: { url?: string | undefined; key?: string | string[] | undefined; body: string } = {
+      body: "",
+    };
+    const server = createServer((req, res) => {
+      req.on("data", (chunk: Buffer) => (seen.body += chunk.toString()));
+      req.on("end", () => {
+        seen = { ...seen, url: req.url, key: req.headers["x-api-key"] };
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ body: [{ a: "1" }], status: { code: 0, message: "ok" } }));
+      });
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const { port } = server.address() as AddressInfo;
+      const client = new QueryClient(
+        new WebQueryTransport({ url: `http://127.0.0.1:${port}`, apiKey: "K", serverID: 1 }),
+      );
+      expect(await client.exec("whoami x=1")).toEqual([{ a: "1" }]);
+      expect(seen.url).toBe("/1/whoami");
+      expect(seen.key).toBe("K");
+      expect(JSON.parse(seen.body)).toEqual({ x: "1" });
+    } finally {
+      server.close();
+    }
   });
 });

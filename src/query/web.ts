@@ -1,3 +1,4 @@
+import { request } from "node:http";
 import { TeamspeakError } from "@honeybbq/teamspeak";
 import { buildCommandOrdered, parseCommand, splitCommandRows } from "../core/internal.js";
 import type { QueryTransport } from "./transport.js";
@@ -37,7 +38,11 @@ export interface WebQueryOptions {
   readonly apiKey: string;
   /** The virtual server to address; `use` changes it. Unset addresses the instance. */
   readonly serverID?: number | bigint | undefined;
-  /** The `fetch` to use; the global one by default. */
+  /**
+   * The `fetch` to use. By default a small one over `node:http`: the global
+   * `fetch` refuses port 10080, WebQuery's own default, as a port the Fetch
+   * standard blocks.
+   */
   readonly fetch?: typeof fetch | undefined;
 }
 
@@ -78,7 +83,7 @@ export class WebQueryTransport implements QueryTransport {
     this.#base = options.url.replace(/\/+$/, "");
     this.#apiKey = options.apiKey;
     this.#prefix = options.serverID === undefined ? "" : `/${options.serverID}`;
-    this.#fetch = options.fetch ?? fetch;
+    this.#fetch = options.fetch ?? httpFetch;
   }
 
   async send(line: string): Promise<void> {
@@ -159,3 +164,30 @@ function rowLine(row: object): string {
   // buildCommandOrdered writes a name first; a row has none.
   return buildCommandOrdered("", fields).slice(1);
 }
+
+/**
+ * The part of `fetch` this transport uses, over `node:http`: a POST with a
+ * string body, answered with a `Response`. Plain HTTP only, as WebQuery is.
+ */
+const httpFetch = ((url: string, init: RequestInit) =>
+  new Promise<Response>((resolve, reject) => {
+    const req = request(
+      url,
+      { method: init.method, headers: init.headers as Record<string, string> },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("error", reject);
+        res.on("end", () =>
+          resolve(
+            new Response(Buffer.concat(chunks), {
+              status: res.statusCode ?? 0,
+              statusText: res.statusMessage ?? "",
+            }),
+          ),
+        );
+      },
+    );
+    req.on("error", reject);
+    req.end(init.body as string);
+  })) as unknown as typeof fetch;
