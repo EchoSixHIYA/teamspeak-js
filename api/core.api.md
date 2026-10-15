@@ -422,6 +422,13 @@ export interface ClientUpdateOptions {
     readonly talkRequestMessage?: string | undefined;
 }
 
+// @public
+export interface ClientVersion {
+    readonly platform: string;
+    readonly sign: string;
+    readonly version: string;
+}
+
 // Warning: (ae-forgotten-export) The symbol "codecValues" needs to be exported by the entry point index.d.ts
 //
 // @public

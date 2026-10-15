@@ -1,6 +1,26 @@
 import type { ClientFileTransferID, ServerFileTransferID } from "./command/ids.js";
 import type { CommandExecutor } from "./command/request.js";
 
+// ---- Client version -----------------------------------------------------------
+
+/**
+ * A client build a server accepts: the platform and version string a client
+ * sends in `clientinit`, and the signature TeamSpeak made over them.
+ *
+ * The signature is Ed25519 over the ASCII bytes of `platform` followed by
+ * `version`, base64 encoded. It cannot be made, only reused, so the values
+ * that work are the ones in `@honeybbq/teamspeak/versions`. The server checks
+ * the signature and refuses a build below its configured minimum.
+ */
+export interface ClientVersion {
+  /** The `client_platform` sent, such as `"Windows"`, `"Linux"` or `"Android"`. */
+  readonly platform: string;
+  /** The `client_version` sent, with its build, such as `"3.6.2 [Build: 1695203293]"`. */
+  readonly version: string;
+  /** Base64 of the 64-byte signature over `platform + version`. */
+  readonly sign: string;
+}
+
 // ---- Middleware types --------------------------------------------------------
 
 /**

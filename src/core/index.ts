@@ -83,7 +83,13 @@ export { PropertyName } from "./property-name.js";
 export type { Permission } from "./permission.js";
 
 export { noopLogger, consoleLogger } from "./types.js";
-export type { CommandMiddleware, FileDownloadInfo, FileUploadInfo, Logger } from "./types.js";
+export type {
+  ClientVersion,
+  CommandMiddleware,
+  FileDownloadInfo,
+  FileUploadInfo,
+  Logger,
+} from "./types.js";
 
 // The events a server sends, shared by every client.
 export type {
