@@ -68,6 +68,7 @@ export {
   Codec,
   GroupNameMode,
   GroupType,
+  HostMessageMode,
   LogLevel,
   PermissionTarget,
   TextMessageTarget,
