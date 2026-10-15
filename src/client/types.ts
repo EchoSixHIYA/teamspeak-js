@@ -1,5 +1,6 @@
 import type {
   ClientEnterEvent,
+  ClientID,
   ClientVersion,
   ClientLeaveEvent,
   ClientMovedEvent,
@@ -55,6 +56,19 @@ export interface EventMap {
   /** A kick from the server also ends the connection, which `disconnected` reports. */
   kicked: KickedEvent;
 }
+
+/**
+ * Who `sendWhisper` sends to. The whisper framing the client writes carries
+ * client ids only, so there is no field for channels yet; one can be added
+ * without changing a call that names `clients`.
+ */
+export interface WhisperTargets {
+  /** The clients to whisper to: at least one and at most 32. */
+  readonly clients?: readonly ClientID[] | undefined;
+}
+
+/** What `sendVoice` can be told. Reserved: it has no fields yet. */
+export interface VoiceOptions {}
 
 /** What `connected` delivers. */
 export interface ConnectedEvent {

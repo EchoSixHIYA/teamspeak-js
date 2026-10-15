@@ -450,7 +450,7 @@ channels, which cost nothing without a subscriber:
 - `honeybbq:teamspeak:command` (`commandChannel`), a tracing channel: `start`
   when a command is sent, `asyncEnd` when its answer arrives, `error` when it
   fails.
-- `honeybbq:teamspeak:packet` (`packetChannel`): every command the server sends.
+- `honeybbq:teamspeak:incoming` (`incomingChannel`): every command the server sends.
 
 Both carry the command's name, never its parameters, which hold password hashes
 and privilege keys.

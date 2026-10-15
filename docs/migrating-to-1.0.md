@@ -113,7 +113,7 @@ Client(...)` disconnects at the end of the scope.
 
 The default logger is silent: pass `logger: console` to see what 0.x printed.
 `TEAMSPEAK_TRACE_RAW` is gone; subscribe to the `honeybbq:teamspeak:command`
-and `honeybbq:teamspeak:packet` diagnostics channels instead.
+and `honeybbq:teamspeak:incoming` diagnostics channels instead.
 
 ## Commands
 
@@ -241,6 +241,14 @@ Commands, `exec`, `execNoWait`, `sendVoice` and `sendWhisper` fail with a
 `NotConnectedError` unless `client.status` is `"connected"`. They used to need
 only an open socket, so one sent while `connect()` was still running went out
 under the handshake's public key.
+
+## Voice
+
+`sendWhisper(data, targets, codec)` takes its targets as a record,
+`{ clients: [clid, …] }`, in place of a bare list of client ids. The whisper
+the client writes carries client ids only, so `WhisperTargets` has no field for
+channels yet. `sendVoice(data, codec, options?)` takes a `VoiceOptions`, which
+has no fields yet.
 
 ## Errors
 

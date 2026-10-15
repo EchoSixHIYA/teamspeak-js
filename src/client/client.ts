@@ -1,5 +1,7 @@
 import {
   type EventMap,
+  type VoiceOptions,
+  type WhisperTargets,
   type ClientOptions,
   type DatagramSocket,
   type ResolvedAddr,
@@ -65,7 +67,7 @@ import type { Readable, Writable } from "node:stream";
 import type { SocketFactory, FileTransferSocketFactory } from "./types.js";
 import { unknownServerCapabilities, type ServerCapabilities } from "./capabilities.js";
 import { joinHostPort, parseConnectAddress, splitHostPort } from "./address.js";
-import { commandChannel, packetChannel, type CommandTrace } from "./diagnostics.js";
+import { commandChannel, incomingChannel, type CommandTrace } from "./diagnostics.js";
 import {
   backoffDelay,
   defaultShouldRetry,
@@ -1000,18 +1002,21 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
   /**
    * Send Opus voice directly to specific clients, bypassing channel routing.
-   * Throws a NotConnectedError unless the client is connected.
+   * Throws a NotConnectedError unless the client is connected, and a
+   * RangeError for no target, more than 32, or an id that is not a client id.
    */
-  sendWhisper(data: Uint8Array, targetClientIDs: readonly ClientID[], codec: Codec): void {
+  sendWhisper(data: Uint8Array, targets: WhisperTargets, codec: Codec): void {
     if (!this.#canSend(false)) throw new NotConnectedError();
-    this.#handler.sendWhisperPacket(data, [...targetClientIDs], codec);
+    this.#handler.sendWhisperPacket(data, [...(targets.clients ?? [])], codec);
   }
 
   /**
    * Send one encoded audio frame to the channel this client is in. Throws a
    * NotConnectedError unless the client is connected.
    */
-  sendVoice(data: Uint8Array, codec: Codec): void {
+  sendVoice(data: Uint8Array, codec: Codec, options?: VoiceOptions): void {
+    // Reserved: VoiceOptions has no fields to read yet.
+    void options;
     if (!this.#canSend(false)) throw new NotConnectedError();
     this.#handler.sendVoicePacket(data, codec);
   }
@@ -1337,7 +1342,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
       });
       return;
     }
-    if (packetChannel.hasSubscribers) packetChannel.publish({ command: cmd.name, client: this });
+    if (incomingChannel.hasSubscribers)
+      incomingChannel.publish({ command: cmd.name, client: this });
 
     // No name means a response row: the server sends data without echoing the
     // command, so the row belongs to whichever command is awaiting a result.

@@ -213,7 +213,7 @@ describe("sending without a connection", () => {
   it("throws a NotConnectedError for voice, whispers and execNoWait", async () => {
     const client = clientOn(() => new FakeSocket());
     expect(() => client.sendVoice(new Uint8Array(4), Codec.OpusVoice)).toThrow(NotConnectedError);
-    expect(() => client.sendWhisper(new Uint8Array(4), [], Codec.OpusVoice)).toThrow(
+    expect(() => client.sendWhisper(new Uint8Array(4), {}, Codec.OpusVoice)).toThrow(
       NotConnectedError,
     );
     await expect(client.execNoWait("clientupdate")).rejects.toBeInstanceOf(NotConnectedError);
@@ -242,9 +242,9 @@ describe("sending without a connection", () => {
     await expect(client.send({ command: "whoami" })).rejects.toBeInstanceOf(NotConnectedError);
     await expect(client.execNoWait("clientupdate")).rejects.toBeInstanceOf(NotConnectedError);
     expect(() => client.sendVoice(new Uint8Array(4), Codec.OpusVoice)).toThrow(NotConnectedError);
-    expect(() => client.sendWhisper(new Uint8Array(4), [asClientID(1)], Codec.OpusVoice)).toThrow(
-      NotConnectedError,
-    );
+    expect(() =>
+      client.sendWhisper(new Uint8Array(4), { clients: [asClientID(1)] }, Codec.OpusVoice),
+    ).toThrow(NotConnectedError);
     expect(socket!.sent.length).toBe(before);
     await client.disconnect();
   });

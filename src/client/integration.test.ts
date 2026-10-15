@@ -626,7 +626,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
 
     const frame = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
     for (let i = 0; i < 12; i++) {
-      sharedClient.sendWhisper(frame, [listener.clientID], 5);
+      sharedClient.sendWhisper(frame, { clients: [listener.clientID] }, 5);
       await new Promise((r) => setTimeout(r, 20));
     }
 

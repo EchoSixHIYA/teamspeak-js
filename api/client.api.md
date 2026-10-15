@@ -98,8 +98,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
     on<K extends keyof EventMap>(event: K, listener: Listener<K>): Unsubscribe;
     once<K extends keyof EventMap>(event: K, listener: Listener<K>): Unsubscribe;
     send(request: CommandRequest, options?: CommandOptions): Promise<Record<string, string>[]>;
-    sendVoice(data: Uint8Array, codec: Codec): void;
-    sendWhisper(data: Uint8Array, targetClientIDs: readonly ClientID[], codec: Codec): void;
+    sendVoice(data: Uint8Array, codec: Codec, options?: VoiceOptions): void;
+    sendWhisper(data: Uint8Array, targets: WhisperTargets, codec: Codec): void;
     get serverCapabilities(): ServerCapabilities;
     get status(): ClientStatus;
     get uid(): UID;
@@ -390,6 +390,15 @@ export class Identity {
 }
 
 // @public
+export const incomingChannel: Channel<IncomingTrace>;
+
+// @public
+export interface IncomingTrace {
+    readonly client: Client;
+    readonly command: string;
+}
+
+// @public
 export class InvalidAddressError extends TeamspeakError {
     constructor(address: string, reason: string);
     readonly address: string;
@@ -406,15 +415,6 @@ export class InvalidIdentityError extends TeamspeakError {
 
 // @public
 export type Listener<K extends keyof EventMap> = EventMap[K] extends void ? () => void : (payload: EventMap[K]) => void;
-
-// @public
-export const packetChannel: Channel<PacketTrace>;
-
-// @public
-export interface PacketTrace {
-    readonly client: Client;
-    readonly command: string;
-}
 
 // @public
 export function parseIdentity(s: string): Identity;
@@ -552,11 +552,20 @@ export function unsubscribeChannel(client: Client, cid: ChannelID, options?: Com
 export function uploadFileData(host: string, info: FileUploadInfo, data: Readable, options?: FileTransferOptions): Promise<void>;
 
 // @public
+export interface VoiceOptions {
+}
+
+// @public
 export interface WelcomeDoneInfo extends AttemptInfo {
     readonly channelID: ChannelID;
     readonly channels: number;
     readonly clients: number;
     readonly durationMs: number;
+}
+
+// @public
+export interface WhisperTargets {
+    readonly clients?: readonly ClientID[] | undefined;
 }
 
 // (No @packageDocumentation comment for this package)
