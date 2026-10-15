@@ -108,6 +108,11 @@ jobs:
       # package.json is rewritten by publishConfig, and workspace:* by pack.
       # Every exported symbol, as a user imports it, has a doc comment.
       - run: pnpm check:docs
+      # The Material theme loads as a TypeDoc plugin and falls back to the
+      # default theme, without an error, when it does not load. It builds that
+      # way, so only the output shows it: this builds the reference and checks
+      # the theme is in it.
+      - run: pnpm check:theme
       # Known vulnerabilities in what consumers install: production
       # dependencies only, since a dev tool's advisory is not theirs.
       - name: Audit production dependencies
