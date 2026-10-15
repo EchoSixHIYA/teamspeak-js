@@ -96,3 +96,39 @@ export interface FileDownloadInfo {
   /** The file transfer port to dial. */
   readonly port: number;
 }
+
+/** Removes a listener; calling it again does nothing. Also a `Disposable`, for `using`. */
+export type Unsubscribe = (() => void) & Disposable;
+
+/**
+ * A listener for the event `K` of the event map `M`: it takes the event's
+ * payload, or nothing for an event whose payload is `void`.
+ */
+export type Listener<M, K extends keyof M> = M[K] extends void
+  ? () => void
+  : (payload: M[K]) => void;
+
+/** The values of the table below, before freezing. */
+const clientStatusValues = {
+  /** Not connected: before `connect()`, after `disconnect()`, or after a drop. */
+  Disconnected: "disconnected",
+  /** Connecting: `connect()` is waiting for the handshake. */
+  Connecting: "connecting",
+  /** Connected: the handshake completed and commands can be sent. */
+  Connected: "connected",
+} as const;
+/** Where a client is in its connection's life. */
+export const ClientStatus: typeof clientStatusValues =
+  /* @__PURE__ */ Object.freeze(clientStatusValues);
+/**
+ * One of {@link ClientStatus}. May gain members in a minor release: a
+ * `switch` over it needs a default case.
+ */
+export type ClientStatus = (typeof ClientStatus)[keyof typeof ClientStatus];
+
+/**
+ * The server generation a version string belongs to. May gain members in a
+ * minor release, as server generations appear: a `switch` over it needs a
+ * default case.
+ */
+export type ServerFamily = "ts3" | "ts6" | "unknown";

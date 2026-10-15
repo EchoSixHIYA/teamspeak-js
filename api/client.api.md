@@ -6,10 +6,8 @@
 
 import { Channel } from 'node:diagnostics_channel';
 import { ChannelID } from '@honeybbq/teamspeak';
-import type { ClientEnterEvent } from '@honeybbq/teamspeak';
 import { ClientID } from '@honeybbq/teamspeak';
-import type { ClientLeaveEvent } from '@honeybbq/teamspeak';
-import type { ClientMovedEvent } from '@honeybbq/teamspeak';
+import { ClientStatus } from '@honeybbq/teamspeak';
 import type { ClientVersion } from '@honeybbq/teamspeak';
 import { Codec } from '@honeybbq/teamspeak';
 import type { CommandExecutor } from '@honeybbq/teamspeak';
@@ -20,16 +18,19 @@ import { Duplex } from 'node:stream';
 import type { FileDownloadInfo } from '@honeybbq/teamspeak';
 import type { FileUploadInfo } from '@honeybbq/teamspeak';
 import { IconID } from '@honeybbq/teamspeak';
-import type { KickedEvent } from '@honeybbq/teamspeak';
+import { Listener } from '@honeybbq/teamspeak';
 import type { Logger } from '@honeybbq/teamspeak';
-import type { NotificationEvent } from '@honeybbq/teamspeak';
 import type { PokeEvent } from '@honeybbq/teamspeak';
 import { Readable } from 'node:stream';
+import type { ReconnectOptions } from '@honeybbq/teamspeak';
+import type { ServerEventMap } from '@honeybbq/teamspeak';
+import { ServerFamily } from '@honeybbq/teamspeak';
 import { ServerID } from '@honeybbq/teamspeak';
+import type { SessionEventMap } from '@honeybbq/teamspeak';
 import { TeamspeakError } from '@honeybbq/teamspeak';
-import type { TextMessageEvent } from '@honeybbq/teamspeak';
 import { TracingChannel } from 'node:diagnostics_channel';
 import { UID } from '@honeybbq/teamspeak';
+import { Unsubscribe } from '@honeybbq/teamspeak';
 import type { VoiceDataEvent } from '@honeybbq/teamspeak';
 import { Writable } from 'node:stream';
 
@@ -38,13 +39,6 @@ export interface AddrResolver {
     resolve(addr: string, options?: {
         readonly signal?: AbortSignal | undefined;
     }): Promise<readonly ResolvedAddr[]>;
-}
-
-// @public
-export class AlreadyConnectedError extends TeamspeakError {
-    constructor();
-    // (undocumented)
-    static readonly kind: string;
 }
 
 // Warning: (ae-forgotten-export) The symbol "AttemptInfo" needs to be exported by the entry point index.d.ts
@@ -61,18 +55,6 @@ export interface AttemptFailedInfo extends AttemptInfo {
 interface AttemptInfo {
     readonly attempt: number;
     readonly reconnect: boolean;
-}
-
-// @public
-export function backoffDelay(policy: Readonly<BackoffPolicy>, attempt: number): number;
-
-// @public
-export interface BackoffPolicy {
-    readonly factor: number;
-    readonly initialDelayMs: number;
-    readonly jitter: number;
-    readonly maxAttempts: number;
-    readonly maxDelayMs: number;
 }
 
 // @public
@@ -95,8 +77,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
     execNoWait(command: string, options?: {
         readonly signal?: AbortSignal | undefined;
     }): Promise<void>;
-    on<K extends keyof EventMap>(event: K, listener: Listener<K>): Unsubscribe;
-    once<K extends keyof EventMap>(event: K, listener: Listener<K>): Unsubscribe;
+    on<K extends keyof EventMap>(event: K, listener: Listener<EventMap, K>): Unsubscribe;
+    once<K extends keyof EventMap>(event: K, listener: Listener<EventMap, K>): Unsubscribe;
     send(request: CommandRequest, options?: CommandOptions): Promise<Record<string, string>[]>;
     sendVoice(data: Uint8Array, codec: Codec, options?: VoiceOptions): void;
     sendWhisper(data: Uint8Array, targets: WhisperTargets, codec: Codec): void;
@@ -122,21 +104,6 @@ export interface ClientOptions {
     readonly trace?: ClientTrace | undefined;
     readonly version?: ClientVersion | undefined;
 }
-
-// Warning: (ae-forgotten-export) The symbol "clientStatusValues" needs to be exported by the entry point index.d.ts
-//
-// @public
-export const ClientStatus: typeof clientStatusValues;
-
-// @public
-export type ClientStatus = (typeof ClientStatus)[keyof typeof ClientStatus];
-
-// @public
-const clientStatusValues: {
-    readonly Disconnected: "disconnected";
-    readonly Connecting: "connecting";
-    readonly Connected: "connected";
-};
 
 // @public
 export interface ClientTrace {
@@ -169,11 +136,6 @@ export interface ConnectDoneInfo extends AttemptInfo {
     readonly durationMs: number;
     readonly localAddr: string;
     readonly target: string;
-}
-
-// @public
-export interface ConnectedEvent {
-    readonly reconnected: boolean;
 }
 
 // @public
@@ -220,9 +182,6 @@ export interface DatagramSocket {
 }
 
 // @public
-export const defaultBackoffPolicy: Readonly<BackoffPolicy>;
-
-// @public
 export function defaultShouldRetry(error: Error | undefined): boolean;
 
 // @public
@@ -235,12 +194,6 @@ export interface DisconnectDoneInfo {
 }
 
 // @public
-export interface DisconnectedEvent {
-    readonly error: Error | undefined;
-    readonly willReconnect: boolean;
-}
-
-// @public
 export interface DisconnectStartInfo {
 }
 
@@ -248,16 +201,8 @@ export interface DisconnectStartInfo {
 export function downloadFileData(host: string, info: FileDownloadInfo, dest: Writable, options?: FileTransferOptions): Promise<void>;
 
 // @public
-export interface EventMap {
-    clientEnter: ClientEnterEvent;
-    clientLeave: ClientLeaveEvent;
-    clientMoved: ClientMovedEvent;
-    connected: ConnectedEvent;
-    disconnected: DisconnectedEvent;
-    kicked: KickedEvent;
-    notification: NotificationEvent;
+export interface EventMap extends ServerEventMap, SessionEventMap {
     poked: PokeEvent;
-    textMessage: TextMessageEvent;
     voiceData: VoiceDataEvent;
 }
 
@@ -414,18 +359,7 @@ export class InvalidIdentityError extends TeamspeakError {
 }
 
 // @public
-export type Listener<K extends keyof EventMap> = EventMap[K] extends void ? () => void : (payload: EventMap[K]) => void;
-
-// @public
 export function parseIdentity(s: string): Identity;
-
-// @public
-export interface ReconnectOptions {
-    readonly backoff?: {
-        readonly [K in keyof BackoffPolicy]?: BackoffPolicy[K] | undefined;
-    } | undefined;
-    readonly shouldRetry?: ((error: Error | undefined, attempt: number) => boolean) | undefined;
-}
 
 // @public
 export interface ReconnectScheduledInfo {
@@ -500,9 +434,6 @@ export type ServerEvent = {
 export type ServerEventName = "textMessage" | "clientEnter" | "clientLeave" | "clientMoved" | "poked" | "voiceData" | "notification";
 
 // @public
-export type ServerFamily = "ts3" | "ts6" | "unknown";
-
-// @public
 export interface SessionEndInfo {
     readonly attempt: number;
     readonly clientID: ClientID;
@@ -538,9 +469,6 @@ export function uidFromPublicKey(publicKey: string, algorithm: UIDAlgorithm): UI
 
 // @public
 export function unknownServerCapabilities(): ServerCapabilities;
-
-// @public
-export type Unsubscribe = (() => void) & Disposable;
 
 // @public
 export function unsubscribeAllChannels(client: Client, options?: CommandOptions): Promise<void>;

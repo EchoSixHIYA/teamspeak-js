@@ -1,25 +1,5 @@
 import { Reason, TeamspeakError } from "@honeybbq/teamspeak";
 
-/** `connect()` was called on a client that is connecting or connected. */
-export class AlreadyConnectedError extends TeamspeakError {
-  /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
-  static override readonly kind: string = "AlreadyConnectedError";
-  static {
-    // On the prototype, not the instance, as built-in errors do: an own `name`
-    // would be enumerable and show up in JSON.stringify and object spread.
-    Object.defineProperty(this.prototype, "name", {
-      value: "AlreadyConnectedError",
-      writable: true,
-      configurable: true,
-      enumerable: false,
-    });
-  }
-
-  constructor() {
-    super("already connecting or connected");
-  }
-}
-
 /**
  * The address a client was given cannot be connected to: no host, a host with
  * characters no host name or IP address has, or a port outside 1–65535.

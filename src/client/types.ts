@@ -1,19 +1,15 @@
 import type {
-  ClientEnterEvent,
   ClientID,
   ClientVersion,
-  ClientLeaveEvent,
-  ClientMovedEvent,
   CommandMiddleware,
-  KickedEvent,
   Logger,
-  NotificationEvent,
   PokeEvent,
-  TextMessageEvent,
+  ReconnectOptions,
+  ServerEventMap,
+  SessionEventMap,
   VoiceDataEvent,
 } from "@honeybbq/teamspeak";
 import type { Duplex } from "node:stream";
-import type { ReconnectOptions } from "./reconnect.js";
 import type { ClientTrace } from "./trace.js";
 
 // ---- Events ---------------------------------------------------------------
@@ -23,15 +19,7 @@ import type { ClientTrace } from "./trace.js";
  * minor release; code that handles every event generically should expect
  * names it does not know.
  */
-export interface EventMap {
-  /** A text message to this client, its channel or the server. */
-  textMessage: TextMessageEvent;
-  /** A client coming into view, including every client already there on connecting. */
-  clientEnter: ClientEnterEvent;
-  /** A client going out of view. */
-  clientLeave: ClientLeaveEvent;
-  /** A client changing channel. */
-  clientMoved: ClientMovedEvent;
+export interface EventMap extends ServerEventMap, SessionEventMap {
   /** This client being poked. */
   poked: PokeEvent;
   /**
@@ -41,20 +29,6 @@ export interface EventMap {
    * that cannot keep up loses audio rather than memory.
    */
   voiceData: VoiceDataEvent;
-  /**
-   * Every notification the server sends, modelled or not, after any event it
-   * produces.
-   */
-  notification: NotificationEvent;
-  /** The handshake completing, on `connect()` and on every reconnection. */
-  connected: ConnectedEvent;
-  /**
-   * The connection ending, after `disconnect()`, a drop, or a failed attempt;
-   * the event says why and whether the reconnect loop will try again.
-   */
-  disconnected: DisconnectedEvent;
-  /** A kick from the server also ends the connection, which `disconnected` reports. */
-  kicked: KickedEvent;
 }
 
 /**
@@ -69,32 +43,6 @@ export interface WhisperTargets {
 
 /** What `sendVoice` can be told. Reserved: it has no fields yet. */
 export interface VoiceOptions {}
-
-/** What `connected` delivers. */
-export interface ConnectedEvent {
-  /**
-   * Whether the reconnect loop made this connection, rather than a call to
-   * `connect()`.
-   */
-  readonly reconnected: boolean;
-}
-
-/** What `disconnected` delivers. */
-export interface DisconnectedEvent {
-  /**
-   * `undefined` after `disconnect()`, and the cause otherwise: a failed
-   * handshake, a `ConnectionTimeoutError`, or a `RemovedError` for a kick, a
-   * ban or a server stopping.
-   */
-  readonly error: Error | undefined;
-  /**
-   * Whether the reconnect loop will try again, as of this event. False after
-   * `disconnect()`, without `reconnect` options, when `shouldRetry` refuses
-   * this cause, and once `backoff.maxAttempts` is spent. A `disconnect()` or a
-   * manual `connect()` while it waits can still end the loop.
-   */
-  readonly willReconnect: boolean;
-}
 
 /** The values of the table below, before freezing. */
 const eventNameValues = {
@@ -160,14 +108,6 @@ export type ServerEvent = {
   [K in ServerEventName]: { readonly name: K; readonly payload: EventMap[K] };
 }[ServerEventName];
 
-/** A listener for one event. */
-export type Listener<K extends keyof EventMap> = EventMap[K] extends void
-  ? () => void
-  : (payload: EventMap[K]) => void;
-
-/** Removes a listener; calling it again does nothing. Also a `Disposable`, for `using`. */
-export type Unsubscribe = (() => void) & Disposable;
-
 // ---- Transport seam ---------------------------------------------------------
 
 /**
@@ -211,26 +151,6 @@ export type SocketFactory = (family: 4 | 6) => DatagramSocket;
  * it.
  */
 export type FileTransferSocketFactory = (host: string, port: number) => Duplex;
-
-// ---- Client status ----------------------------------------------------------
-
-/** The values of the table below, before freezing. */
-const clientStatusValues = {
-  /** Not connected: before `connect()`, after `disconnect()`, or after a drop. */
-  Disconnected: "disconnected",
-  /** Connecting: `connect()` is waiting for the handshake. */
-  Connecting: "connecting",
-  /** Connected: the handshake completed and commands can be sent. */
-  Connected: "connected",
-} as const;
-/** Where a client is in its connection's life. */
-export const ClientStatus: typeof clientStatusValues =
-  /* @__PURE__ */ Object.freeze(clientStatusValues);
-/**
- * One of {@link ClientStatus}. May gain members in a minor release: a
- * `switch` over it needs a default case.
- */
-export type ClientStatus = (typeof ClientStatus)[keyof typeof ClientStatus];
 
 /** Wraps the delivery of server events; it may observe, alter or drop them. */
 export type EventMiddleware = (next: (event: ServerEvent) => void) => (event: ServerEvent) => void;

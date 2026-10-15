@@ -162,6 +162,26 @@ export class NotConnectedError extends TeamspeakError {
   }
 }
 
+/** `connect()` was called on a client that is connecting or connected. */
+export class AlreadyConnectedError extends TeamspeakError {
+  /** {@inheritDoc TeamspeakError.kind} */
+  static override readonly kind: string = "AlreadyConnectedError";
+  static {
+    // On the prototype, not the instance, as built-in errors do: an own `name`
+    // would be enumerable and show up in JSON.stringify and object spread.
+    Object.defineProperty(this.prototype, "name", {
+      value: "AlreadyConnectedError",
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
+  }
+
+  constructor() {
+    super("already connecting or connected");
+  }
+}
+
 /**
  * A command that answers with data succeeded without it: the server sent no
  * row, or a row without the value the command exists to return — a created

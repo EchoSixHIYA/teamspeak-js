@@ -54,6 +54,12 @@ export function addServerGroupPermission(client: CommandExecutor, sgid: ServerGr
 export function addTempPassword(client: CommandExecutor, temp: TempPasswordOptions, options?: CommandOptions): Promise<void>;
 
 // @public
+export class AlreadyConnectedError extends TeamspeakError {
+    constructor();
+    static readonly kind: string;
+}
+
+// @public
 export const asBanID: (v: bigint | number) => BanID;
 
 // @public
@@ -94,6 +100,18 @@ export const asServerID: (v: bigint | number) => ServerID;
 
 // @public
 export const asUID: (v: string) => UID;
+
+// @public
+export function backoffDelay(policy: Readonly<BackoffPolicy>, attempt: number): number;
+
+// @public
+export interface BackoffPolicy {
+    readonly factor: number;
+    readonly initialDelayMs: number;
+    readonly jitter: number;
+    readonly maxAttempts: number;
+    readonly maxDelayMs: number;
+}
 
 // @public
 export function banClient(client: CommandExecutor, clid: ClientID, options?: BanClientOptions): Promise<BanID[]>;
@@ -391,6 +409,21 @@ export interface ClientPermissionOptions extends CommandOptions {
     readonly skip?: boolean | undefined;
 }
 
+// Warning: (ae-forgotten-export) The symbol "clientStatusValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const ClientStatus: typeof clientStatusValues;
+
+// @public
+export type ClientStatus = (typeof ClientStatus)[keyof typeof ClientStatus];
+
+// @public
+const clientStatusValues: {
+    readonly Disconnected: "disconnected";
+    readonly Connecting: "connecting";
+    readonly Connected: "connected";
+};
+
 // Warning: (ae-forgotten-export) The symbol "clientTypeValues" needs to be exported by the entry point index.d.ts
 //
 // @public
@@ -660,6 +693,11 @@ export interface ComplaintListOptions extends CommandOptions {
 }
 
 // @public
+export interface ConnectedEvent {
+    readonly reconnected: boolean;
+}
+
+// @public
 export const consoleLogger: Logger;
 
 // @public
@@ -679,6 +717,9 @@ export function createDirectory(client: CommandExecutor, cid: ChannelID, dirname
 
 // @public
 export function createServerGroup(client: CommandExecutor, name: string, type: GroupType, options?: CommandOptions): Promise<ServerGroupID>;
+
+// @public
+export const defaultBackoffPolicy: Readonly<BackoffPolicy>;
 
 // @public
 export function deleteAllBans(client: CommandExecutor, options?: CommandOptions): Promise<void>;
@@ -730,6 +771,12 @@ export function deleteServerGroupPermission(client: CommandExecutor, sgid: Serve
 
 // @public
 export function deleteTempPassword(client: CommandExecutor, password: string, options?: CommandOptions): Promise<void>;
+
+// @public
+export interface DisconnectedEvent {
+    readonly error: Error | undefined;
+    readonly willReconnect: boolean;
+}
 
 // @public
 export function editChannel(client: CommandExecutor, cid: ChannelID, settings: ChannelEditOptions, options?: CommandOptions): Promise<void>;
@@ -1201,6 +1248,9 @@ export function listClients(client: CommandExecutor, options?: ClientListOptions
 
 // @public
 export function listComplaints(client: CommandExecutor, options?: ComplaintListOptions): Promise<Complaint[]>;
+
+// @public
+export type Listener<M, K extends keyof M> = M[K] extends void ? () => void : (payload: M[K]) => void;
 
 // @public
 export function listFiles(client: CommandExecutor, cid: ChannelID, path: string, options?: FileOptions): Promise<FileEntry[]>;
@@ -2027,6 +2077,14 @@ const reasonValues: {
 };
 
 // @public
+export interface ReconnectOptions {
+    readonly backoff?: {
+        readonly [K in keyof BackoffPolicy]?: BackoffPolicy[K] | undefined;
+    } | undefined;
+    readonly shouldRetry?: ((error: Error | undefined, attempt: number) => boolean) | undefined;
+}
+
+// @public
 export function removeClientFromServerGroup(client: CommandExecutor, sgid: ServerGroupID, cldbid: ClientDBID, options?: CommandOptions): Promise<void>;
 
 // @public
@@ -2081,6 +2139,18 @@ export class ServerError extends TeamspeakError {
     static readonly kind: string;
     readonly serverMessage: string;
 }
+
+// @public
+export interface ServerEventMap {
+    clientEnter: ClientEnterEvent;
+    clientLeave: ClientLeaveEvent;
+    clientMoved: ClientMovedEvent;
+    notification: NotificationEvent;
+    textMessage: TextMessageEvent;
+}
+
+// @public
+export type ServerFamily = "ts3" | "ts6" | "unknown";
 
 // @public
 export type ServerFileTransferID = number & {
@@ -2141,6 +2211,13 @@ export interface ServerVersion {
     readonly build: number;
     readonly platform: string;
     readonly version: string;
+}
+
+// @public
+export interface SessionEventMap {
+    connected: ConnectedEvent;
+    disconnected: DisconnectedEvent;
+    kicked: KickedEvent;
 }
 
 // @public
@@ -2210,6 +2287,9 @@ export type UID = string & {
 // @public
 function unescape_2(s: string): string;
 export { unescape_2 as unescape }
+
+// @public
+export type Unsubscribe = (() => void) & Disposable;
 
 // @public
 export function updateClient(client: CommandExecutor, update: ClientUpdateOptions, options?: CommandOptions): Promise<void>;

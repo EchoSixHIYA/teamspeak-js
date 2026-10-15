@@ -129,3 +129,58 @@ export interface NotificationEvent {
   /** Its parameters, unescaped. */
   readonly params: Readonly<Record<string, string>>;
 }
+
+/** What `connected` delivers. */
+export interface ConnectedEvent {
+  /**
+   * Whether the reconnect loop made this connection, rather than a call to
+   * `connect()`.
+   */
+  readonly reconnected: boolean;
+}
+
+/** What `disconnected` delivers. */
+export interface DisconnectedEvent {
+  /**
+   * `undefined` after `disconnect()`, and the cause otherwise, such as a failed
+   * handshake, the connection timing out, or the client being removed.
+   */
+  readonly error: Error | undefined;
+  /**
+   * Whether the reconnect loop will try again, as of this event. False after
+   * `disconnect()`, without `reconnect` options, when `shouldRetry` refuses
+   * this cause, and once `backoff.maxAttempts` is spent. A `disconnect()` or a
+   * manual `connect()` while it waits can still end the loop.
+   */
+  readonly willReconnect: boolean;
+}
+
+/** The events a server sends, by name, that every kind of client delivers. */
+export interface ServerEventMap {
+  /** A text message to this client, its channel or the server. */
+  textMessage: TextMessageEvent;
+  /** A client coming into view, including every client already there on connecting. */
+  clientEnter: ClientEnterEvent;
+  /** A client going out of view. */
+  clientLeave: ClientLeaveEvent;
+  /** A client changing channel. */
+  clientMoved: ClientMovedEvent;
+  /**
+   * Every notification the server sends, modelled or not, after any event it
+   * produces.
+   */
+  notification: NotificationEvent;
+}
+
+/** The events about a connection's own life, by name, that every kind of client delivers. */
+export interface SessionEventMap {
+  /** The handshake completing, on `connect()` and on every reconnection. */
+  connected: ConnectedEvent;
+  /**
+   * The connection ending, after `disconnect()`, a drop, or a failed attempt;
+   * the event says why and whether the reconnect loop will try again.
+   */
+  disconnected: DisconnectedEvent;
+  /** A kick from the server also ends the connection, which `disconnected` reports. */
+  kicked: KickedEvent;
+}

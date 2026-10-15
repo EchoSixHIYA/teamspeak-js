@@ -17,7 +17,7 @@ async function minifiedCopy(dir: string, name: string): Promise<Record<string, F
     entry,
     [
       `export * from ${JSON.stringify(fileURLToPath(new URL("./errors.ts", import.meta.url)))};`,
-      `export { TeamspeakError, ServerError, CommandTimeoutError, NotConnectedError, NoDataError } from ${JSON.stringify(fileURLToPath(new URL("../core/errors.ts", import.meta.url)))};`,
+      `export { TeamspeakError, ServerError, CommandTimeoutError, NotConnectedError, NoDataError, AlreadyConnectedError } from ${JSON.stringify(fileURLToPath(new URL("../core/errors.ts", import.meta.url)))};`,
     ].join("\n"),
   );
   const result = (await build({
@@ -78,7 +78,7 @@ describe("instanceof across minified copies", () => {
 describe("client error names", () => {
   it("are on the prototype, not own properties", () => {
     const errors = [
-      new client.AlreadyConnectedError(),
+      new core.AlreadyConnectedError(),
       new client.InvalidAddressError("a", "b"),
       new client.FileTransferError("x"),
       new client.HandshakeError("x"),
