@@ -51,10 +51,9 @@ macOS), then move the client's own symbols to a `/client` import by hand:
 git grep -lE '@honeybbq/teamspeak-(core|client)' -- src | xargs sed -i -E 's#@honeybbq/teamspeak-(core|client)#@honeybbq/teamspeak#g'
 ```
 
-`@honeybbq/teamspeak-client` stays on npm as a thin package that re-exports
-both entries, so code that imports everything from it keeps working through
-1.x. New code should use `@honeybbq/teamspeak`. `@honeybbq/teamspeak-core` is
-not published any more, and `@honeybbq/teamspeak-core/internal` is gone.
+`@honeybbq/teamspeak-client` and `@honeybbq/teamspeak-core` are deprecated on
+npm and get no further releases; 1.0 is published only as
+`@honeybbq/teamspeak`. `@honeybbq/teamspeak-core/internal` is gone.
 
 The 0.x line is closed to features: 0.3.x gets security fixes only, from a
 `release/0.3` branch. There will be no 0.x release built on 1.0.

@@ -534,9 +534,8 @@ The protocol internals (crypto, handshake, transport) are not exported. They
 change with the protocol, and exporting them would have made every change a
 breaking one.
 
-`@honeybbq/teamspeak-client` remains as a forwarding package that re-exports
-both entries, so existing imports keep working through 1.x; new code should use
-`@honeybbq/teamspeak`. Coming from 0.x? The
+`@honeybbq/teamspeak-client` and `@honeybbq/teamspeak-core` are deprecated and
+get no further releases. Coming from 0.x? The
 [migration guide](https://github.com/HoneyBBQ/teamspeak-js/blob/main/docs/migrating-to-1.0.md) lists every change.
 
 ## Architecture
@@ -562,7 +561,6 @@ src/
 └── query/             # ServerQuery client (not exported yet)
 examples/
 └── connect.ts  # Minimal connection example
-legacy/teamspeak-client/   # Forwarding package, no code of its own
 ```
 
 ## Related

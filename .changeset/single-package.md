@@ -1,6 +1,5 @@
 ---
 "@honeybbq/teamspeak": major
-"@honeybbq/teamspeak-client": major
 ---
 
 `@honeybbq/teamspeak-core` and `@honeybbq/teamspeak-client` are now one package, `@honeybbq/teamspeak`, with two entry points. The ServerQuery client will join it as a third in a 1.x release.
@@ -23,4 +22,4 @@ import { listChannels, ErrorCode } from "@honeybbq/teamspeak";
 
 Replace `@honeybbq/teamspeak-core` and `@honeybbq/teamspeak-client` with `@honeybbq/teamspeak` in your `package.json`. Nothing else about the API changed.
 
-`@honeybbq/teamspeak-client` stays on npm as a thin package that re-exports both entries, so code that imports everything from it keeps working through 1.x. New code should use `@honeybbq/teamspeak`. `@honeybbq/teamspeak-core` is not published any more, and `@honeybbq/teamspeak-core/internal` is gone.
+`@honeybbq/teamspeak-core` and `@honeybbq/teamspeak-client` are deprecated on npm and get no further releases; 1.0 is published only as `@honeybbq/teamspeak`. `@honeybbq/teamspeak-core/internal` is gone.

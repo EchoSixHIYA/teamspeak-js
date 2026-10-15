@@ -7,10 +7,7 @@ turns them into version bumps and CHANGELOG entries.
 Write the changeset for the person upgrading. A change that breaks an import or
 a call says what to write instead.
 
-`@honeybbq/teamspeak` is the package that holds the code, so a changeset names
-it. `@honeybbq/teamspeak-client` only forwards to it, and the two are one fixed
-group: they always share a version and are released together. Name the
-forwarding package as well only when its own behavior changes.
+`@honeybbq/teamspeak` is the only package, so a changeset names it.
 
 Entries link to their pull request and commit, which needs a token with read
 access to GitHub: `pnpm version-packages` takes it from `gh auth token`, or

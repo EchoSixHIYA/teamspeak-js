@@ -19,11 +19,7 @@ import type * as TS from "typescript";
 const require = createRequire(import.meta.url);
 const ts = require("typescript-api") as typeof TS;
 
-const entries = [
-  "dist/core/index.d.ts",
-  "dist/client/index.d.ts",
-  "legacy/teamspeak-client/dist/index.d.ts",
-].map((p) => resolve(p));
+const entries = ["dist/core/index.d.ts", "dist/client/index.d.ts"].map((p) => resolve(p));
 
 const program = ts.createProgram(entries, { skipLibCheck: true, noEmit: true });
 const checker = program.getTypeChecker();

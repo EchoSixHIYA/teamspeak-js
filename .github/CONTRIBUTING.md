@@ -43,8 +43,6 @@ one directory per entry point:
 - `src/client` is the voice client (`@honeybbq/teamspeak/client`).
 - `src/query` is the ServerQuery client. It is not exported yet and ships in a
   1.x release as `@honeybbq/teamspeak/query`.
-- `legacy/teamspeak-client` forwards to the package above and has no code of
-  its own.
 
 `src/client` and `src/query` use the core's public API through its package name,
 `@honeybbq/teamspeak`, and take plumbing only from `../core/internal.js`. They
@@ -90,16 +88,15 @@ changelog and in the GitHub release notes:
 pnpm changeset
 ```
 
-A changeset names `@honeybbq/teamspeak` and the bump. It does not name
-`@honeybbq/teamspeak-client`, which follows by itself. Describe the change for
+A changeset names `@honeybbq/teamspeak` and the bump. Describe the change for
 someone upgrading: what changed, and what they have to do about it. The
 repository is in prerelease mode (`1.0.0-beta.N`) until 1.0.0, so a changeset is
 still the right way to record a breaking change.
 [.changeset/README.md](../.changeset/README.md) has the details. Changes nobody
 would notice, such as tests, CI and internal refactors, do not need one.
 
-The changelog links each entry to its pull request and commit and thanks its
-author, so a changeset has no `pr:`, `commit:` or `author:` lines. A maintainer
+The changelog links each entry to its pull request and commit, and thanks the
+author of a first contribution, so a changeset has no `pr:`, `commit:` or `author:` lines. A maintainer
 may write or edit a changeset for you, so a first pull request does not need to
 learn changesets.
 

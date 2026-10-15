@@ -1,8 +1,11 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3/schema.json",
-  "changelog": ["@changesets/changelog-github", { "repo": "HoneyBBQ/teamspeak-js" }],
+  "changelog": [
+    "./changelog.mjs",
+    { "repo": "HoneyBBQ/teamspeak-js", "maintainers": ["HoneyBBQ"] }
+  ],
   "commit": false,
-  "fixed": [["@honeybbq/teamspeak", "@honeybbq/teamspeak-client"]],
+  "fixed": [],
   "linked": [],
   "access": "public",
   "baseBranch": "main",

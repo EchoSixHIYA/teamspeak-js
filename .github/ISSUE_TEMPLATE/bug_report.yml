@@ -12,7 +12,6 @@ body:
       label: Package
       options:
         - "@honeybbq/teamspeak"
-        - "@honeybbq/teamspeak-client (forwarding package)"
         - Not sure
     validations:
       required: true
