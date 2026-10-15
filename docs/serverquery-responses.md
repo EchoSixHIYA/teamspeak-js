@@ -1,0 +1,392 @@
+# How ServerQuery answers each typed command
+
+Measured against TS3 3.13.8 and TS6 6.0.0-beta13.1 as Server Admin, with every
+typed command of the core run through a `QueryClient`. Re-run the measurement
+with `scripts/probe-serverquery.mts`. The question it answers is whether a
+ServerQuery client can serve the core as it stands, and every difference it
+found is sorted into one of four classes:
+
+- **a**: none. The command and its parser work as they are.
+- **b**: handled inside the ServerQuery client or its transport.
+- **c**: needs an additive change to the core: a field or option added, or a
+  value filled that was left empty.
+- **d**: needs a breaking change to the core: a field type, a return type, a
+  signature, or a field that cannot be filled.
+
+Only **d** blocks 1.0.
+
+## Transports
+
+| Transport | Where        | TS3                         | TS6                 | Login           | Events |
+| --------- | ------------ | --------------------------- | ------------------- | --------------- | ------ |
+| Raw TCP   | 10011        | yes                         | **no**              | `login` command | yes    |
+| SSH       | 10022        | not published, not measured | yes, off by default | the SSH login   | yes    |
+| WebQuery  | 10080 (HTTP) | not published, not measured | yes                 | `x-api-key`     | no     |
+
+**TS6 does not serve raw TCP.** Nothing listens on 10011 in the container
+(its listening sockets are the HTTP query port and the file transfer port),
+connecting is refused, and the server's command-line options list SSH, HTTP
+and HTTPS query interfaces and no raw one. Port 10011 on the host, in the
+setup the probe ran in, is TS3's.
+
+**SSH is off by default on TS6** and was measured on a second TS6 container
+started with `TSSERVER_QUERY_SSH_ENABLED=1`, its own file transfer port and
+its own admin password. The session is the query account already, so there is
+no `login`, only `use`. It greets with the same two-line banner as raw TCP.
+Over SSH, TS6 answers everything TS3 does over raw TCP, with one exception:
+`ftstop` for a transfer that does not exist crashes the server. The log says
+`TeamSpeak server has crashed`, and the server answers nothing until the
+container restarts. It did so every time, three of three. TS3 answers the same
+command with a status row.
+
+**WebQuery** frames each command as `POST /<server>/<command>` with the
+parameters as JSON, and answers JSON: `body` is the rows and `status` is the
+`error` line (`code`, `message`, and sometimes `extra_message`). The transport
+turns that back into rows and an `error id=… msg=…` line, so the client sees
+one answer shape.
+
+- A refusal is HTTP 200 for most errors (768, 1281, 512) and 400 for some
+  (1538 for an unknown command, 7 for an unknown server); the `status.code`
+  decides, not the HTTP status.
+- A wrong key is 401 and carries a TeamSpeak code (5122), so it is a
+  `ServerError`. Only an answer with no code at all is a transport error.
+- No key at all is served as a guest: `whoami` answers 200 and everything else
+  401 with code 5120.
+- `login`, `use` and `quit` do not exist. `use` is answered by the transport,
+  which changes the server the next requests address.
+- The api key the server printed at its first start is refused every `ft*`
+  command and `servernotifyregister` with code 5120, "command not in api key
+  scope", so TS6's file transfers and events need SSH. The server's own
+  documentation lists them as unsupported over WebQuery.
+- The global `fetch` refuses port 10080 as a blocked port ("bad port"), so
+  the transport uses `node:http`.
+
+On the wire, a ServerQuery connection writes `\n\r` after each line, and a
+list is one line of rows joined by `|`. Every row carries all its fields: no
+row left out a field the row before it had. That is unlike the voice protocol,
+whose rows are completed from the row before, so the client does not do that
+here. One answer was affected: `logview`, whose rows after the first carry
+only `l`.
+
+## Commands
+
+For TS6, the commands that need a file transfer connection give the WebQuery
+answer and the SSH answer. A cell lists the keys of the answer row, or how many
+there are when the row is wide. **Not found** lists the keys a parser looked
+for and the row did not have, which is what a silent `""` or `0` in a parsed
+result means.
+
+TS3 and TS6 agree on every command that both serve, row for row, apart from
+extra keys on TS6 and the order of the keys.
+
+| Function                        | Command                       | TS3, raw TCP                                                                       | TS6, WebQuery (files: SSH)                                                                    | Not found by the parser                                                                  | Class |
+| ------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----- |
+| `whoAmI`                        | `whoami`                      | 11 keys                                                                            | 12 keys                                                                                       | -                                                                                        | a     |
+| `getVersion`                    | `version`                     | `version`, `build`, `platform`                                                     | `build`, `platform`, `version`                                                                | -                                                                                        | a     |
+| `getServerInfo`                 | `serverinfo`                  | 100 keys                                                                           | 109 keys                                                                                      | -                                                                                        | a     |
+| `getHostInfo`                   | `hostinfo`                    | 18 keys                                                                            | 20 keys                                                                                       | -                                                                                        | a     |
+| `getInstanceInfo`               | `instanceinfo`                | 15 keys                                                                            | 16 keys                                                                                       | -                                                                                        | a     |
+| `listBindings`                  | `bindinglist`                 | `ip`                                                                               | `ip`                                                                                          | `port`, `subsystem`                                                                      | c     |
+| `getConnectionInfo`             | `serverrequestconnectioninfo` | 15 keys                                                                            | 15 keys                                                                                       | -                                                                                        | a     |
+| `getServerIDByPort`             | `serveridgetbyport`           | `server_id`                                                                        | `server_id`                                                                                   | -                                                                                        | a     |
+| `listServerGroups`              | `servergrouplist`             | 10 keys                                                                            | 10 keys                                                                                       | -                                                                                        | a     |
+| `listPermissions`               | `permissionlist`              | `permid`, `permname`, `permdesc`                                                   | `permdesc`, `permid`, `permname`                                                              | -                                                                                        | a     |
+| `getPermissionIDByName`         | `permidgetbyname`             | `permsid`, `permid`                                                                | `permid`, `permsid`                                                                           | -                                                                                        | a     |
+| `editServer`                    | `serveredit`                  | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `editInstance`                  | `instanceedit`                | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listChannels`                  | `channellist`                 | 18 keys                                                                            | 18 keys                                                                                       | `channel_description`, `channel_unique_identifier`, `cpid`                               | a     |
+| `createChannel`                 | `channelcreate`               | `cid`                                                                              | `cid`                                                                                         | -                                                                                        | a     |
+| `getChannelInfo`                | `channelinfo`                 | 30 keys                                                                            | 31 keys                                                                                       | `channel_needed_subscribe_power`, `cid`, `cpid`, `total_clients`, `total_clients_family` | d     |
+| `editChannel`                   | `channeledit`                 | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `findChannels`                  | `channelfind`                 | `cid`, `channel_name`                                                              | `channel_name`, `cid`                                                                         | -                                                                                        | a     |
+| `moveChannel`                   | `channelmove`                 | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `addChannelPermission`          | `channeladdperm`              | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listChannelPermissions`        | `channelpermlist`             | `cid`, `permid`, `permvalue`, `permnegated`, `permskip`                            | `cid`, `permid`, `permnegated`, `permskip`, `permvalue`                                       | `permsid`                                                                                | a     |
+| `deleteChannelPermission`       | `channeldelperm`              | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listClients`                   | `clientlist`                  | 26 keys                                                                            | 26 keys                                                                                       | -                                                                                        | a     |
+| `getClientInfo`                 | `clientinfo`                  | 62 keys                                                                            | 65 keys                                                                                       | -                                                                                        | a     |
+| `findClients`                   | `clientfind`                  | `clid`, `client_nickname`                                                          | `clid`, `client_nickname`                                                                     | -                                                                                        | a     |
+| `getClientIDs`                  | `clientgetids`                | `cluid`, `clid`, `name`; 1281 when empty                                           | `clid`, `cluid`, `name`; 1281 when empty                                                      | -                                                                                        | a     |
+| `getClientUIDByID`              | `clientgetuidfromclid`        | `clid`, `cluid`, `nickname`, `mytsid`                                              | `clid`, `cluid`, `mytsid`, `nickname`                                                         | -                                                                                        | a     |
+| `getClientDBIDByUID`            | `clientgetdbidfromuid`        | `cluid`, `cldbid`                                                                  | `cldbid`, `cluid`                                                                             | -                                                                                        | a     |
+| `getClientNameByDBID`           | `clientgetnamefromdbid`       | `cluid`, `cldbid`, `name`                                                          | `cldbid`, `cluid`, `name`                                                                     | -                                                                                        | a     |
+| `getClientNameByUID`            | `clientgetnamefromuid`        | `cluid`, `cldbid`, `name`                                                          | `cldbid`, `cluid`, `name`                                                                     | -                                                                                        | a     |
+| `getClientDatabaseInfo`         | `clientdbinfo`                | 14 keys                                                                            | 14 keys                                                                                       | `cldbid`                                                                                 | a     |
+| `editClientDatabase`            | `clientdbedit`                | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `findClientDatabase`            | `clientdbfind`                | `cldbid`; 1281 when empty                                                          | `cldbid`; 1281 when empty                                                                     | -                                                                                        | a     |
+| `listClientDatabase`            | `clientdblist`                | 9 keys                                                                             | 9 keys                                                                                        | -                                                                                        | a     |
+| `moveClient`                    | `clientmove`                  | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `editClient`                    | `clientedit`                  | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `updateClient`                  | `clientupdate`                | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `pokeClient`                    | `clientpoke`                  | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `sendPrivateMessage`            | `sendtextmessage`             | ok                                                                                 | 7 keys                                                                                        | -                                                                                        | a     |
+| `sendChannelMessage`            | `sendtextmessage`             | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `sendServerMessage`             | `sendtextmessage`             | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listClientPermissions`         | `clientpermlist`              | `cldbid`, `permid`, `permvalue`, `permnegated`, `permskip`; 1281 when empty        | `cldbid`, `permid`, `permnegated`, `permskip`, `permvalue`; 1281 when empty                   | `permsid`                                                                                | a     |
+| `addClientPermission`           | `clientaddperm`               | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `deleteClientPermission`        | `clientdelperm`               | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listChannelClientPermissions`  | `channelclientpermlist`       | `cid`, `cldbid`, `permid`, `permvalue`, `permnegated`, `permskip`; 1281 when empty | `cid`, `cldbid`, `permid`, `permnegated`, `permskip`, `permvalue`; 1281 when empty            | `permsid`                                                                                | a     |
+| `addChannelClientPermission`    | `channelclientaddperm`        | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `getPermissionOverview`         | `permoverview`                | 7 keys                                                                             | 7 keys                                                                                        | -                                                                                        | a     |
+| `findPermission`                | `permfind`                    | `t`, `id1`, `id2`, `p`                                                             | `id1`, `id2`, `p`, `t`                                                                        | -                                                                                        | a     |
+| `deleteChannelClientPermission` | `channelclientdelperm`        | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `createServerGroup`             | `servergroupadd`              | `sgid`                                                                             | `sgid`                                                                                        | `name`                                                                                   | a     |
+| `renameServerGroup`             | `servergrouprename`           | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `copyServerGroup`               | `servergroupcopy`             | `sgid`                                                                             | `sgid`                                                                                        | `name`                                                                                   | a     |
+| `addServerGroupPermission`      | `servergroupaddperm`          | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listServerGroupPermissions`    | `servergrouppermlist`         | `sgid`, `permid`, `permvalue`, `permnegated`, `permskip`                           | `permid`, `permnegated`, `permskip`, `permvalue`, `sgid`                                      | `permsid`                                                                                | a     |
+| `deleteServerGroupPermission`   | `servergroupdelperm`          | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listServerGroupClients`        | `servergroupclientlist`       | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `addClientToServerGroup`        | `servergroupaddclient`        | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `getServerGroupsByClient`       | `servergroupsbyclientid`      | `name`, `sgid`, `cldbid`                                                           | `cldbid`, `name`, `sgid`                                                                      | -                                                                                        | a     |
+| `removeClientFromServerGroup`   | `servergroupdelclient`        | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `deleteServerGroup`             | `servergroupdel`              | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `createChannelGroup`            | `channelgroupadd`             | `cgid`                                                                             | `cgid`                                                                                        | `name`                                                                                   | a     |
+| `renameChannelGroup`            | `channelgrouprename`          | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `copyChannelGroup`              | `channelgroupcopy`            | `cgid`                                                                             | `cgid`                                                                                        | `name`                                                                                   | a     |
+| `addChannelGroupPermission`     | `channelgroupaddperm`         | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listChannelGroupPermissions`   | `channelgrouppermlist`        | `cgid`, `permid`, `permvalue`, `permnegated`, `permskip`                           | `cgid`, `permid`, `permnegated`, `permskip`, `permvalue`                                      | `permsid`                                                                                | a     |
+| `deleteChannelGroupPermission`  | `channelgroupdelperm`         | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listChannelGroupClients`       | `channelgroupclientlist`      | `cid`, `cldbid`, `cgid`; 1281 when empty                                           | `cgid`, `cid`, `cldbid`; 1281 when empty                                                      | -                                                                                        | a     |
+| `setClientChannelGroup`         | `setclientchannelgroup`       | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `deleteChannelGroup`            | `channelgroupdel`             | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listChannelGroups`             | `channelgrouplist`            | 10 keys                                                                            | 10 keys                                                                                       | -                                                                                        | a     |
+| `listBans`                      | `banlist`                     | 13 keys; 1281 when empty                                                           | 13 keys; 1281 when empty                                                                      | -                                                                                        | a     |
+| `addBan`                        | `banadd`                      | `banid`                                                                            | `banid`                                                                                       | -                                                                                        | a     |
+| `deleteBan`                     | `bandel`                      | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `deleteAllBans`                 | `bandelall`                   | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `banClient`                     | `banclient`                   | `banid`                                                                            | `banid`                                                                                       | -                                                                                        | a     |
+| `listComplaints`                | `complainlist`                | `tcldbid`, `tname`, `fcldbid`, `fname`, `message`, `timestamp`; 1281 when empty    | `fcldbid`, `fname`, `message`, `tcldbid`, `timestamp`, `tname`; 1281 when empty               | -                                                                                        | a     |
+| `addComplaint`                  | `complainadd`                 | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `deleteComplaint`               | `complaindel`                 | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `deleteAllComplaints`           | `complaindelall`              | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listMessages`                  | `messagelist`                 | 1281 (empty)                                                                       | 1281 (empty)                                                                                  | -                                                                                        | a     |
+| `getMessage`                    | `messageget`                  | not measured                                                                       | not measured                                                                                  | -                                                                                        | -     |
+| `updateMessageFlag`             | `messageupdateflag`           | not measured                                                                       | not measured                                                                                  | -                                                                                        | -     |
+| `deleteMessage`                 | `messagedel`                  | not measured                                                                       | not measured                                                                                  | -                                                                                        | -     |
+| `viewLog`                       | `logview`                     | `last_pos`, `file_size`, `l`                                                       | `file_size`, `l`, `last_pos`                                                                  | `log`                                                                                    | a     |
+| `addLog`                        | `logadd`                      | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listPrivilegeKeys`             | `privilegekeylist`            | 7 keys                                                                             | 7 keys                                                                                        | -                                                                                        | a     |
+| `addPrivilegeKey`               | `privilegekeyadd`             | `token`                                                                            | `token`                                                                                       | -                                                                                        | a     |
+| `usePrivilegeKey`               | `privilegekeyuse`             | error 516                                                                          | error 516                                                                                     | -                                                                                        | a     |
+| `deletePrivilegeKey`            | `privilegekeydelete`          | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listTempPasswords`             | `servertemppasswordlist`      | 8 keys; 1281 when empty                                                            | 8 keys; 1281 when empty                                                                       | -                                                                                        | a     |
+| `addTempPassword`               | `servertemppasswordadd`       | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `deleteTempPassword`            | `servertemppassworddel`       | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `listFiles`                     | `ftgetfilelist`               | `cid`, `path`, `name`, `size`, `datetime`, `type`; 1281 when empty                 | WebQuery: error 5120; SSH: `cid`, `path`, `name`, `size`, `datetime`, `type`; 1281 when empty | -                                                                                        | a / b |
+| `createDirectory`               | `ftcreatedir`                 | ok                                                                                 | WebQuery: error 5120; SSH: ok                                                                 | -                                                                                        | a / b |
+| `initFileUpload`                | `ftinitupload`                | `clientftfid`, `serverftfid`, `ftkey`, `port`, `seekpos`, `proto`                  | WebQuery: error 5120; SSH: `clientftfid`, `serverftfid`, `ftkey`, `port`, `seekpos`, `proto`  | -                                                                                        | b     |
+| `getFileInfo`                   | `ftgetfileinfo`               | `cid`, `name`, `size`, `datetime`                                                  | WebQuery: error 5120; SSH: `cid`, `name`, `size`, `datetime`                                  | `type`                                                                                   | a / b |
+| `initFileDownload`              | `ftinitdownload`              | `clientftfid`, `serverftfid`, `ftkey`, `port`, `size`, `proto`                     | WebQuery: error 5120; SSH: `clientftfid`, `serverftfid`, `ftkey`, `port`, `size`, `proto`     | -                                                                                        | b     |
+| `renameFile`                    | `ftrenamefile`                | ok                                                                                 | WebQuery: error 5120; SSH: ok                                                                 | -                                                                                        | a / b |
+| `deleteFile`                    | `ftdeletefile`                | ok                                                                                 | WebQuery: error 5120; SSH: ok                                                                 | -                                                                                        | a / b |
+| `listActiveTransfers`           | `ftlist`                      | 1281 (empty)                                                                       | WebQuery: error 5120; SSH: 1281 (empty)                                                       | -                                                                                        | a / b |
+| `stopFileTransfer`              | `ftstop`                      | `clientftfid`, `status`, `msg`, `size`                                             | not measured (crashes the server over SSH)                                                    | -                                                                                        | a / - |
+| `resetPermissions`              | `permreset`                   | not measured                                                                       | not measured                                                                                  | -                                                                                        | -     |
+| `deleteClientDatabase`          | `clientdbdelete`              | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `iterateClientDatabase`         | `clientdblist`                | 9 keys                                                                             | 9 keys                                                                                        | -                                                                                        | a     |
+| `deleteChannel`                 | `channeldelete`               | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+| `kickClient`                    | `clientkick`                  | ok                                                                                 | ok                                                                                            | -                                                                                        | a     |
+
+All 106 typed functions were called. `deleteAllBans` ran only because every ban
+on the server was the probe's own. `resetPermissions` was skipped, as it resets
+the whole server. `editServer` and `editInstance` were called with a value
+equal to the current one.
+
+### Counts
+
+| Class        | TS3 | TS6 |
+| ------------ | --- | --- |
+| a            | 98  | 91  |
+| b            | 2   | 8   |
+| c            | 1   | 1   |
+| d            | 1   | 1   |
+| not measured | 4   | 5   |
+
+On TS6, six of the eight **b** are file commands that WebQuery cannot serve
+and SSH can; the other two, like the two on TS3, are the transfer negotiations
+(below). The **not measured** are `getMessage`, `updateMessageFlag`,
+`deleteMessage` and `resetPermissions` on both, and `stopFileTransfer` on TS6.
+No offline message reaches the query account to read: `messageadd` to its own
+unique identifier answers 512 on both servers, and `messagelist` stays empty.
+
+### What is class a, and why it needs no change
+
+- **Empty answers.** Every list that has nothing to list answers 1281, and
+  `list()` reads it as `[]`. `findChannels` with no match answers 768 and
+  `findClients` 512, which `list()` also reads as `[]`. `getClientIDs` for an
+  unknown identifier answers 1281, `findClientDatabase` 1281. All three
+  behave as `list()` expects, on both servers and over every transport.
+- **Fields the answer leaves out by design.** `channellist` has no `cpid`
+  (the parser reads `pid`), no `channel_description` and no
+  `channel_unique_identifier`, as `listChannels` documents. `channelinfo` has
+  no `cid`, `clientdbinfo` no `cldbid`, and the parsers take the id from the
+  argument. The permission lists answer `permid`, not `permsid`, which
+  `parsePermission` reads. `servergroupadd` and its copies answer `sgid`
+  alone, so `createdGroupID` takes it. `logview` answers `l` rows, not `log`.
+  `ftgetfileinfo` has no `type`, so `isDirectory` is false; asked about a
+  directory it answers 2048, invalid file name, while `ftgetfilelist` lists it
+  with `type=0`.
+- **Timestamps.** TS6 answers `ftgetfilelist`'s `datetime` in milliseconds and
+  TS3 in seconds, which `date()` already tells apart.
+- **Creates return their id.** `createChannel` (`cid`), `createServerGroup`
+  and its copy (`sgid`), `createChannelGroup` and its copy (`cgid`), `addBan`
+  and `banClient` (`banid`, two rows for `banClient`, one per ban it made) and
+  `addPrivilegeKey` (`token`) all answer with a nameless row, as the official
+  examples show. `addTempPassword` answers nothing and returns nothing.
+- **Answers a typed function ignores.** TS6 over WebQuery answers
+  `sendtextmessage` for a private message with a row holding the message's own
+  fields, `notifytextmessage` among them; `sendPrivateMessage` returns
+  nothing, so it does not matter. On TS3, `ftstop` for an unknown transfer
+  answers `error id=0` and a row with `status=2066`, and `stopFileTransfer`
+  reads that as success.
+- **Not served to a query client.** `usePrivilegeKey` answers 516, invalid
+  client type, to a query client on both servers; a voice client's call
+  succeeds. The same 516 answers `pokeClient` and `kickClient` aimed at a query
+  client, except a channel kick (`reasonid=4`), which is accepted and arrives as
+  a move.
+- **A short first page of a paged walk.** `clientdblist` returns at most 200
+  rows however many `duration` asks for, and with no arguments 25. See Paging.
+- **TS6 creates that came back without an id.** In two full runs, TS6 over
+  WebQuery answered `channelgroupadd` (once also `servergroupadd`) with `ok`
+  and no row, and the core threw its `NoDataError`, as it should. The server
+  had made the group. It did not recur in the dozen or so full runs after, in
+  isolated runs of the same steps, or in 120 creates in a row with voice
+  clients connected, and the raw body of a failing answer was never caught. It
+  is not explained, and a client cannot tell it from any other answer that
+  carries no id.
+
+### Class b
+
+- **File transfer negotiation.** `ftinitupload` and `ftinitdownload` answer
+  inline, in nameless rows, on both servers: nothing arrives as a correlated
+  notification, as it does over the voice protocol. A refusal arrives the same
+  way, in the row and not in the `error` line, which says `id=0`: a file that
+  does not exist is `clientftfid=902 status=2051 msg=file\snot\sfound`, with
+  no `ftkey`, and a name already being transferred is `status=2058`. The typed
+  functions would report "no data". `QueryClient` reads such a row as the
+  `ServerError` it is. The keys it returns are the keys the parsers read:
+  `ftkey`, `port`, `clientftfid`, `serverftfid`, and `seekpos` or `size`. The
+  transfer connection itself, `uploadFileData` and `downloadFileData`, worked
+  with a key from a `QueryClient` on both servers, and a file written came back
+  byte for byte.
+- **Row completion.** The client must not complete a row from the row before.
+- **File commands on TS6.** WebQuery refuses all of them, so a ServerQuery
+  client of TS6 needs SSH for any of them.
+- **`login` and `use`.** Raw TCP needs both, SSH only `use`, WebQuery
+  neither: the key is the login, and the transport keeps the server.
+
+### Class c
+
+- **`listBindings`** (`src/core/api/server.ts`). `bindinglist` answers `ip`
+  and nothing else, on both servers, so `subsystem` was `""` and `port` 0 for
+  every row. The server lists only the voice bindings unless asked for another
+  subsystem, and the option's doc comment says an unset subsystem lists all.
+  This was fixed with the signature unchanged: `listBindings` fills `subsystem`
+  from `options.subsystem ?? "voice"`, and `port` is left undefined, as the
+  server does not report one.
+
+## Events
+
+Notifications reach `QueryClient.onNotification` as the server sent them, so
+this is whether each event type of the core can be filled from one. Only TS3
+over raw TCP and TS6 over SSH can: WebQuery refuses `servernotifyregister`.
+Registering for `server`, `channel` (id 0), `textserver`, `textchannel` and
+`textprivate` was accepted on both. `bans` is accepted on TS6 and refused on
+TS3 with 1539. The two servers' notifications are alike; TS6 adds `cfid` to a
+move and a few client fields. Notifications arrived one per line in every
+test, never batched with `|`.
+
+| Event              | Notification                                         | Filled from it                                                                                                                                                        | Not in it                                                                                                                                  | Class |
+| ------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----- |
+| `TextMessageEvent` | `notifytextmessage`                                  | `invokerName`, `invokerUID`, `message`, `targetMode`, `invokerID`, and `targetID` for a private message                                                               | `invokerGroups`; and `target` for a channel or server message, which the type says is 0                                                    | b     |
+| `ClientMovedEvent` | `notifyclientmoved`                                  | `clientID` (`clid`), `targetChannelID` (`ctid`), `reason` (`reasonid`), and the three `invoker` fields when someone else moved the client (`reasonid` 1 or 4)         | the three `invoker` fields when the client moved itself (`reasonid=0`); `reasonmsg` arrives with a kick, and the event has no field for it | b     |
+| `ClientLeaveEvent` | `notifyclientleftview`                               | `clientID`, `reason`, `reasonMessage` (`reasonmsg`), and the three `invoker` fields for a kick (`reasonid=5`)                                                         | `reasonid`, `reasonmsg` and the `invoker` fields on a plain disconnect, which the type documents as empty then                             | a     |
+| `KickedEvent`      | `notifyclientmoved` with `reasonid=4`                | all five fields: `reason`, `reasonMessage` (`reasonmsg`), `invokerName`, `invokerUID`, `invokerID`                                                                    | nothing, for a channel kick; a kick from the server cannot be sent to a query client                                                       | a     |
+| `ClientEnterEvent` | `notifycliententerview`, 38 fields on TS3, 40 on TS6 | `id` (`clid`), `nickname`, `uid`, `channelID` (`ctid`, which the parser falls back to), `type`, `serverGroups`, `isAway`, `isRecording`, `isTalker`, `channelGroupID` | `createdAt`, `lastConnectedAt` and `idleTimeMs`, which the type says are undefined here                                                    | a     |
+| `PokeEvent`        | none                                                 | none                                                                                                                                                                  | a query client is never poked: `clientpoke` aimed at one answers 516, on both servers                                                      | a     |
+| `VoiceDataEvent`   | none                                                 | none                                                                                                                                                                  | voice only                                                                                                                                 | a     |
+
+The notifications were fed through the voice client's own parser. The keys it
+looked for and did not find, across all of them, are the ones the table puts
+under "Not in it".
+
+- **`ClientMovedEvent`'s `invoker` fields on a move of the client's own.** The
+  type says "the client itself", and a ServerQuery notification names no
+  invoker then, so the parser reads `""` and 0. A client fills them from the
+  client it knows by `clid`, as it fills `invokerGroups`, which is why this is
+  class b.
+- **`KickedEvent` for a server kick cannot happen.** `clientkick` with
+  `reasonid=5` aimed at a query client answers 516 whoever sends it, so a query
+  client is never kicked from the server. A channel kick is accepted, and the
+  query client stays connected, moved to the default channel.
+- **`invokerGroups`.** A text message carries no groups. A ServerQuery client
+  fills them as the voice client does, from the client it learned of in a
+  `notifycliententerview` or `clientlist -groups`. It sees an enter only for
+  clients that arrive after it registered, so it has to list the ones already
+  there.
+- **`ClientLeaveEvent.reason` on a plain disconnect.** The notification has no
+  `reasonid`, so `reason` is 0. The voice client reads the same 0 from the same
+  disconnect, so the two agree.
+- **Not measured.** The leave of a banned client (`reasonid=6`). A private
+  message from a voice client to the query client: the voice client was refused
+  with 2568, insufficient permissions, so the only private message seen is one
+  query client to another, which carried `target`. `tokenused` notifications,
+  a category no server here lists. Events over WebQuery, which has none to
+  measure.
+
+## Passwords
+
+A channel password goes over ServerQuery as it is, and the server hashes it.
+Measured on both servers and every transport, with a channel created over
+ServerQuery with a cleartext password that has spaces, `$` and `|` in it:
+
+- The channel reports `hasPassword`, and a voice client that moves in with a
+  wrong password is refused with 781, and with none, 781 as well.
+- The same voice client moving in with the cleartext password, through
+  `moveClient`'s `password` option, joins. After `editChannel` sets a new
+  password, the new one joins; `editChannel` with `password: ""` clears it.
+- A temporary server password works. With the server password set to one value,
+  a voice client connecting with no password is refused with 1028, with the
+  server password connects and lands in the default channel, and with the
+  temporary password connects and lands in the temporary password's target
+  channel. `listTempPasswords` reports the password in cleartext (`pw_clear`).
+  The server password and the temporary password were deleted afterwards, and
+  the server reports no password again.
+
+## File transfers
+
+Over raw TCP on TS3 and over SSH on TS6, `ftinitupload` and `ftinitdownload`
+answer inline, as above; no correlated notification follows, so a client
+waiting for one would wait for nothing. The server picks the port: 30033 on
+TS3 and the configured one on TS6. A transfer that was negotiated and never
+dialled shows in `ftlist` until it is stopped; `ftstop` removes it. A second
+upload of the same name while the first is open answers 2058 in the row.
+
+## Paging
+
+`clientdblist` pages with `start` and `duration`, as the core's walk expects.
+The server caps a page at 200 rows however many were asked for, and a bare
+`clientdblist` answers 25. `iterateClientDatabase` therefore sees a short first
+page and asks again, as it documents. Measured with page sizes 100 and 1000 on
+each server, against databases of 1759 (TS3), 704 and 69 (the two TS6) clients:
+
+- Every walk was in order, with no id twice, and found every client.
+- With a page size of 1000 the walk is pages of 200. It ends on a short last
+  page on TS3 and the larger TS6, and on 1281 on the database smaller than one
+  page, where the short first page does not end it.
+- `start` past the end answers 1281, and so does `duration=0`.
+
+## Breaking changes the core needs before 1.0
+
+None remain. The probe measured one gap: `channelinfo` carries
+`Channel.totalClients`, `Channel.totalFamilyClients` and
+`Channel.neededSubscribePower` on neither server, so `getChannelInfo` reported
+0 for each while `listChannels` reported the real count. That was fixed by
+making the three fields `number | undefined`, which `getChannelInfo` leaves
+undefined.
+
+Everything else the probe found is class a, b or c, or is a limit of a server
+and not of the core: a query client cannot be poked or kicked from the server,
+cannot use a privilege key, and TS6 over WebQuery has no file transfers and no
+events.
