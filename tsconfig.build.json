@@ -3,6 +3,6 @@
   "compilerOptions": {
     "rootDir": "src"
   },
-  "exclude": ["src/**/*.test.ts", "src/client/testing", "src/query"],
+  "exclude": ["src/**/*.test.ts", "src/client/testing"],
   "include": ["src"]
 }

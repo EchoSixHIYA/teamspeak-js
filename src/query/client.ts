@@ -1,23 +1,82 @@
-import type { ServerID, TeamspeakError } from "@honeybbq/teamspeak";
 import {
+  AlreadyConnectedError,
+  ClientStatus,
+  ClientType,
   CommandTimeoutError,
   NotConnectedError,
+  Reason,
   ServerError,
+  TeamspeakError,
+  backoffDelay,
+  noopLogger,
+  type ClientEnterEvent,
   type CommandExecutor,
+  type CommandMiddleware,
   type CommandOptions,
   type CommandRequest,
-  type NotificationEvent,
+  type KickedEvent,
+  type Listener,
+  type Logger,
+  type ReconnectOptions,
+  type ServerEventMap,
+  type ServerFamily,
+  type ServerID,
+  type SessionEventMap,
+  type Unsubscribe,
 } from "@honeybbq/teamspeak";
 import {
+  buildCommandChain,
   buildCommandOrdered,
   encodeRequest,
+  handleNotification,
   parseCommand,
   parseServerError,
+  resolveBackoffPolicy,
 } from "../core/internal.js";
 import type { QueryTransport } from "./transport.js";
+import { connectTcp } from "./tcp.js";
+import { connectSsh } from "./ssh.js";
+import { WebQueryTransport } from "./web.js";
+import {
+  assertEventsSupported,
+  normalizeQueryOptions,
+  type QueryClientOptions,
+  type QueryEventCategory,
+} from "./options.js";
+import type { ResolvedQueryOptions, ResolvedTransport } from "./options.js";
+import { defaultShouldRetry } from "./reconnect.js";
+
+export type {
+  QueryClientOptions,
+  QueryEventsOption,
+  QueryEventCategory,
+  QueryTransportOptions,
+} from "./options.js";
+
+/**
+ * The events `QueryClient.on()` takes, and what each delivers.
+ *
+ * The server's own events are the core's, unchanged: ServerQuery and the voice
+ * protocol carry the same notifications with the same fields, so a listener
+ * written for one client reads the other. `connected` and `disconnected` come
+ * from this client's own lifecycle.
+ *
+ * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
+ * change in a minor release.
+ */
+export interface QueryEventMap extends ServerEventMap, SessionEventMap {}
 
 /** How long a command waits for its answer unless told otherwise. */
 const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
+
+/** How long each reconnection attempt may take. */
+const RECONNECT_ATTEMPT_TIMEOUT_MS = 30_000;
+
+/** The commands `connect()` runs on the session's own path, so a middleware never sees them. */
+interface Subscription {
+  readonly listener: (payload: unknown) => void;
+  removed: boolean;
+}
 
 interface Pending {
   readonly command: string;
@@ -27,8 +86,9 @@ interface Pending {
 }
 
 /**
- * A ServerQuery client: runs the typed commands from
- * `@honeybbq/teamspeak` over a {@link QueryTransport}.
+ * A ServerQuery client: runs the typed commands from `@honeybbq/teamspeak` over
+ * one of the three ServerQuery transports, and delivers the notifications the
+ * server sends as the core's typed events.
  *
  * ServerQuery answers one command at a time, in order: data lines, then an
  * `error` line that ends the answer. So commands are queued and sent one after
@@ -36,14 +96,21 @@ interface Pending {
  * Notifications (`notify…`) can arrive at any point and are not part of an
  * answer.
  *
- * A skeleton: connecting is the transport's job (`connectTcp`, `connectSsh`,
- * `WebQueryTransport`), and events reach {@link QueryClient.onNotification}
- * as the server sent them, not yet as the core's typed events.
+ * The transport is given as a {@link QueryClientOptions.transport} description
+ * rather than an open connection, so the client can build it again when it
+ * reconnects.
  *
- * @experimental
+ * @experimental New in 1.x and may change in a minor release: the options, the
+ * transport union and the event map are all still settling.
  */
-export class QueryClient implements CommandExecutor {
-  #transport: QueryTransport;
+export class QueryClient implements CommandExecutor, AsyncDisposable {
+  #options: ResolvedQueryOptions;
+  #logger: Logger;
+  #transport: QueryTransport | null = null;
+  #status: ClientStatus = ClientStatus.Disconnected;
+  #serverFamily: ServerFamily = "unknown";
+  #version = "";
+
   #pending: Pending | null = null;
   /**
    * Answers still to come for commands that gave up waiting. ServerQuery has
@@ -52,14 +119,288 @@ export class QueryClient implements CommandExecutor {
    */
   #abandoned = 0;
   #queue: Promise<unknown> = Promise.resolve();
-  #closed = false;
-  #listeners = new Set<(event: NotificationEvent) => void>();
+  #closed = true;
+  /**
+   * Bumped by `disconnect()`. A connection attempt that was in flight compares
+   * it after every await, so one that was given up on cannot install itself as
+   * the live connection.
+   */
+  #generation = 0;
 
-  constructor(transport: QueryTransport) {
+  /**
+   * This connection's own client id, learned from the client list after
+   * registering, so that a kick of this client is told from a move of another.
+   * 0 until it is known — which is the case when no `nickname` option was
+   * given: the server names an unnamed query client itself, and matching that
+   * guess against the list could name a different client.
+   */
+  #clid = 0;
+  #clients = new Map<number, ClientEnterEvent>();
+
+  #reconnectOptions: ReconnectOptions | undefined;
+  #reconnecting = false;
+  #loopAttempt = 0;
+  #stopped = false;
+  #stopping: Promise<void> | undefined;
+  #stopReconnecting: AbortController | undefined;
+  /** The last answer of `shouldRetry`, so that one failure asks it once. */
+  #retryAnswer:
+    | {
+        readonly err: Error;
+        readonly attempt: number;
+        readonly retry: boolean;
+        readonly threw: boolean;
+      }
+    | undefined;
+  /**
+   * Why the last established session dropped: a reconnect loop whose own
+   * attempt connected and then dropped before the loop resumed retries for it.
+   */
+  #lastDrop: Error | undefined;
+  /**
+   * Settles once the last `disconnected` has been delivered. A `connect()`
+   * waits for it, so the end of one session is never heard during the next.
+   */
+  #disconnectedDelivered: Promise<void> | undefined;
+
+  /**
+   * Whether the transport delivers notifications, as it reports.
+   *
+   * For a `tcp`, `ssh` or `web` transport this is the kind's own truth, known
+   * when the client is made. A `custom` transport can only say once it has
+   * been opened, so until then this is `undefined` and a listener is accepted
+   * rather than guessed at; the first connection settles it.
+   */
+  #notifications: boolean | undefined;
+
+  #listeners = new Map<keyof QueryEventMap, Subscription[]>();
+  #send: CommandExecutor["send"];
+
+  constructor(options: QueryClientOptions) {
+    this.#options = normalizeQueryOptions(options);
+    this.#logger = this.#options.logger ?? noopLogger;
+    this.#notifications = this.#options.notificationsSupported;
+    this.#reconnectOptions = this.#options.reconnect;
+    const middlewares: readonly CommandMiddleware[] = this.#options.commandMiddleware ?? [];
+    // Built once: the chain is read on every command, and changing it while
+    // those run would make the behaviour depend on timing.
+    this.#send = buildCommandChain(middlewares, (request, commandOptions = {}) =>
+      this.exec(
+        encodeRequest(request, (password) => password),
+        commandOptions,
+      ),
+    );
+  }
+
+  /** Where the client is in its connection's life. */
+  get status(): ClientStatus {
+    return this.#status;
+  }
+
+  /**
+   * Which server generation the server is, read from its `version` answer.
+   * `"unknown"` before connecting.
+   *
+   * @experimental Part of the entry, which may change in a minor release.
+   */
+  get serverFamily(): ServerFamily {
+    return this.#serverFamily;
+  }
+
+  /** The `version` string the server answered with; "" before connecting. */
+  get serverVersion(): string {
+    return this.#version;
+  }
+
+  /**
+   * The transport carrying this connection, or `undefined` when there is none.
+   *
+   * Read-only, and the transport is the interface the client itself talks
+   * over — counts of what went out and came in, and which connection it is,
+   * can be read from it for metrics. The socket underneath is not exposed:
+   * a caller that needs it supplies the seam instead (the `connect` option of
+   * a `tcp` transport, or `connection` of an `ssh` one), where it is theirs to
+   * keep.
+   *
+   * @experimental Part of the entry, which may change in a minor release.
+   */
+  get transport(): QueryTransport | undefined {
+    return this.#transport ?? undefined;
+  }
+
+  /**
+   * The notification categories this connection registered for: what `events`
+   * asked for, and empty when the transport delivers no notifications or the
+   * client is not connected.
+   */
+  get eventCategories(): readonly QueryEventCategory[] {
+    return this.status === ClientStatus.Connected && this.#notifications === true
+      ? this.#options.eventCategories
+      : [];
+  }
+
+  // ---- Connection -----------------------------------------------------------
+
+  /**
+   * Connect and set the session up: open the transport, then `login` (raw TCP
+   * only), `use`, `version`, the notification registrations, and one client
+   * list.
+   *
+   * The `login` and `server` options are applied here rather than left to the
+   * caller so that a reconnection is the same session as the first connection
+   * was.
+   *
+   * A failure rejects with its cause and leaves the client disconnected; the
+   * transport it opened is closed. `signal` bounds only the connecting: once
+   * this resolves, the connection lasts until `disconnect()` or a drop.
+   * `connect()` does not retry itself; the `reconnect` option retries a
+   * connection that dropped after it was established.
+   *
+   * `connected` is delivered before this resolves, so a listener added after
+   * `await client.connect()` has missed it — add the listeners first.
+   */
+  async connect(options: { readonly signal?: AbortSignal | undefined } = {}): Promise<void> {
+    return this.#connect(options, false);
+  }
+
+  async #connect(
+    options: { readonly signal?: AbortSignal | undefined },
+    reconnect: boolean,
+  ): Promise<void> {
+    const { signal } = options;
+    signal?.throwIfAborted();
+    // A disconnect() still tearing down waits to be done: a session built over
+    // one that is still closing would have its transport closed under it.
+    if (this.#stopping !== undefined) await this.#stopping;
+    // And so does an earlier session's `disconnected`, so that no listener or
+    // events() iterator of this session hears the last one end.
+    while (this.#disconnectedDelivered !== undefined) {
+      await this.#disconnectedDelivered;
+      signal?.throwIfAborted();
+    }
+    if (this.#status !== ClientStatus.Disconnected) throw new AlreadyConnectedError();
+
+    this.#stopped = false;
+    this.#generation++;
+    const generation = this.#generation;
+    this.#status = ClientStatus.Connecting;
+    try {
+      await this.#establish(signal, generation);
+    } catch (error) {
+      this.#failConnection(error);
+      throw error;
+    }
+    if (generation !== this.#generation) throw new NotConnectedError();
+    this.#status = ClientStatus.Connected;
+    this.#emit("connected", { reconnected: reconnect });
+  }
+
+  /**
+   * One connection attempt, from opening the transport to having a usable
+   * session. `connect()` and the reconnect loop share it, so a reconnection is
+   * the same session the first connection was.
+   */
+  async #establish(signal: AbortSignal | undefined, generation: number): Promise<void> {
+    const transport = await this.#openTransport(signal);
+    // Given up on while the transport was being opened: it is closed rather
+    // than installed, and the caller hears that nothing is connected.
+    if (generation !== this.#generation || this.#status !== ClientStatus.Connecting) {
+      await transport.close().catch(() => {});
+      throw new NotConnectedError();
+    }
+
+    // A custom transport only says here whether it can deliver notifications,
+    // so a request to register for them is checked here rather than only at
+    // construction. The transport is closed first: the option is the caller's
+    // mistake, and leaving a connection open behind it helps nobody.
+    this.#notifications = transport.supportsNotifications;
+    try {
+      assertEventsSupported({ ...this.#options, notificationsSupported: this.#notifications });
+    } catch (error) {
+      await transport.close().catch(() => {});
+      throw error;
+    }
+
     this.#transport = transport;
+    this.#closed = false;
+    this.#abandoned = 0;
+    this.#pending = null;
+    this.#clients.clear();
+    this.#clid = 0;
+    this.#serverFamily = "unknown";
+    this.#version = "";
     transport.onLine = (line) => this.#handleLine(line);
     transport.onClose = (error) => this.#handleClose(error);
+
+    const { login, server, nickname, eventCategories } = this.#options;
+    if (login !== undefined) await this.login(login.name, login.password, { signal });
+    if (server !== undefined) await this.use(server, { nickname, signal });
+    this.#version = await this.#getVersion(signal);
+    this.#serverFamily = serverFamilyOf(this.#version);
+    if (this.#notifications) {
+      for (const category of eventCategories) {
+        // The channel category takes the channel to watch, or 0 for all of them;
+        // the others take none, and the server refuses one they do not know.
+        await this.registerNotifications(category, category === "channel" ? 0 : undefined, {
+          signal,
+        });
+      }
+      // Only worth listing when there is something to fill: the groups and the
+      // invoker of a message this client would otherwise not know.
+      if (eventCategories.length > 0) await this.#learnClients(signal);
+    }
   }
+
+  /**
+   * Leave the server and close the connection.
+   *
+   * A `connect()` still in flight fails with a NotConnectedError, and so do
+   * the commands still waiting for an answer. Resolves once `disconnected` has
+   * been delivered, so a listener added after `await client.disconnect()` does
+   * not hear it. Does nothing on a client that is not connected; called again
+   * while an earlier call is still running, it waits for that one. An explicit
+   * `disconnect()` never reconnects.
+   */
+  async disconnect(): Promise<void> {
+    // Recorded before anything else: a transport that closes during the
+    // teardown below must not be mistaken for an outage worth retrying.
+    this.#stopped = true;
+    this.#stopReconnecting?.abort();
+    this.#generation++;
+
+    if (this.#stopping !== undefined) return this.#stopping;
+    if (this.#status === ClientStatus.Disconnected) return this.#disconnectedDelivered;
+
+    this.#status = ClientStatus.Disconnected;
+    const stopping = this.#teardown();
+    this.#stopping = stopping;
+    try {
+      await stopping;
+    } finally {
+      this.#stopping = undefined;
+    }
+  }
+
+  async #teardown(): Promise<void> {
+    this.#logger.info("disconnecting from query server");
+    const transport = this.#transport;
+    this.#transport = null;
+    // Set before the transport is closed, so the close it reports is not read
+    // as the connection dropping.
+    this.#closed = true;
+    this.#fail(new NotConnectedError());
+    await transport?.close().catch(() => {});
+    // Announced here, with no cause: `disconnected` delivering `undefined` is
+    // what says the client left on purpose.
+    await this.#announceDisconnected(undefined, false);
+  }
+
+  /** `await using client = …` disconnects when the scope ends. */
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.disconnect();
+  }
+
+  // ---- Commands ------------------------------------------------------------
 
   /**
    * Send a typed command. Passwords go as they are: ServerQuery takes the
@@ -70,10 +411,7 @@ export class QueryClient implements CommandExecutor {
     request: CommandRequest,
     options: CommandOptions = {},
   ): Promise<Array<Record<string, string>>> {
-    return this.exec(
-      encodeRequest(request, (password) => password),
-      options,
-    );
+    return this.#send(request, options);
   }
 
   /** Send a raw command line and return the rows that answer it. */
@@ -87,6 +425,9 @@ export class QueryClient implements CommandExecutor {
   /**
    * Log in with a query account. Over WebQuery the api key does this, and the
    * server refuses the command; over SSH the session is logged in already.
+   *
+   * Public because a caller driving the client by hand needs it: `connect()`
+   * runs it from the `login` option, and this is the same `login` command.
    */
   async login(name: string, password: string, options: CommandOptions = {}): Promise<void> {
     await this.exec(
@@ -101,6 +442,10 @@ export class QueryClient implements CommandExecutor {
   /**
    * Select the virtual server the following commands address, by id or by
    * voice port. `nickname` names the query client on it.
+   *
+   * Public for the same reason as {@link QueryClient.login}: `connect()` runs
+   * it from the `server` option, and this is the same `use` command. Over
+   * WebQuery the transport answers it, by addressing that server from then on.
    */
   async use(
     server: { readonly id: ServerID | number } | { readonly port: number },
@@ -120,11 +465,15 @@ export class QueryClient implements CommandExecutor {
   /**
    * Ask the server for the notifications of one category: `server`, `channel`
    * (for one channel, or `0` for all), `textserver`, `textchannel`,
-   * `textprivate`, and on TeamSpeak 6 `bans`. They reach
-   * {@link QueryClient.onNotification}.
+   * `textprivate`, and on TeamSpeak 6 `bans`.
+   *
+   * Public for the same reason as {@link QueryClient.login}: `connect()` runs
+   * it once per configured category. With the WebQuery transport there is
+   * nothing to register for and the server refuses it, so the client never
+   * calls it there, and neither should a caller.
    */
   async registerNotifications(
-    event: string,
+    event: QueryEventCategory,
     channelID?: bigint | number,
     options: CommandOptions = {},
   ): Promise<void> {
@@ -137,28 +486,238 @@ export class QueryClient implements CommandExecutor {
     );
   }
 
+  // ---- Events --------------------------------------------------------------
+
   /**
-   * Listen for the notifications the server sends, as it sent them: one call
-   * per row, with the name (`notifytextmessage`) and the unescaped fields.
-   * Returns a function that removes the listener.
+   * Listen for an event. Returns a function that removes the listener, which is
+   * also a `Disposable` (`using stop = client.on(...)`).
+   *
+   * ```ts
+   * client.on("textMessage", (message) => console.log(message.message));
+   * ```
+   *
+   * A listener that throws does not stop the others: the rest of the event's
+   * listeners, and the events after it, are still delivered, and the exception
+   * is rethrown on its own, from a microtask, so it surfaces as an
+   * `uncaughtException` just as an EventEmitter listener's would.
+   *
+   * With the WebQuery transport no server event can ever arrive, so this throws
+   * a `TypeError` for one rather than accepting a listener that would never
+   * run. `connected` and `disconnected` are still accepted: they come from the
+   * client, not the server.
    */
-  onNotification(listener: (event: NotificationEvent) => void): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
+  on<K extends keyof QueryEventMap>(event: K, listener: Listener<QueryEventMap, K>): Unsubscribe {
+    if (this.#notifications === false && SERVER_EVENTS.has(event)) {
+      throw new TypeError(
+        `this transport delivers no notifications, so "${event}" cannot be listened for`,
+      );
+    }
+    const subscription: Subscription = {
+      listener: listener as (payload: unknown) => void,
+      removed: false,
+    };
+    // A new array rather than an edit in place: a delivery may be iterating
+    // over the old one.
+    this.#listeners.set(event, [...(this.#listeners.get(event) ?? []), subscription]);
+
+    const unsubscribe = (): void => {
+      if (subscription.removed) return;
+      subscription.removed = true;
+      const list = this.#listeners.get(event) ?? [];
+      this.#listeners.set(
+        event,
+        list.filter((s) => s !== subscription),
+      );
+    };
+    return Object.assign(unsubscribe, { [Symbol.dispose]: unsubscribe });
   }
 
-  /** End the connection. Commands still waiting fail with a NotConnectedError. */
-  async close(): Promise<void> {
-    if (this.#closed) return;
-    this.#closed = true;
-    this.#fail(new NotConnectedError());
-    await this.#transport.close();
+  /** Listen for the next occurrence of an event only. */
+  once<K extends keyof QueryEventMap>(event: K, listener: Listener<QueryEventMap, K>): Unsubscribe {
+    const unsubscribe = this.on(event, ((payload: QueryEventMap[K]) => {
+      unsubscribe();
+      listener(payload);
+    }) as Listener<QueryEventMap, K>);
+    return unsubscribe;
+  }
+
+  /**
+   * An event as an async iterator, for `for await`:
+   *
+   * ```ts
+   * for await (const message of client.events("textMessage")) { … }
+   * ```
+   *
+   * Events that arrive while the loop body runs are buffered, so none is
+   * missed. The buffer is unbounded: an iterator that is not consumed as fast
+   * as events arrive holds every one of them, so stop iterating (or abort
+   * `signal`) when you stop reading.
+   *
+   * Iteration ends when the loop exits early (`break`, `return`, a throw), and
+   * — for every event but `disconnected` — when the client disconnects. When
+   * `signal` aborts, listening stops at once, whatever is buffered is
+   * discarded, and the pending and every later `next()` reject with the
+   * signal's reason.
+   */
+  events<K extends keyof QueryEventMap>(
+    event: K,
+    options: { readonly signal?: AbortSignal | undefined } = {},
+  ): AsyncIterableIterator<QueryEventMap[K]> {
+    const { signal } = options;
+    const buffered: Array<QueryEventMap[K]> = [];
+    // The next() calls waiting for an event, oldest first.
+    const waiting: Array<{
+      resolve: (result: IteratorResult<QueryEventMap[K]>) => void;
+      reject: (reason: unknown) => void;
+    }> = [];
+    let ended = false;
+    let aborted = false;
+
+    const finishWaiting = (): void => {
+      for (const waiter of waiting.splice(0)) {
+        waiter.resolve({ value: undefined, done: true });
+      }
+    };
+
+    const stopListening = this.on(event, ((payload: QueryEventMap[K]) => {
+      if (ended) return;
+      const waiter = waiting.shift();
+      if (waiter) {
+        waiter.resolve({ value: payload, done: false });
+        return;
+      }
+      buffered.push(payload);
+    }) as Listener<QueryEventMap, K>);
+    const stopOnDisconnect =
+      event === "disconnected"
+        ? undefined
+        : this.on("disconnected", () => {
+            cleanup();
+            finishWaiting();
+          });
+    const cleanup = (): void => {
+      ended = true;
+      stopListening();
+      stopOnDisconnect?.();
+      signal?.removeEventListener("abort", abort);
+    };
+    const abort = (): void => {
+      aborted = true;
+      buffered.length = 0;
+      cleanup();
+      const reason = signal!.reason;
+      for (const waiter of waiting.splice(0)) waiter.reject(reason);
+    };
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
+
+    const iterator: AsyncIterableIterator<QueryEventMap[K]> = {
+      next(): Promise<IteratorResult<QueryEventMap[K]>> {
+        if (aborted) return Promise.reject(signal!.reason);
+        if (buffered.length > 0) return Promise.resolve({ value: buffered.shift()!, done: false });
+        if (ended) {
+          cleanup();
+          return Promise.resolve({ value: undefined, done: true });
+        }
+        return new Promise((resolve, reject) => waiting.push({ resolve, reject }));
+      },
+      return(): Promise<IteratorResult<QueryEventMap[K]>> {
+        buffered.length = 0;
+        cleanup();
+        finishWaiting();
+        return Promise.resolve({ value: undefined, done: true });
+      },
+      [Symbol.asyncIterator]() {
+        return iterator;
+      },
+    };
+    return iterator;
+  }
+
+  // ---- Private -------------------------------------------------------------
+
+  /** Build and open the transport the options describe. */
+  async #openTransport(signal: AbortSignal | undefined): Promise<QueryTransport> {
+    const transport: ResolvedTransport = this.#options.transport;
+    switch (transport.kind) {
+      case "tcp":
+        return connectTcp({
+          host: transport.host,
+          port: transport.port,
+          connect: transport.connect,
+          signal,
+        });
+      case "ssh":
+        return connectSsh({
+          host: transport.host,
+          port: transport.port,
+          username: transport.username,
+          password: transport.password,
+          connection: transport.connection,
+          signal,
+        });
+      case "web":
+        return new WebQueryTransport({
+          url: transport.url,
+          apiKey: transport.apiKey,
+          fetch: transport.fetch,
+          serverID: serverIDOf(this.#options.server),
+        });
+      case "custom":
+        return transport.open(signal);
+      default:
+        // Every kind is handled above; a value from outside this module's
+        // types would otherwise open nothing and hang the attempt.
+        throw new TypeError(
+          `unknown transport kind ${String((transport as { kind: unknown }).kind)}`,
+        );
+    }
+  }
+
+  /** The server's `version` string, and nothing else of the answer. */
+  async #getVersion(signal: AbortSignal | undefined): Promise<string> {
+    const rows = await this.exec("version", { signal });
+    return rows[0]?.["version"] ?? "";
+  }
+
+  /**
+   * List the clients once, so that `invokerGroups` and the invoker fields of a
+   * self-move can be filled: an enter notification is only seen for clients
+   * that arrive after registering, and the ones already there arrive as none.
+   */
+  async #learnClients(signal: AbortSignal | undefined): Promise<void> {
+    const rows = await this.exec("clientlist -uid -groups", { signal }).catch((error: unknown) => {
+      // A registration that worked and a list that did not leaves the client
+      // usable: a sender it has never seen simply has no known groups, which
+      // the event type already allows for.
+      this.#logger.warn("listing clients after registering failed", { error: String(error) });
+      return [] as Array<Record<string, string>>;
+    });
+    this.#clid = 0;
+    for (const row of rows) {
+      const result = handleNotification(
+        { name: "notifycliententerview", params: row },
+        0,
+        this.#clients,
+      );
+      if (result.kind !== "clientEnter") continue;
+      // Ours is the one query client with our nickname. Without a nickname
+      // option there is no name to match, and the id stays unknown.
+      if (
+        this.#clid === 0 &&
+        result.info.type === ClientType.Query &&
+        this.#options.nickname !== undefined &&
+        result.info.nickname === this.#options.nickname
+      ) {
+        this.#clid = result.info.id;
+      }
+    }
   }
 
   async #execNow(line: string, options: CommandOptions): Promise<Array<Record<string, string>>> {
     const { signal, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = options;
     signal?.throwIfAborted();
-    if (this.#closed) throw new NotConnectedError();
+    if (this.#closed || this.#transport === null) throw new NotConnectedError();
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     let onAbort: (() => void) | undefined;
@@ -226,7 +785,7 @@ export class QueryClient implements CommandExecutor {
       // A notification is never part of an answer.
       for (const row of splitRows(trimmed)) {
         const parsed = parseCommand(row);
-        if (parsed) this.#notify({ name: cmd.name, params: parsed.params });
+        if (parsed) this.#notification(parsed.name, parsed.params);
       }
       return;
     }
@@ -237,26 +796,300 @@ export class QueryClient implements CommandExecutor {
     }
   }
 
-  #notify(event: NotificationEvent): void {
-    for (const listener of this.#listeners) {
+  /** Turn one notification into the core's events, then report it as it arrived. */
+  #notification(name: string, params: Record<string, string>): void {
+    const result = handleNotification({ name, params }, this.#clid, this.#clients);
+    switch (result.kind) {
+      case "clientEnter":
+        this.#emit("clientEnter", result.info);
+        break;
+      case "clientLeave":
+        this.#emit("clientLeave", result.event);
+        // A query client is never kicked from the server, but a ban or a
+        // server stopping reaches it as a leave of its own: the same two
+        // reasons the voice client reads.
+        if (
+          result.isSelf &&
+          (result.event.reason === Reason.KickServer ||
+            result.event.reason === Reason.KickServerBan)
+        ) {
+          this.#emit("kicked", kickedEvent(result.event));
+        }
+        break;
+      case "clientMoved":
+        this.#emit("clientMoved", result.event);
+        // A channel kick moves the client to the default channel, so it
+        // arrives as a move of its own, not as leaving view.
+        if (
+          this.#clid !== 0 &&
+          result.event.clientID === this.#clid &&
+          result.event.reason === Reason.KickChannel
+        ) {
+          this.#emit("kicked", kickedEvent(result.event));
+        }
+        break;
+      case "textMessage":
+        this.#emit("textMessage", result.message);
+        break;
+      case "poked":
+      case "unknown":
+        // A query client is never poked, and anything else is not an event the
+        // core models; `notification` still carries it.
+        break;
+    }
+    // After any event it produced, as the voice client sends it. A listener's
+    // failure is its own: it must not stop the answer being read.
+    if (this.#listeners.get("notification")?.length) {
+      this.#emit("notification", { name, params: { ...params } });
+    }
+  }
+
+  #emit<K extends keyof QueryEventMap>(event: K, payload: QueryEventMap[K]): void {
+    for (const subscription of this.#listeners.get(event) ?? []) {
+      // Checked at delivery: a listener removed while its event was queued
+      // does not get it.
+      if (subscription.removed) continue;
       try {
-        listener(event);
-      } catch {
-        // A listener's failure is its own; it must not break the answer being read.
+        subscription.listener(payload);
+      } catch (error) {
+        // Rethrown on its own, so it surfaces as an uncaught exception rather
+        // than breaking the listeners after it.
+        queueMicrotask(() => {
+          throw error;
+        });
       }
     }
   }
 
-  #handleClose(error: Error | undefined): void {
-    this.#closed = true;
-    this.#fail(new NotConnectedError(error ? { cause: error } : undefined));
-  }
-
-  #fail(error: TeamspeakError): void {
+  #fail(error: unknown): void {
     const pending = this.#pending;
     this.#pending = null;
     pending?.reject(error);
   }
+
+  #handleClose(error: Error | undefined): void {
+    if (this.#status === ClientStatus.Disconnected) return;
+    this.#transport = null;
+    this.#closed = true;
+    this.#fail(new NotConnectedError(error ? { cause: error } : undefined));
+    const wasConnected = this.#status === ClientStatus.Connected;
+    this.#status = ClientStatus.Disconnected;
+    if (!wasConnected) {
+      // The transport closed while the session was being set up, so this is
+      // the attempt failing rather than a live connection dropping. The
+      // attempt's own command rejects, and `connect()` rejects with it.
+      return;
+    }
+    this.#lastDrop = error ?? new TeamspeakError("connection closed");
+    // Announced first, then retried: a caller watching `disconnected` should
+    // hear about the drop even when a reconnect is already on its way, because
+    // a silent recovery hides an outage.
+    void this.#announceDisconnected(
+      this.#lastDrop,
+      this.#willReconnect(this.#lastDrop, this.#loopAttempt + 1),
+    );
+    this.#scheduleReconnect(this.#lastDrop).catch((failure: unknown) => {
+      this.#logger.error("reconnecting failed", { error: String(failure) });
+    });
+  }
+
+  /**
+   * A connection attempt has failed for good. The transport it opened is
+   * closed, so a later `connect()` starts from nothing.
+   *
+   * A `connect()` the caller made is theirs to see rejected, and is not
+   * announced as a disconnection. An attempt of the reconnect loop is: the
+   * caller hears the loop's own answer, so that a loop which has given up says
+   * so instead of only ever having reported the drop that started it.
+   */
+  #failConnection(error: unknown): void {
+    if (this.#status === ClientStatus.Connected) return;
+    this.#status = ClientStatus.Disconnected;
+    this.#closed = true;
+    // The cause is reported as it is, not wrapped: a misuse of the options,
+    // such as asking for events a transport cannot deliver, must stay the
+    // TypeError it is.
+    this.#fail(error);
+    const transport = this.#transport;
+    this.#transport = null;
+    void transport?.close().catch(() => {});
+    if (!this.#reconnecting) return;
+    const cause =
+      error instanceof Error ? error : new TeamspeakError(String(error), { cause: error });
+    void this.#announceDisconnected(cause, this.#willReconnect(cause, this.#loopAttempt + 1));
+  }
+
+  #announceDisconnected(cause: Error | undefined, willReconnect: boolean): Promise<void> {
+    let resolve!: () => void;
+    const delivered = new Promise<void>((r) => (resolve = r));
+    try {
+      this.#emit("disconnected", { error: cause, willReconnect });
+    } finally {
+      resolve();
+    }
+    this.#disconnectedDelivered = delivered;
+    void delivered.then(() => {
+      if (this.#disconnectedDelivered === delivered) this.#disconnectedDelivered = undefined;
+    });
+    return delivered;
+  }
+
+  /**
+   * Whether the reconnect loop will make attempt number `attempt` after `err`.
+   * `disconnected` reports it, and the loop acts on the same answer: the
+   * caller's `shouldRetry` is asked once per failure, not once to announce it
+   * and again to act on it.
+   */
+  #willReconnect(err: Error, attempt: number): boolean {
+    const options = this.#reconnectOptions;
+    if (options === undefined || this.#stopped) return false;
+    const { maxAttempts } = resolveBackoffPolicy(options);
+    if (maxAttempts !== 0 && attempt > maxAttempts) return false;
+    const asked = this.#retryAnswer;
+    if (asked?.err === err && asked.attempt === attempt) return asked.retry;
+    let retry: boolean;
+    let threw = false;
+    try {
+      retry = (options.shouldRetry ?? defaultShouldRetry)(err, attempt);
+    } catch (failure) {
+      this.#logger.error("shouldRetry threw; not reconnecting", { error: String(failure) });
+      retry = false;
+      threw = true;
+    }
+    this.#retryAnswer = { err, attempt, retry, threw };
+    return retry;
+  }
+
+  /**
+   * Retry a dropped connection according to the reconnect policy: every
+   * attempt re-opens the transport and reruns the whole setup, `login` and
+   * `use` included.
+   *
+   * A refused `login` or `use` ends the loop, through the default
+   * `shouldRetry`: the credentials or the target are wrong, and the same ones
+   * fail the same way. Retrying them is also what turns a dropped connection
+   * into a ban, since those are the two commands that reach the flood limit
+   * fastest.
+   *
+   * Never runs after an explicit `disconnect()`, and never more than one at a
+   * time: two failures in quick succession would otherwise start competing
+   * loops, and a loop shorter than the server's antiflood window bans the IP
+   * rather than reconnecting it. A drop while the loop runs is the loop's to
+   * retry: it ends only once its attempt is still connected when it resumes.
+   */
+  async #scheduleReconnect(err: Error): Promise<void> {
+    const options = this.#reconnectOptions;
+    if (options === undefined || this.#stopped || this.#reconnecting) return;
+
+    const policy = resolveBackoffPolicy(options);
+    this.#reconnecting = true;
+    const stop = new AbortController();
+    this.#stopReconnecting = stop;
+    try {
+      for (let attempt = 1; policy.maxAttempts === 0 || attempt <= policy.maxAttempts; attempt++) {
+        if (this.#stopped) return;
+        if (!this.#willReconnect(err, attempt)) {
+          if (!this.#retryAnswer?.threw) {
+            this.#logger.info("not retrying", { attempt, reason: err.message });
+          }
+          return;
+        }
+
+        const delay = backoffDelay(policy, attempt);
+        this.#logger.info("reconnecting", { attempt, delayMs: delay });
+        // A timer that keeps the process alive: an application that does
+        // nothing but stay connected would otherwise exit during the wait.
+        await sleep(delay, stop.signal);
+        if (this.#stopped) return;
+        // Connected, or connecting, by hand during the wait: nothing is left
+        // to retry, and an attempt now would only fail with
+        // AlreadyConnectedError.
+        if (this.#status !== ClientStatus.Disconnected) return;
+
+        this.#loopAttempt = attempt;
+        try {
+          await this.#connect({ signal: AbortSignal.timeout(RECONNECT_ATTEMPT_TIMEOUT_MS) }, true);
+          // Read through the getter: the status may have changed while
+          // connect() resolved, which the field's narrowing would not see.
+          if (this.status === ClientStatus.Connected) {
+            this.#logger.info("reconnected", { attempt });
+            return;
+          }
+          // The new session dropped before this loop resumed. That drop found
+          // this loop running and left the retrying to it.
+          err = this.#lastDrop ?? new TeamspeakError("connection closed");
+        } catch (retryErr) {
+          if (retryErr instanceof AlreadyConnectedError) return;
+          err =
+            retryErr instanceof Error
+              ? retryErr
+              : new TeamspeakError(String(retryErr), { cause: retryErr });
+        }
+      }
+      this.#logger.warn("reconnect attempts exhausted", { attempts: policy.maxAttempts });
+    } finally {
+      this.#reconnecting = false;
+      this.#loopAttempt = 0;
+      if (this.#stopReconnecting === stop) this.#stopReconnecting = undefined;
+    }
+  }
+}
+
+/**
+ * The core's server events. A transport with no notifications cannot deliver
+ * any of them, so a listener for one on such a client could never run.
+ */
+const SERVER_EVENTS: ReadonlySet<string> = new Set([
+  "textMessage",
+  "clientEnter",
+  "clientLeave",
+  "clientMoved",
+  "notification",
+  "kicked",
+]);
+
+function kickedEvent(event: {
+  readonly reason: number;
+  readonly reasonMessage: string;
+  readonly invokerName: string;
+  readonly invokerUID: string;
+  readonly invokerID: number;
+}): KickedEvent {
+  return {
+    reason: event.reason,
+    reasonMessage: event.reasonMessage,
+    invokerName: event.invokerName,
+    invokerUID: event.invokerUID as KickedEvent["invokerUID"],
+    invokerID: event.invokerID as KickedEvent["invokerID"],
+  };
+}
+
+/** The server id a WebQuery transport addresses, from the `server` option. */
+function serverIDOf(server: ResolvedQueryOptions["server"]): ServerID | number | undefined {
+  return server !== undefined && "id" in server ? server.id : undefined;
+}
+
+/** Which server generation a `version` string names. */
+function serverFamilyOf(version: string): ServerFamily {
+  const major = Number.parseInt(version, 10);
+  if (Number.isNaN(major)) return "unknown";
+  if (major === 3) return "ts3";
+  if (major >= 6) return "ts6";
+  return "unknown";
+}
+
+/** Sleep, or wake early once `signal` aborts. Resolves either way, never rejects. */
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
 }
 
 /**

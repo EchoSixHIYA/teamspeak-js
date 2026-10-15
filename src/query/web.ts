@@ -10,7 +10,7 @@ import type { QueryTransport } from "./transport.js";
  * `ServerError` instead.
  */
 export class WebQueryHttpError extends TeamspeakError {
-  /** {@inheritDoc TeamspeakError.kind} */
+  /** {@inheritDoc @honeybbq/teamspeak!TeamspeakError.kind} */
   static override readonly kind: string = "WebQueryHttpError";
   static {
     Object.defineProperty(this.prototype, "name", {
@@ -70,6 +70,8 @@ interface WebAnswer {
  * also sends no notifications, so there is nothing to register for.
  */
 export class WebQueryTransport implements QueryTransport {
+  /** WebQuery has no session for the server to push a notification to. */
+  readonly supportsNotifications = false;
   onLine: ((line: string) => void) | null = null;
   onClose: ((error: Error | undefined) => void) | null = null;
 

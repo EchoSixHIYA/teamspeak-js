@@ -25,6 +25,8 @@ export interface QueryStream {
  * answer. It is skipped, so the client sees only answers and notifications.
  */
 export class StreamTransport implements QueryTransport {
+  /** A raw TCP connection and an SSH session both carry pushed notifications. */
+  readonly supportsNotifications = true;
   onLine: ((line: string) => void) | null = null;
   onClose: ((error: Error | undefined) => void) | null = null;
 

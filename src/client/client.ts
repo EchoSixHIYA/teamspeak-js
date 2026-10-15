@@ -45,9 +45,14 @@ import { PacketHandler } from "./transport/handler.js";
 import { PacketType } from "./transport/packet.js";
 import type { Packet } from "./transport/packet.js";
 import { CommandTracker, appendReturnCode } from "./commands.js";
-import { encodeRequest, parseServerError, resolveBackoffPolicy } from "../core/internal.js";
+import {
+  buildCommandChain,
+  encodeRequest,
+  parseServerError,
+  resolveBackoffPolicy,
+} from "../core/internal.js";
 import { uploadFileData, downloadFileData, type FileTransferOptions } from "./transfer.js";
-import { buildCommandChain, buildEventChain } from "./events.js";
+import { buildEventChain } from "./events.js";
 import { processInit1 } from "./handshake/crypt-handshake.js";
 import {
   handleHandshakeInitIV,
@@ -57,8 +62,8 @@ import {
   prepareClientPassword,
 } from "./handshake.js";
 import type { ClientVersion, CommandExecutor, CommandRequest } from "@honeybbq/teamspeak";
-import { handleNotification } from "./notifications.js";
-import type { NotificationResult } from "./notifications.js";
+import { handleNotification } from "../core/internal.js";
+import type { NotificationResult } from "../core/internal.js";
 import { parseCommand } from "../core/internal.js";
 import { CommandThrottle } from "./throttle.js";
 import { splitCommandRows, sleep } from "../core/internal.js";
@@ -1383,7 +1388,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         this.#cmdTrack.buffer(cmd.params, cmd.name);
         this.#cmdTrack.offerCorrelated(cmd.name, cmd.params);
       }
-      const result = handleNotification(cmd, this.#clid, this.#clients, this.#nickname);
+      const result = handleNotification(cmd, this.#clid, this.#clients);
       this.#processNotificationResult(result);
       if (this.#listeners.get("notification")?.length || this.#eventMiddlewares.length > 0) {
         this.#emitServerEvent({

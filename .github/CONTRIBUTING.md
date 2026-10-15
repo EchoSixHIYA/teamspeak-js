@@ -45,8 +45,8 @@ one directory per entry point:
 - `src/core` is what every connection shares: the command language, ids,
   errors and the typed commands. It imports nothing from the other two.
 - `src/client` is the voice client (`@honeybbq/teamspeak/client`).
-- `src/query` is the ServerQuery client. It is not exported yet and ships in a
-  1.x release as `@honeybbq/teamspeak/query`.
+- `src/query` is the ServerQuery client (`@honeybbq/teamspeak/query`). It is
+  exported, but marked `@experimental`: its API may change in a minor release.
 
 `src/client` and `src/query` use the core's public API through its package name,
 `@honeybbq/teamspeak`, and take plumbing only from `../core/internal.js`. They

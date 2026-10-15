@@ -9,9 +9,12 @@
 
 export { isCommandName, parseCommand } from "./command/parser.js";
 export { encodeRequest } from "./command/request.js";
+export { buildCommandChain } from "./middleware.js";
 export { buildCommand, buildCommandOrdered } from "./command/command.js";
 export type { Command } from "./command/command.js";
 export { parseClient } from "./api/parse.js";
+export { handleNotification } from "./notifications.js";
+export type { NotificationResult } from "./notifications.js";
 export { parseIconID } from "./command/ids.js";
 export { responseSpec } from "./command/responses.js";
 export type { ResponseSpec } from "./command/responses.js";
