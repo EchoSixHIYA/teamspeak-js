@@ -1,0 +1,165 @@
+import { describe, expect, it } from "vitest";
+import { ErrorCode, ServerError, listBans, listChannels } from "@honeybbq/teamspeak";
+import { QueryClient } from "./client.js";
+import { WebQueryHttpError, WebQueryTransport } from "./web.js";
+
+interface Call {
+  url: string;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
+/** A fetch that records requests and answers each with the next reply. */
+function fakeFetch(replies: Array<{ status?: number; json?: unknown; text?: string }>) {
+  const calls: Call[] = [];
+  const fetchFn = (async (url: string, init: RequestInit) => {
+    calls.push({
+      url,
+      headers: init.headers as Record<string, string>,
+      body: JSON.parse(init.body as string),
+    });
+    const reply = replies.shift() ?? {};
+    const status = reply.status ?? 200;
+    return new Response(reply.text ?? JSON.stringify(reply.json), { status });
+  }) as unknown as typeof fetch;
+  return { calls, fetchFn };
+}
+
+const ok = (body: unknown[] = []) => ({ json: { body, status: { code: 0, message: "ok" } } });
+
+describe("WebQueryTransport", () => {
+  it("posts the command with its parameters as JSON and the api key", async () => {
+    const { calls, fetchFn } = fakeFetch([ok([{ cid: "1", channel_name: "Lobby", pid: "0" }])]);
+    const client = new QueryClient(
+      new WebQueryTransport({ url: "http://h:10080/", apiKey: "KEY", serverID: 1, fetch: fetchFn }),
+    );
+
+    const channels = await listChannels(client);
+
+    expect(channels.map((c) => c.name)).toEqual(["Lobby"]);
+    expect(calls[0]?.url).toBe("http://h:10080/1/channellist");
+    expect(calls[0]?.headers["x-api-key"]).toBe("KEY");
+    expect(calls[0]?.body).toEqual({
+      "-topic": "",
+      "-flags": "",
+      "-voice": "",
+      "-limits": "",
+      "-icon": "",
+    });
+  });
+
+  it("sends the rows of a list as an array", async () => {
+    const { calls, fetchFn } = fakeFetch([ok()]);
+    const client = new QueryClient(
+      new WebQueryTransport({ url: "http://h", apiKey: "K", serverID: 1, fetch: fetchFn }),
+    );
+    await client.exec("ftdeletefile cid=1 cpw= name=/a|name=/b");
+    expect(calls[0]?.body).toEqual([
+      { cid: "1", cpw: "", name: "/a" },
+      { cid: "1", cpw: "", name: "/b" },
+    ]);
+  });
+
+  it("answers a refusal with the server's error, as a raw connection would", async () => {
+    const { fetchFn } = fakeFetch([
+      { status: 400, json: { status: { code: 768, message: "invalid channelID" } } },
+    ]);
+    const client = new QueryClient(
+      new WebQueryTransport({ url: "http://h", apiKey: "K", serverID: 1, fetch: fetchFn }),
+    );
+    const answered = client.exec("channelinfo cid=9");
+    await expect(answered).rejects.toBeInstanceOf(ServerError);
+    await expect(answered).rejects.toMatchObject({ code: ErrorCode.ChannelInvalidID });
+  });
+
+  it("reads 1281 as an empty list", async () => {
+    const { fetchFn } = fakeFetch([
+      { json: { status: { code: 1281, message: "database empty result set" } } },
+    ]);
+    const client = new QueryClient(
+      new WebQueryTransport({ url: "http://h", apiKey: "K", serverID: 1, fetch: fetchFn }),
+    );
+    expect(await listBans(client)).toEqual([]);
+  });
+
+  it("keeps the extra message of an error", async () => {
+    const { fetchFn } = fakeFetch([
+      {
+        status: 400,
+        json: {
+          status: { code: 1538, message: "invalid parameter", extra_message: "unknown command" },
+        },
+      },
+    ]);
+    const client = new QueryClient(
+      new WebQueryTransport({ url: "http://h", apiKey: "K", fetch: fetchFn }),
+    );
+    await expect(client.exec("nosuch")).rejects.toMatchObject({
+      code: 1538,
+      extraMessage: "unknown command",
+    });
+  });
+
+  it("treats an HTTP failure with no TeamSpeak code as a transport error", async () => {
+    const { fetchFn } = fakeFetch([{ status: 401, text: "unauthorized" }]);
+    const client = new QueryClient(
+      new WebQueryTransport({ url: "http://h", apiKey: "bad", fetch: fetchFn }),
+    );
+    const answered = client.exec("whoami");
+    await expect(answered).rejects.toBeInstanceOf(WebQueryHttpError);
+    await expect(answered).rejects.not.toBeInstanceOf(ServerError);
+    await expect(answered).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("keeps working after a transport error", async () => {
+    const { fetchFn } = fakeFetch([{ status: 502, text: "bad gateway" }, ok([{ a: "1" }])]);
+    const client = new QueryClient(
+      new WebQueryTransport({ url: "http://h", apiKey: "K", fetch: fetchFn }),
+    );
+    await expect(client.exec("whoami")).rejects.toBeInstanceOf(WebQueryHttpError);
+    expect(await client.exec("whoami")).toEqual([{ a: "1" }]);
+  });
+
+  it("answers use itself, and addresses what it names", async () => {
+    const { calls, fetchFn } = fakeFetch([ok(), ok(), ok()]);
+    const client = new QueryClient(
+      new WebQueryTransport({ url: "http://h", apiKey: "K", fetch: fetchFn }),
+    );
+    await client.exec("version");
+    await client.use({ id: 2 });
+    await client.exec("serverinfo");
+    await client.use({ port: 9987 });
+    await client.exec("serverinfo");
+    expect(calls.map((c) => c.url)).toEqual([
+      "http://h/version",
+      "http://h/2/serverinfo",
+      "http://h/byport/9987/serverinfo",
+    ]);
+  });
+
+  it("rejects a use that names no server", async () => {
+    const { fetchFn } = fakeFetch([]);
+    const client = new QueryClient(
+      new WebQueryTransport({ url: "http://h", apiKey: "K", fetch: fetchFn }),
+    );
+    await expect(client.exec("use")).rejects.toBeInstanceOf(ServerError);
+  });
+
+  it("escapes values it turns back into rows", async () => {
+    const { fetchFn } = fakeFetch([ok([{ name: "a b|c", n: 5 }])]);
+    const client = new QueryClient(
+      new WebQueryTransport({ url: "http://h", apiKey: "K", fetch: fetchFn }),
+    );
+    expect(await client.exec("x")).toEqual([{ name: "a b|c", n: "5" }]);
+  });
+
+  it("honours the timeout while the request is in flight", async () => {
+    const hang = (() => new Promise<Response>(() => {})) as unknown as typeof fetch;
+    const client = new QueryClient(
+      new WebQueryTransport({ url: "http://h", apiKey: "K", fetch: hang }),
+    );
+    await expect(client.exec("whoami", { timeout: 10 })).rejects.toMatchObject({
+      name: "CommandTimeoutError",
+    });
+  });
+});
