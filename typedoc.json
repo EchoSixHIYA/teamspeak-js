@@ -6,11 +6,11 @@
   // package's own name, which resolves to the sources, so {@link}s between
   // the two entries work and no build is needed before running typedoc.
   "name": "teamspeak-js",
-  "entryPoints": ["packages/teamspeak/src/core/index.ts", "packages/teamspeak/src/client/index.ts"],
+  "entryPoints": ["src/core/index.ts", "src/client/index.ts"],
   "tsconfig": "tsconfig.typedoc.json",
   "readme": "README.md",
   "projectDocuments": ["docs/migrating-to-1.0.md", "docs/voice-protocol-responses.md"],
-  "out": "docs-site",
+  "out": "dist/docs",
   "excludePrivate": true,
   "excludeInternal": true,
   "excludeNotDocumented": false,

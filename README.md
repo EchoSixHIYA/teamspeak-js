@@ -10,7 +10,7 @@ Works with TeamSpeak 3 and TeamSpeak 6 servers. No proprietary SDK, no copied co
 [![npm](https://img.shields.io/npm/v/@honeybbq/teamspeak)](https://www.npmjs.com/package/@honeybbq/teamspeak)
 [![npm beta](https://img.shields.io/npm/v/@honeybbq/teamspeak/beta?label=beta)](https://www.npmjs.com/package/@honeybbq/teamspeak?activeTab=versions)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/HoneyBBQ/teamspeak-js/badge)](https://scorecard.dev/viewer/?uri=github.com/HoneyBBQ/teamspeak-js)
-[![Node Version](https://img.shields.io/node/v/@honeybbq/teamspeak)](https://github.com/HoneyBBQ/teamspeak-js/blob/main/packages/teamspeak/package.json)
+[![Node Version](https://img.shields.io/node/v/@honeybbq/teamspeak)](https://github.com/HoneyBBQ/teamspeak-js/blob/main/package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/HoneyBBQ/teamspeak-js/blob/main/LICENSE)
 
 </div>
@@ -532,29 +532,27 @@ both entries, so existing imports keep working through 1.x; new code should use
 ## Architecture
 
 ```
-packages/
-├── teamspeak/
-│   ├── src/
-│   │   ├── core/              # Shared: command language, ids, errors, typed commands
-│   │   ├── client/            # The voice client (@honeybbq/teamspeak/client)
-│   │   │   ├── client.ts          # Client lifecycle, connection management
-│   │   │   ├── commands.ts        # Command sending and response tracking
-│   │   │   ├── api/voice.ts       # Commands only the voice protocol has
-│   │   │   ├── capabilities.ts    # Server version and uid hash detection
-│   │   │   ├── reconnect.ts       # Backoff policy and permanent-failure detection
-│   │   │   ├── events.ts          # Event handler registration and middleware
-│   │   │   ├── notifications.ts   # Server notification parsing and dispatch
-│   │   │   ├── handshake.ts       # Protocol handshake orchestration
-│   │   │   ├── transfer.ts        # File transfer data connections
-│   │   │   ├── throttle.ts        # Token-bucket rate limiter
-│   │   │   ├── crypto/            # ECDH, EAX encryption, identity management
-│   │   │   ├── handshake/         # Crypto handshake and license verification
-│   │   │   ├── transport/         # UDP packet framing, ACK, compression
-│   │   │   └── discovery/         # SRV / TSDNS / direct address resolution
-│   │   └── query/             # ServerQuery client (not exported yet)
-│   └── examples/
-│       └── connect.ts         # Minimal connection example
-└── teamspeak-client/          # Forwarding package, no code of its own
+src/
+├── core/              # Shared: command language, ids, errors, typed commands
+├── client/            # The voice client (@honeybbq/teamspeak/client)
+│   ├── client.ts          # Client lifecycle, connection management
+│   ├── commands.ts        # Command sending and response tracking
+│   ├── api/voice.ts       # Commands only the voice protocol has
+│   ├── capabilities.ts    # Server version and uid hash detection
+│   ├── reconnect.ts       # Backoff policy and permanent-failure detection
+│   ├── events.ts          # Event handler registration and middleware
+│   ├── notifications.ts   # Server notification parsing and dispatch
+│   ├── handshake.ts       # Protocol handshake orchestration
+│   ├── transfer.ts        # File transfer data connections
+│   ├── throttle.ts        # Token-bucket rate limiter
+│   ├── crypto/            # ECDH, EAX encryption, identity management
+│   ├── handshake/         # Crypto handshake and license verification
+│   ├── transport/         # UDP packet framing, ACK, compression
+│   └── discovery/         # SRV / TSDNS / direct address resolution
+└── query/             # ServerQuery client (not exported yet)
+examples/
+└── connect.ts  # Minimal connection example
+legacy/teamspeak-client/   # Forwarding package, no code of its own
 ```
 
 ## Related

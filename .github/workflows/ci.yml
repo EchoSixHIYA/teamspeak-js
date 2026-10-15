@@ -85,18 +85,18 @@ jobs:
       # dependencies only, since a dev tool's advisory is not theirs.
       - name: Audit production dependencies
         run: pnpm audit --prod --audit-level=high
-      # The public API of each published package is recorded in etc/*.api.md
+      # The public API of each published package is recorded in api/*.api.md
       # and reviewed like code. This fails, with a diff, when the built
       # declarations and the record disagree, so a change to the API cannot
       # land without showing up in the commit that makes it. To accept a
       # deliberate change: pnpm api:report
       - run: pnpm api:check
-      # Packing @honeybbq/teamspeak runs its prepack script, which copies the
-      # root README in; the forwarding package has its own README.
+      # The repository root is @honeybbq/teamspeak, which a recursive command
+      # skips unless told otherwise; the forwarding package is under legacy/.
       - name: Check the packed packages
         run: |
           mkdir -p "$RUNNER_TEMP/packs"
-          pnpm -r --filter "./packages/*" exec pnpm pack --pack-destination "$RUNNER_TEMP/packs"
+          pnpm -r --include-workspace-root exec pnpm pack --pack-destination "$RUNNER_TEMP/packs"
           for tarball in "$RUNNER_TEMP"/packs/*.tgz; do
             pnpm exec publint --strict "$tarball"
             pnpm exec attw --profile esm-only "$tarball"

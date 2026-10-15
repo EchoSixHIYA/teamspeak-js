@@ -10,7 +10,7 @@
     "ts6",
     "voip"
   ],
-  "homepage": "https://github.com/HoneyBBQ/teamspeak-js/tree/main/packages/teamspeak-client#readme",
+  "homepage": "https://github.com/HoneyBBQ/teamspeak-js/tree/main/legacy/teamspeak-client#readme",
   "bugs": {
     "url": "https://github.com/HoneyBBQ/teamspeak-js/issues"
   },
@@ -19,7 +19,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/HoneyBBQ/teamspeak-js.git",
-    "directory": "packages/teamspeak-client"
+    "directory": "legacy/teamspeak-client"
   },
   "files": [
     "dist",

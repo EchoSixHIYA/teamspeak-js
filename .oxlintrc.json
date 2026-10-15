@@ -40,7 +40,7 @@
   },
   "overrides": [
     {
-      "files": ["packages/teamspeak/src/core/**"],
+      "files": ["src/core/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -63,7 +63,7 @@
       }
     },
     {
-      "files": ["packages/teamspeak/src/client/**"],
+      "files": ["src/client/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -83,7 +83,7 @@
       }
     },
     {
-      "files": ["packages/teamspeak/src/query/**"],
+      "files": ["src/query/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -103,7 +103,7 @@
       }
     },
     {
-      "files": ["packages/teamspeak/src/versions/**"],
+      "files": ["src/versions/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -149,5 +149,5 @@
       "rules": { "import/no-default-export": "off" }
     }
   ],
-  "ignorePatterns": ["dist/**", "node_modules/**", "docs-site/**", "packages/*/temp/**"]
+  "ignorePatterns": ["dist/**", "node_modules/**"]
 }

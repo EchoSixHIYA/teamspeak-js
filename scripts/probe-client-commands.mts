@@ -17,8 +17,8 @@
  * This only tells whether a command is accepted. How its data comes back is
  * scripts/probe-response-shapes.mts.
  */
-import { generateIdentitySync } from "../packages/teamspeak/src/client/crypto/identity.js";
-import { Client } from "../packages/teamspeak/src/client/client.js";
+import { generateIdentitySync } from "../src/client/crypto/identity.js";
+import { Client } from "../src/client/client.js";
 
 const quiet = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 const c = new Client(

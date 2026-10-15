@@ -1,0 +1,24 @@
+{
+  "extends": "./api-extractor.base.json",
+  "mainEntryPointFilePath": "<projectFolder>/dist/client/index.d.ts",
+  "apiReport": { "reportFileName": "client.api.md" },
+  "compiler": {
+    "overrideTsconfig": {
+      "extends": "./tsconfig.base.json",
+      "compilerOptions": {
+        // api-extractor treats a module as external only when TypeScript resolved
+        // it through a path containing node_modules, and a mapping into ./dist
+        // makes every core type a forgotten export. The forwarding package
+        // already has the link a consumer would have, pnpm's own dependency
+        // link to this package, so go through that: it needs no staging step
+        // and no link of our own. It needs `pnpm install`, which the build needs anyway.
+        "paths": {
+          "@honeybbq/teamspeak": [
+            "./legacy/teamspeak-client/node_modules/@honeybbq/teamspeak/dist/core/index.d.ts"
+          ]
+        }
+      },
+      "files": ["./dist/client/index.d.ts"]
+    }
+  }
+}

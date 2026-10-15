@@ -35,7 +35,7 @@ pnpm install
 
 ## Layout
 
-The code is one package, `@honeybbq/teamspeak`, in `packages/teamspeak/`, with
+The code is one package, `@honeybbq/teamspeak`, at the repository root, with
 one directory per entry point:
 
 - `src/core` is what every connection shares: the command language, ids,
@@ -43,7 +43,7 @@ one directory per entry point:
 - `src/client` is the voice client (`@honeybbq/teamspeak/client`).
 - `src/query` is the ServerQuery client. It is not exported yet and ships in a
   1.x release as `@honeybbq/teamspeak/query`.
-- `packages/teamspeak-client` forwards to the package above and has no code of
+- `legacy/teamspeak-client` forwards to the package above and has no code of
   its own.
 
 `src/client` and `src/query` use the core's public API through its package name,
@@ -68,8 +68,8 @@ about it.
 
 ### Public API report
 
-The public API of each entry point is recorded in `packages/teamspeak/etc/core.api.md`
-and `client.api.md`, and reviewed like code. `pnpm api:check` fails with a diff when the built
+The public API of each entry point is recorded in `api/core.api.md`
+and `api/client.api.md`, and reviewed like code. `pnpm api:check` fails with a diff when the built
 declarations and the record disagree, so an API change cannot land without
 showing up in the same commit. When the change is on purpose, rewrite the
 record and commit it with the change:

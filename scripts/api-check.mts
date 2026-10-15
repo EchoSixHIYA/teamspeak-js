@@ -1,6 +1,6 @@
 /**
  * Fails when the public API of a published entry point differs from the report
- * committed under packages/teamspeak/etc, and shows the difference.
+ * committed in api/, and shows the difference.
  *
  * API Extractor does the comparing: run without --local, it refuses to update
  * the report. It says only that the report changed, though, so this prints
@@ -11,7 +11,7 @@
 
 import { spawnSync } from "node:child_process";
 
-const dir = "packages/teamspeak";
+const reports = "api";
 // One config and one report per public entry point: `.` and `./client`.
 // `query` is not exported yet and has none. The forwarding package declares
 // nothing of its own.
@@ -23,14 +23,16 @@ const entries = [
 let failed = false;
 for (const { specifier, name } of entries) {
   const report = `${name}.api.md`;
-  const run = spawnSync("api-extractor", ["run", "-c", `${dir}/api-extractor.${name}.json`], {
+  const run = spawnSync("api-extractor", ["run", "-c", `api-extractor.${name}.json`], {
     stdio: "inherit",
   });
   if (run.status === 0) continue;
 
   failed = true;
-  console.error(`\n${specifier}: the public API differs from ${dir}/etc/${report}`);
-  spawnSync("diff", ["-u", `${dir}/etc/${report}`, `${dir}/temp/${report}`], { stdio: "inherit" });
+  console.error(`\n${specifier}: the public API differs from ${reports}/${report}`);
+  spawnSync("diff", ["-u", `${reports}/${report}`, `node_modules/.cache/api-extractor/${report}`], {
+    stdio: "inherit",
+  });
 }
 
 if (failed) {

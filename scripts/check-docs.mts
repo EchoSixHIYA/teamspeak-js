@@ -20,9 +20,9 @@ const require = createRequire(import.meta.url);
 const ts = require("typescript-api") as typeof TS;
 
 const entries = [
-  "packages/teamspeak/dist/core/index.d.ts",
-  "packages/teamspeak/dist/client/index.d.ts",
-  "packages/teamspeak-client/dist/index.d.ts",
+  "dist/core/index.d.ts",
+  "dist/client/index.d.ts",
+  "legacy/teamspeak-client/dist/index.d.ts",
 ].map((p) => resolve(p));
 
 const program = ts.createProgram(entries, { skipLibCheck: true, noEmit: true });
@@ -31,13 +31,16 @@ const checker = program.getTypeChecker();
 const undocumented = new Set<string>();
 const seen = new Set<TS.Symbol>();
 
+/** Declared in this repository, not in a dependency, Node or the lib. */
+function ours(fileName: string): boolean {
+  return fileName.startsWith(`${process.cwd()}/`) && !fileName.includes("/node_modules/");
+}
+
 function documented(symbol: TS.Symbol): boolean {
   if (symbol.getDocumentationComment(checker).length > 0) return true;
   // A symbol whose declarations sit outside these packages (a re-exported
   // Node or lib type) is not ours to document.
-  return (symbol.declarations ?? []).every(
-    (d) => !d.getSourceFile().fileName.includes("/packages/"),
-  );
+  return (symbol.declarations ?? []).every((d) => !ours(d.getSourceFile().fileName));
 }
 
 function where(symbol: TS.Symbol): string {
@@ -89,7 +92,7 @@ const strict = ts.createProgram(entries, {
 });
 const broken = ts
   .getPreEmitDiagnostics(strict)
-  .filter((d) => d.file?.fileName.includes("/packages/"))
+  .filter((d) => d.file !== undefined && ours(d.file.fileName))
   .map((d) => {
     const { line } = d.file!.getLineAndCharacterOfPosition(d.start ?? 0);
     const file = d.file!.fileName.replace(process.cwd() + "/", "");

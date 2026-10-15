@@ -2,7 +2,7 @@
 
 Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`; the
 history below is that package's. The history of `@honeybbq/teamspeak-client` is in
-[packages/teamspeak-client/CHANGELOG.md](https://github.com/HoneyBBQ/teamspeak-js/blob/main/packages/teamspeak-client/CHANGELOG.md).
+[legacy/teamspeak-client/CHANGELOG.md](https://github.com/HoneyBBQ/teamspeak-js/blob/main/legacy/teamspeak-client/CHANGELOG.md).
 
 ## 1.0.0-beta.4
 

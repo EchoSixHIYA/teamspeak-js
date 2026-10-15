@@ -76,8 +76,9 @@ jobs:
           node -e '
             const fs = require("node:fs");
             const want = process.argv[1];
-            for (const dir of fs.readdirSync("packages")) {
-              const pkg = JSON.parse(fs.readFileSync(`packages/${dir}/package.json`, "utf8"));
+            const dirs = [".", ...fs.readdirSync("legacy").map((dir) => `legacy/${dir}`)];
+            for (const dir of dirs) {
+              const pkg = JSON.parse(fs.readFileSync(`${dir}/package.json`, "utf8"));
               if (pkg.private) continue;
               if (pkg.version !== want) {
                 console.error(`${pkg.name} is at ${pkg.version}, but the tag is v${want}`);
@@ -99,9 +100,8 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - run: pnpm build
-      # In dependency order, so @honeybbq/teamspeak is on npm before the
-      # package that forwards to it. Packing copies the root README into
-      # @honeybbq/teamspeak (its prepack script).
+      # In dependency order, so @honeybbq/teamspeak (the repository root) is
+      # on npm before the package under legacy/ that forwards to it.
       - name: Publish
         run: pnpm -r publish --access public --no-git-checks --tag "${{ steps.dist.outputs.tag }}"
         env:

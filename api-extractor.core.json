@@ -1,10 +1,10 @@
 {
-  "extends": "../../api-extractor.base.json",
+  "extends": "./api-extractor.base.json",
   "mainEntryPointFilePath": "<projectFolder>/dist/core/index.d.ts",
   "apiReport": { "reportFileName": "core.api.md" },
   "compiler": {
     "overrideTsconfig": {
-      "extends": "../../tsconfig.base.json",
+      "extends": "./tsconfig.base.json",
       "files": ["./dist/core/index.d.ts"]
     }
   }

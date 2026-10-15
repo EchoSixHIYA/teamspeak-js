@@ -3,8 +3,8 @@
   "mainEntryPointFilePath": "<projectFolder>/dist/index.d.ts",
   "apiReport": {
     "enabled": true,
-    "reportFolder": "<projectFolder>/etc/",
-    "reportTempFolder": "<projectFolder>/temp/",
+    "reportFolder": "<projectFolder>/api/",
+    "reportTempFolder": "<projectFolder>/node_modules/.cache/api-extractor/",
     // The tables (ErrorCode, PermissionName, ...) are typed as typeof an
     // unexported object; without this their members, the wire values, would
     // be missing from the report.

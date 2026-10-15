@@ -7,7 +7,6 @@ export default defineConfig({
         test: {
           name: "@honeybbq/teamspeak",
           environment: "node",
-          root: "packages/teamspeak",
           include: ["src/**/*.test.ts"],
         },
       },

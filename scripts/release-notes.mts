@@ -109,7 +109,7 @@ function main(argv: string[]): void {
 
   let body: string;
   try {
-    const changelog = readFileSync(resolve(root, "packages/teamspeak/CHANGELOG.md"), "utf8");
+    const changelog = readFileSync(resolve(root, "CHANGELOG.md"), "utf8");
     body = renderBody(version, readSection(changelog, version, "@honeybbq/teamspeak"));
   } catch (error) {
     console.error(`release-notes: ${error instanceof Error ? error.message : String(error)}`);
