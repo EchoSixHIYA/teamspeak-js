@@ -241,6 +241,9 @@ export async function listChannels(
 /**
  * One channel's full settings.
  *
+ * `totalClients`, `totalFamilyClients` and `neededSubscribePower` are left
+ * undefined: `channelinfo` does not carry them. `listChannels` does.
+ *
  * `channelinfo` answers with `pid` and the settings but no `cid` — the channel
  * is whatever was asked for — so the id is taken from the argument rather than
  * read from the row, where it would come back 0.

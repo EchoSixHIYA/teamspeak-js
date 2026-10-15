@@ -181,12 +181,16 @@ export async function editInstance(
 
 /** An address the instance listens on. */
 export interface Binding {
-  /** What listens there: `voice`, `query` or `filetransfer`. */
+  /**
+   * What listens there: `voice`, `query` or `filetransfer`. The server does not
+   * name it in each row, so it is the subsystem asked for, or `voice` when none
+   * was.
+   */
   readonly subsystem: string;
   /** The address. */
   readonly ip: string;
-  /** The port, where the server reports one. */
-  readonly port: number;
+  /** The port; undefined when the server does not report one. */
+  readonly port: number | undefined;
 }
 
 /** Which bindings {@link listBindings} reports. */
@@ -206,6 +210,7 @@ export async function listBindings(
   client: CommandExecutor,
   options: BindingListOptions = {},
 ): Promise<Binding[]> {
+  const subsystem = options.subsystem || "voice";
   const rows = await list(
     client,
     "bindinglist",
@@ -213,9 +218,9 @@ export async function listBindings(
     options,
   );
   return rows.map((row) => ({
-    subsystem: str(row, "subsystem"),
+    subsystem: str(row, "subsystem") || subsystem,
     ip: str(row, "ip"),
-    port: num(row, "port"),
+    port: row["port"] === undefined ? undefined : num(row, "port"),
   }));
 }
 
