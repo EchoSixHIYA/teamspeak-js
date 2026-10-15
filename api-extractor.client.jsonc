@@ -1,5 +1,5 @@
 {
-  "extends": "./api-extractor.base.json",
+  "extends": "./api-extractor.base.jsonc",
   "mainEntryPointFilePath": "<projectFolder>/dist/client/index.d.ts",
   "apiReport": { "reportFileName": "client.api.md" },
   "compiler": {
@@ -14,11 +14,11 @@
         // and no link of our own. It needs `pnpm install`, which the build needs anyway.
         "paths": {
           "@honeybbq/teamspeak": [
-            "./legacy/teamspeak-client/node_modules/@honeybbq/teamspeak/dist/core/index.d.ts"
-          ]
-        }
+            "./legacy/teamspeak-client/node_modules/@honeybbq/teamspeak/dist/core/index.d.ts",
+          ],
+        },
       },
-      "files": ["./dist/client/index.d.ts"]
-    }
-  }
+      "files": ["./dist/client/index.d.ts"],
+    },
+  },
 }

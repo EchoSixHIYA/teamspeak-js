@@ -16,14 +16,14 @@ const reports = "api";
 // `query` is not exported yet and has none. The forwarding package declares
 // nothing of its own.
 const entries = [
-  { specifier: "@honeybbq/teamspeak", name: "core" },
-  { specifier: "@honeybbq/teamspeak/client", name: "client" },
+  { specifier: "@honeybbq/teamspeak", name: "core", config: "api-extractor.core.json" },
+  { specifier: "@honeybbq/teamspeak/client", name: "client", config: "api-extractor.client.jsonc" },
 ];
 
 let failed = false;
-for (const { specifier, name } of entries) {
+for (const { specifier, name, config } of entries) {
   const report = `${name}.api.md`;
-  const run = spawnSync("api-extractor", ["run", "-c", `api-extractor.${name}.json`], {
+  const run = spawnSync("api-extractor", ["run", "-c", config], {
     stdio: "inherit",
   });
   if (run.status === 0) continue;

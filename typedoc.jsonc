@@ -43,7 +43,7 @@
     "__object.Client",
     "__object.KickChannel",
     "__object.KickServer",
-    "__object.ServerGroup"
+    "__object.ServerGroup",
   ],
-  "treatWarningsAsErrors": true
+  "treatWarningsAsErrors": true,
 }

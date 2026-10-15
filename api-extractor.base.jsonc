@@ -8,7 +8,7 @@
     // The tables (ErrorCode, PermissionName, ...) are typed as typeof an
     // unexported object; without this their members, the wire values, would
     // be missing from the report.
-    "includeForgottenExports": true
+    "includeForgottenExports": true,
   },
   "docModel": { "enabled": false },
   "dtsRollup": { "enabled": false },
@@ -19,7 +19,7 @@
       // typedoc, and so does {@inheritDoc @honeybbq/teamspeak!X}; TSDoc reads
       // the first as a tag and wants a `#` in the second.
       "tsdoc-characters-after-block-tag": { "logLevel": "none", "addToApiReportFile": false },
-      "tsdoc-reference-missing-hash": { "logLevel": "none", "addToApiReportFile": false }
+      "tsdoc-reference-missing-hash": { "logLevel": "none", "addToApiReportFile": false },
     },
     "extractorMessageReporting": {
       "default": { "logLevel": "warning", "addToApiReportFile": true },
@@ -43,7 +43,7 @@
       // export. It stays in the report, next to the declaration, where a
       // review sees it; it does not fail the check, so that each one can be
       // fixed on its own.
-      "ae-forgotten-export": { "logLevel": "none", "addToApiReportFile": true }
-    }
-  }
+      "ae-forgotten-export": { "logLevel": "none", "addToApiReportFile": true },
+    },
+  },
 }

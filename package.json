@@ -67,7 +67,7 @@
     "changeset": "changeset",
     "version-packages": "GITHUB_TOKEN=${GITHUB_TOKEN:-$(gh auth token)} changeset version && pnpm install --lockfile-only",
     "check:docs": "node scripts/check-docs.mts",
-    "api:report": "pnpm build && api-extractor run --local -c api-extractor.core.json && api-extractor run --local -c api-extractor.client.json",
+    "api:report": "pnpm build && api-extractor run --local -c api-extractor.core.json && api-extractor run --local -c api-extractor.client.jsonc",
     "api:check": "pnpm build && node scripts/api-check.mts",
     "docs:build": "typedoc",
     "example": "tsx examples/connect.ts"
