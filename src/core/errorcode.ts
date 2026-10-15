@@ -6,9 +6,9 @@ const errorCodeValues = {
   Undefined: 0x0001,
   /** Not implemented. */
   NotImplemented: 0x0002,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   OKNoUpdate: 0x0003,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   DontNotify: 0x0004,
   /** Library time limit reached. */
   LibTimeLimitReached: 0x0005,
@@ -318,7 +318,7 @@ const errorCodeValues = {
   AccountingAlreadyStarted: 0x0b0c,
   /** Virtualserver not started. */
   AccountingNotStarted: 0x0b0d,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   AccountingTooManyStarts: 0x0b0e,
   /** Invalid message id. */
   MessageInvalidID: 0x0c00,
@@ -334,21 +334,21 @@ const errorCodeValues = {
   TTSUnableToInitialize: 0x0e00,
   /** Invalid privilege key. */
   PrivilegeKeyInvalid: 0x0f00,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   VoipPjsua: 0x1000,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   VoipAlreadyInitialized: 0x1001,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   VoipTooManyAccounts: 0x1002,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   VoipInvalidAccount: 0x1003,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   VoipInternalError: 0x1004,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   VoipInvalidConnectionID: 0x1005,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   VoipCannotAnswerInitiatedCall: 0x1006,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   VoipNotInitialized: 0x1007,
   /** Invalid password. */
   ProvisioningInvalidPassword: 0x1100,
@@ -382,13 +382,13 @@ const errorCodeValues = {
   ProvisioningConnecting: 0x1114,
   /** Already connected. */
   ProvisioningAlreadyConnected: 0x1115,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   ProvisioningNotConnected: 0x1116,
   /** Io_error. */
   ProvisioningIOError: 0x1117,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   ProvisioningInvalidTimeout: 0x1118,
-  /** Has no message in tsdeclarations. */
+  /** No message is known for this code. */
   ProvisioningTS3ServerNotFound: 0x1119,
   /** Unknown permissionID. */
   ProvisioningNoPermission: 0x111a,
@@ -403,9 +403,8 @@ const errorCodeValues = {
  * if (err instanceof ServerError && err.code === ErrorCode.ChannelInvalidPassword) { ... }
  * ```
  *
- * The names and wording follow ReSpeak/tsdeclarations (Errors.csv), which
- * records the codes TeamSpeak 3 and 6 servers share. A server may report a code
- * missing here, so `ServerError.code` is a plain number.
+ * The table holds the codes TeamSpeak 3 and 6 servers share. A server may
+ * report a code missing here, so `ServerError.code` is a plain number.
  */
 export const ErrorCode: typeof errorCodeValues = /* @__PURE__ */ Object.freeze(errorCodeValues);
 

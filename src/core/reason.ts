@@ -28,7 +28,7 @@ const reasonValues = {
 /**
  * Why a client moved or left view, as the server reports it (`reasonid`).
  *
- * The names follow ReSpeak/tsdeclarations, as `Reason` does in teamspeak-go.
+ * The names are the ones `Reason` has in teamspeak-go.
  * Events carry the reason as a plain number, since a server may send one this
  * table does not name.
  */

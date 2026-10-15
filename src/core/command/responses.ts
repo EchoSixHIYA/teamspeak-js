@@ -10,8 +10,7 @@
  *
  * Notifications carry no return_code, so nothing on the wire ties one to the
  * command that caused it. The pairing is a property of the command, and this
- * table is where it lives. It follows the request/response notes in
- * ReSpeak/tsdeclarations (Messages.toml) and was measured command by command
+ * table is where it lives. It was measured command by command
  * against TS3 3.13.8 and TS6 6.0.0-beta13.1, which answer identically — see
  * scripts/probe-response-shapes.mts to re-run that measurement.
  *

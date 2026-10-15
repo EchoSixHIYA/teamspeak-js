@@ -255,7 +255,7 @@ export interface ActiveTransfer {
   readonly sender: string;
   /**
    * The transfer's state, as the server reports it. A plain number: no table
-   * of its values is published, tsdeclarations included.
+   * of its values is known.
    */
   readonly status: number;
   /** The current speed, in bytes per second. */
