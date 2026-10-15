@@ -300,9 +300,12 @@ for await (const message of client.events("textMessage", { signal })) { … }
 Listeners run one at a time, in arrival order. A listener that throws does not
 stop the others: its exception surfaces as an `uncaughtException`, as an
 EventEmitter listener's would, and the event still reaches the listeners after
-it. `disconnected` is `undefined`
-only after `disconnect()`; otherwise it is the cause, such as a `RemovedError`
-for a kick or a `ConnectionTimeoutError`. `disconnect()` resolves once
+it. `disconnected` delivers a `DisconnectedEvent`: its `error` is `undefined`
+only after `disconnect()`, and otherwise the cause, such as a `RemovedError`
+for a kick or a `ConnectionTimeoutError`; its `willReconnect` says whether the
+reconnect loop will try again (0.x gave the bare `Error | undefined`).
+`connected` delivers a `ConnectedEvent`, whose `reconnected` is true when the
+reconnect loop made the connection. `disconnect()` resolves once
 `disconnected` has been delivered, and a `connect()` waits for an earlier
 session's `disconnected` to be delivered first, so the new session never hears
 the old one end. `connected` is delivered after `connect()` resolves. Channel
@@ -324,7 +327,9 @@ The client an event is about is `clientID` in `ClientMovedEvent`,
 `ClientLeaveEvent` and `VoiceDataEvent` (was `id`, and `clientId` for voice).
 `TextMessageEvent.targetMode` and `VoiceDataEvent.codec` are plain numbers, to
 compare with `TextMessageTarget` and `Codec`: a server may send a value newer
-than those tables.
+than those tables. `TextMessageEvent.invokerGroups` is `undefined` for a sender
+the client has not seen, as a text message carries no groups of its own, and
+`ClientMovedEvent.reasonMessage` is the move's message, `""` when it has none.
 
 Middleware is set with the `commandMiddleware` and `eventMiddleware` options;
 `useCommandMiddleware()` and `useEventMiddleware()` are gone. Event middleware

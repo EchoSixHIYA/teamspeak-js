@@ -66,16 +66,16 @@ const client = new Client(identity, "localhost", "TSBot", {
 });
 
 // Register event handlers
-client.on("connected", () => {
-  console.log("Connected to server!");
+client.on("connected", ({ reconnected }) => {
+  console.log(reconnected ? "Reconnected to server!" : "Connected to server!");
 });
 
 client.on("textMessage", (msg) => {
   console.log(`[${msg.invokerName}]: ${msg.message}`);
 });
 
-client.on("disconnected", (err) => {
-  console.log("Disconnected:", err?.message ?? "clean");
+client.on("disconnected", ({ error, willReconnect }) => {
+  console.log("Disconnected:", error?.message ?? "clean", willReconnect ? "(reconnecting)" : "");
 });
 
 // Connect; resolves once the handshake completes.
@@ -124,17 +124,17 @@ client.on(EventName.TextMessage, (message) => console.log(message.message));
 client.on("textMessage", (message) => console.log(message.message)); // the same
 ```
 
-| Method                        | Description                        |
-| ----------------------------- | ---------------------------------- |
-| `on("connected", handler)`    | Fires when fully connected         |
-| `on("disconnected", handler)` | Fires on disconnect                |
-| `on("textMessage", handler)`  | Fires on text messages             |
-| `on("clientEnter", handler)`  | Fires when a client joins          |
-| `on("clientLeave", handler)`  | Fires when a client leaves         |
-| `on("clientMoved", handler)`  | Fires when a client moves channels |
-| `on("kicked", handler)`       | Fires when the bot is kicked       |
-| `on("poked", handler)`        | Fires when poked by a client       |
-| `on("voiceData", handler)`    | Fires on incoming voice data       |
+| Method                        | Description                                   |
+| ----------------------------- | --------------------------------------------- |
+| `on("connected", handler)`    | Fires when fully connected (`ConnectedEvent`) |
+| `on("disconnected", handler)` | Fires on disconnect (`DisconnectedEvent`)     |
+| `on("textMessage", handler)`  | Fires on text messages                        |
+| `on("clientEnter", handler)`  | Fires when a client joins                     |
+| `on("clientLeave", handler)`  | Fires when a client leaves                    |
+| `on("clientMoved", handler)`  | Fires when a client moves channels            |
+| `on("kicked", handler)`       | Fires when the bot is kicked                  |
+| `on("poked", handler)`        | Fires when poked by a client                  |
+| `on("voiceData", handler)`    | Fires on incoming voice data                  |
 
 `on()` and `once()` return a function that removes the listener, which is also
 a `Disposable` (`using listener = client.on(...)`). Listeners run one at a

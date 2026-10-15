@@ -32,6 +32,20 @@ describe("handleNotification", () => {
   });
 
   describe("notifyclientmoved", () => {
+    it("carries the reason message, and an empty one without it", () => {
+      const kick = {
+        name: "notifyclientmoved",
+        params: { clid: "7", ctid: "1", reasonmsg: "bye" },
+      };
+      const plain = { name: "notifyclientmoved", params: { clid: "7", ctid: "1" } };
+
+      const a = handleNotification(kick, 1, makeClients(), "Bot");
+      const b = handleNotification(plain, 1, makeClients(), "Bot");
+
+      expect(a.kind === "clientMoved" && a.event.reasonMessage).toBe("bye");
+      expect(b.kind === "clientMoved" && b.event.reasonMessage).toBe("");
+    });
+
     // A channel id is 0 to 2^64-1 in plain decimal. Anything else names no
     // channel; it must not throw, which would drop the datagram's other rows.
     it.each(["-1", "18446744073709551616", "0x10", "1e3", ""])(
@@ -133,6 +147,33 @@ describe("handleNotification", () => {
       expect(clients.size).toBe(0);
     },
   );
+});
+
+describe("notifytextmessage", () => {
+  const cmd = { name: "notifytextmessage", params: { invokerid: "7", msg: "hi" } };
+
+  it("fills the sender's groups from the client it knows", () => {
+    const clients = makeClients();
+    handleNotification(
+      {
+        name: "notifycliententerview",
+        params: { clid: "7", ctid: "1", client_nickname: "A", client_servergroups: "6,9" },
+      },
+      1,
+      clients,
+      "Bot",
+    );
+
+    const result = handleNotification(cmd, 1, clients, "Bot");
+
+    expect(result.kind === "textMessage" && result.message.invokerGroups).toEqual([6n, 9n]);
+  });
+
+  it("leaves them undefined for a sender it has not seen", () => {
+    const result = handleNotification(cmd, 1, makeClients(), "Bot");
+
+    expect(result.kind === "textMessage" && result.message.invokerGroups).toBeUndefined();
+  });
 });
 
 describe("notification names", () => {

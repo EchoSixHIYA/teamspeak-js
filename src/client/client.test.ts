@@ -297,7 +297,7 @@ describe("being removed by the server", () => {
     const kicked: KickedEvent[] = [];
     const disconnected: Array<Error | undefined> = [];
     client.on("kicked", (e) => kicked.push(e));
-    client.on("disconnected", (err) => disconnected.push(err));
+    client.on("disconnected", (e) => disconnected.push(e.error));
 
     clientInternals(client).handler.onPacket?.(
       commandPacket(
@@ -323,7 +323,7 @@ describe("being removed by the server", () => {
     const kicked: KickedEvent[] = [];
     const disconnected: Array<Error | undefined> = [];
     client.on("kicked", (e) => kicked.push(e));
-    client.on("disconnected", (err) => disconnected.push(err));
+    client.on("disconnected", (e) => disconnected.push(e.error));
 
     clientInternals(client).handler.onPacket?.(
       commandPacket("notifyclientleftview clid=5 reasonid=11 reasonmsg=restart"),
@@ -355,7 +355,7 @@ describe("being removed by the server", () => {
   it("hears a deliberate disconnect as undefined", async () => {
     const client = await connected();
     const disconnected: Array<Error | undefined> = [];
-    client.on("disconnected", (err) => disconnected.push(err));
+    client.on("disconnected", (e) => disconnected.push(e.error));
 
     await client.disconnect({ signal: AbortSignal.timeout(50) });
     await settle();

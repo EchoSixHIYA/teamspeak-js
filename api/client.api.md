@@ -172,6 +172,11 @@ export interface ConnectDoneInfo extends AttemptInfo {
 }
 
 // @public
+export interface ConnectedEvent {
+    readonly reconnected: boolean;
+}
+
+// @public
 export class ConnectionTimeoutError extends TeamspeakError {
     constructor();
     // (undocumented)
@@ -230,6 +235,12 @@ export interface DisconnectDoneInfo {
 }
 
 // @public
+export interface DisconnectedEvent {
+    readonly error: Error | undefined;
+    readonly willReconnect: boolean;
+}
+
+// @public
 export interface DisconnectStartInfo {
 }
 
@@ -241,8 +252,8 @@ export interface EventMap {
     clientEnter: ClientEnterEvent;
     clientLeave: ClientLeaveEvent;
     clientMoved: ClientMovedEvent;
-    connected: void;
-    disconnected: Error | undefined;
+    connected: ConnectedEvent;
+    disconnected: DisconnectedEvent;
     kicked: KickedEvent;
     notification: NotificationEvent;
     poked: PokeEvent;

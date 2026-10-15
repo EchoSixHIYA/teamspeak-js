@@ -144,7 +144,7 @@ describe("connect() during disconnect()", () => {
     await first;
 
     const events: string[] = [];
-    client.on("disconnected", (cause) => events.push(`disconnected:${cause?.name ?? "-"}`));
+    client.on("disconnected", (e) => events.push(`disconnected:${e.error?.name ?? "-"}`));
     // The fake server never acknowledges the goodbye, so it waits its second.
     const leaving = client.disconnect();
     await settle();
@@ -431,7 +431,7 @@ describe("the idle timeout", () => {
     try {
       const { client, socket } = await connected();
       const dropped: Array<Error | undefined> = [];
-      client.on("disconnected", (error) => dropped.push(error));
+      client.on("disconnected", (e) => dropped.push(e.error));
       for (let second = 1; second <= seconds; second++) {
         if (second % 10 === 0) socket.deliver(datagramFor(client, second));
         vi.advanceTimersByTime(1_000);

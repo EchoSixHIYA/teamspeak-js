@@ -33,9 +33,10 @@ async function main(): Promise<void> {
     console.log(`[example] connected! self clid=${client.clientID}`);
   });
 
-  client.on("disconnected", (err) => {
-    if (err) console.error("[example] disconnected with error:", err.message);
+  client.on("disconnected", ({ error, willReconnect }) => {
+    if (error) console.error("[example] disconnected with error:", error.message);
     else console.log("[example] disconnected cleanly");
+    if (willReconnect) console.log("[example] reconnecting");
   });
 
   client.on("clientEnter", (info) => {

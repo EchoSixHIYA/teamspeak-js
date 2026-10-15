@@ -15,8 +15,12 @@ export interface TextMessageEvent {
   readonly invokerUID: UID;
   /** The message, unescaped. */
   readonly message: string;
-  /** The sender's server groups, as the server reported them with the message. */
-  readonly invokerGroups: readonly ServerGroupID[];
+  /**
+   * The sender's server groups. A text message does not carry them; they are
+   * those of the sender as the client knows it, so they are `undefined` for a
+   * sender the client has not seen.
+   */
+  readonly invokerGroups: readonly ServerGroupID[] | undefined;
   /**
    * Private, channel or server; compare it with `TextMessageTarget`. A plain
    * number, since a server may send a mode that table does not name.
@@ -41,6 +45,8 @@ export interface ClientMovedEvent {
   readonly targetChannelID: ChannelID;
   /** Why the client moved; compare it with `Reason`. */
   readonly reason: number;
+  /** The message that came with the move, such as a channel kick's reason; "" when none. */
+  readonly reasonMessage: string;
   /** The client that moved. */
   readonly clientID: ClientID;
   /** The mover. */

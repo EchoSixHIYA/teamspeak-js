@@ -177,7 +177,7 @@ describe("notifications from the server", () => {
           expect(result.kind).toBe("textMessage");
           if (result.kind !== "textMessage") return;
           expect(result.message.message).toBe(msg);
-          expect(result.message.invokerGroups).toEqual(clients.get(invoker)?.serverGroups ?? []);
+          expect(result.message.invokerGroups).toEqual(clients.get(invoker)?.serverGroups);
         },
       ),
       { numRuns: 500 },

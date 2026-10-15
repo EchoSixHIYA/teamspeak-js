@@ -377,6 +377,7 @@ export interface ClientMovedEvent {
     readonly invokerName: string;
     readonly invokerUID: UID;
     readonly reason: number;
+    readonly reasonMessage: string;
     readonly targetChannelID: ChannelID;
 }
 
@@ -2177,7 +2178,7 @@ export interface TempPasswordOptions {
 
 // @public
 export interface TextMessageEvent {
-    readonly invokerGroups: readonly ServerGroupID[];
+    readonly invokerGroups: readonly ServerGroupID[] | undefined;
     readonly invokerID: ClientID;
     readonly invokerName: string;
     readonly invokerUID: UID;

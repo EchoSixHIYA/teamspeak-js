@@ -12,7 +12,7 @@ import { asChannelID, asClientID, asUID } from "@honeybbq/teamspeak";
 export type NotificationResult =
   | { kind: "clientEnter"; info: ClientEnterEvent }
   | { kind: "clientLeave"; event: ClientLeaveEvent; isSelf: boolean }
-  | { kind: "clientMoved"; event: ClientMovedEvent; reasonMessage: string }
+  | { kind: "clientMoved"; event: ClientMovedEvent }
   | { kind: "textMessage"; message: TextMessageEvent }
   | { kind: "poked"; event: PokeEvent }
   | { kind: "unknown" };
@@ -90,11 +90,11 @@ function handleClientMoved(
       clientID: clid,
       targetChannelID: ctid,
       reason: parseInt10(cmd.params["reasonid"] ?? ""),
+      reasonMessage: cmd.params["reasonmsg"] ?? "",
       invokerID: asClientID(parseUint16(cmd.params["invokerid"] ?? "")),
       invokerName: cmd.params["invokername"] ?? "",
       invokerUID: asUID(cmd.params["invokeruid"] ?? ""),
     },
-    reasonMessage: cmd.params["reasonmsg"] ?? "",
   };
 }
 
@@ -112,7 +112,7 @@ function handleTextMessage(
     invokerName: cmd.params["invokername"] ?? "",
     invokerUID: asUID(cmd.params["invokeruid"] ?? invokerInfo?.uid ?? ""),
     message: cmd.params["msg"] ?? "",
-    invokerGroups: invokerInfo?.serverGroups ?? [],
+    invokerGroups: invokerInfo?.serverGroups,
   };
 
   return { kind: "textMessage", message };

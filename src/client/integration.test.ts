@@ -153,7 +153,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
       serverPassword: "definitely-not-the-password",
     });
     const disconnected = new Promise<Error | undefined>((resolve) =>
-      rejected.on("disconnected", (err) => resolve(err)),
+      rejected.on("disconnected", (e) => resolve(e.error)),
     );
 
     // The cause must be the server's rejection, not the caller's own timeout.

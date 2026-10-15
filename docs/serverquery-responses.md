@@ -324,7 +324,7 @@ under "Not in it".
   fills them as the voice client does, from the client it learned of in a
   `notifycliententerview` or `clientlist -groups`. It sees an enter only for
   clients that arrive after it registered, so it has to list the ones already
-  there.
+  there. Until it has seen the sender, `invokerGroups` is `undefined`.
 - **`ClientLeaveEvent.reason` on a plain disconnect.** The notification has no
   `reasonid`, so `reason` is 0. The voice client reads the same 0 from the same
   disconnect, so the two agree.

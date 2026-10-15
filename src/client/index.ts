@@ -13,6 +13,8 @@ export { Client, ClientStatus } from "./client.js";
 export { EventName } from "./types.js";
 
 export type {
+  ConnectedEvent,
+  DisconnectedEvent,
   EventMap,
   EventMiddleware,
   Listener,

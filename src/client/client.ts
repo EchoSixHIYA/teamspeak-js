@@ -345,6 +345,17 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * start competing loops.
    */
   #reconnecting = false;
+  /** The reconnect loop's latest attempt; 0 while it has made none. */
+  #loopAttempt = 0;
+  /** The last answer of `shouldRetry`, so that one failure asks it once. */
+  #retryAnswer:
+    | {
+        readonly err: Error;
+        readonly attempt: number;
+        readonly retry: boolean;
+        readonly threw: boolean;
+      }
+    | undefined;
   /**
    * Why the last established session dropped: a reconnect loop whose own
    * attempt connected and then dropped before the loop resumed retries for it.
@@ -661,7 +672,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     this.#endSession(undefined);
     // Announced here; #handleConnectionClosed stays quiet once the status is
     // already Disconnected, so listeners hear about it once.
-    await this.#announceDisconnected(undefined);
+    await this.#announceDisconnected(undefined, false);
   }
 
   /** `await using client = …` disconnects when the scope ends. */
@@ -1076,7 +1087,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         };
       });
     }
-    this.#emit("connected", undefined);
+    this.#emit("connected", { reconnected: trace?.reconnect ?? false });
   }
 
   /** The socket is open: the attempt's handshake begins. */
@@ -1486,10 +1497,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         // as a move, not as leaving view, which is where it used to be looked
         // for.
         if (result.event.clientID === this.#clid && result.event.reason === Reason.KickChannel) {
-          this.#emit(
-            "kicked",
-            kickedEvent({ ...result.event, reasonMessage: result.reasonMessage }),
-          );
+          this.#emit("kicked", kickedEvent(result.event));
         }
         break;
       case "textMessage":
@@ -1539,11 +1547,11 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * Queue `disconnected`; the promise settles once it has been delivered, and
    * a connect() waits for it until then.
    */
-  #announceDisconnected(cause: Error | undefined): Promise<void> {
+  #announceDisconnected(cause: Error | undefined, willReconnect: boolean): Promise<void> {
     const delivered = new Promise<void>((resolve) =>
       this.#enqueue(() => {
         try {
-          this.#deliver("disconnected", cause);
+          this.#deliver("disconnected", { error: cause, willReconnect });
         } finally {
           resolve();
         }
@@ -1623,10 +1631,36 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // Announced first, then retried: a caller watching `disconnected` should
     // hear about the drop even when a reconnect is already on its way, because
     // a silent recovery hides an outage.
-    void this.#announceDisconnected(cause);
+    void this.#announceDisconnected(cause, this.#willReconnect(cause, this.#loopAttempt + 1));
     this.#scheduleReconnect(cause).catch((error: unknown) => {
       this.#logger.error("reconnecting failed", { error: String(error) });
     });
+  }
+
+  /**
+   * Whether the reconnect loop will make attempt number `attempt` after `err`.
+   * `disconnected` reports it, and the loop acts on the same answer: the
+   * caller's `shouldRetry` is asked once per failure, not once to announce it
+   * and again to act on it.
+   */
+  #willReconnect(err: Error, attempt: number): boolean {
+    const options = this.#reconnectOptions;
+    if (options === undefined || this.#stopped) return false;
+    const { maxAttempts } = resolveBackoffPolicy(options);
+    if (maxAttempts !== 0 && attempt > maxAttempts) return false;
+    const asked = this.#retryAnswer;
+    if (asked?.err === err && asked.attempt === attempt) return asked.retry;
+    let retry: boolean;
+    let threw = false;
+    try {
+      retry = (options.shouldRetry ?? defaultShouldRetry)(err, attempt);
+    } catch (error) {
+      this.#logger.error("shouldRetry threw; not reconnecting", { error: String(error) });
+      retry = false;
+      threw = true;
+    }
+    this.#retryAnswer = { err, attempt, retry, threw };
+    return retry;
   }
 
   /**
@@ -1643,8 +1677,6 @@ export class Client implements CommandExecutor, AsyncDisposable {
     if (options === undefined || this.#stopped || this.#reconnecting) return;
 
     const policy = resolveBackoffPolicy(options);
-    const shouldRetry = options.shouldRetry ?? defaultShouldRetry;
-
     this.#reconnecting = true;
 
     const stop = new AbortController();
@@ -1658,16 +1690,10 @@ export class Client implements CommandExecutor, AsyncDisposable {
           stoppedBy = { cause: undefined };
           return;
         }
-        let retry: boolean;
-        try {
-          retry = shouldRetry(err, attempt);
-        } catch (error) {
-          this.#logger.error("shouldRetry threw; not reconnecting", { error: String(error) });
-          stoppedBy = { cause: err };
-          return;
-        }
-        if (!retry) {
-          this.#logger.info("not retrying", { attempt, reason: err.message });
+        if (!this.#willReconnect(err, attempt)) {
+          if (!this.#retryAnswer?.threw) {
+            this.#logger.info("not retrying", { attempt, reason: err.message });
+          }
           stoppedBy = { cause: err };
           return;
         }
@@ -1695,6 +1721,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
 
         try {
           made++;
+          this.#loopAttempt = attempt;
           await this.#connect(
             { signal: AbortSignal.timeout(RECONNECT_ATTEMPT_TIMEOUT_MS) },
             attempt,
@@ -1725,6 +1752,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
         this.#callHook(this.#trace?.reconnectStopped, () => ({ attempts: made, cause }));
       }
       this.#reconnecting = false;
+      this.#loopAttempt = 0;
       if (this.#stopReconnecting === stop) this.#stopReconnecting = undefined;
     }
   }
@@ -1746,8 +1774,13 @@ export class Client implements CommandExecutor, AsyncDisposable {
     if (this.#status === ClientStatus.Disconnected) return;
     this.#status = ClientStatus.Disconnected;
     this.#handler.close();
+    const cause =
+      error instanceof Error ? error : new TeamspeakError(String(error), { cause: error });
+    // Only an attempt of the reconnect loop can be followed by another; a
+    // connect() that fails is the caller's to retry.
     void this.#announceDisconnected(
-      error instanceof Error ? error : new TeamspeakError(String(error), { cause: error }),
+      cause,
+      this.#reconnecting && this.#willReconnect(cause, this.#loopAttempt + 1),
     );
   }
 }
