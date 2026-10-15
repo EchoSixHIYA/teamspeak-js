@@ -6,7 +6,7 @@ import type { ResponseSpec } from "../core/internal.js";
 
 export interface CommandResult {
   err: Error | null;
-  data: Record<string, string>[];
+  data: Array<Record<string, string>>;
 }
 
 /** A row waiting for the `error` that says which command it answered. */
@@ -22,7 +22,7 @@ interface PendingCommand {
   /** The request's value for `spec.correlated.key`, when there is one. */
   readonly correlation: string | undefined;
   /** Correlated answers that arrived before the command's own `error`. */
-  readonly correlated: Record<string, string>[];
+  readonly correlated: Array<Record<string, string>>;
   /** The command's `error` result, held while its correlated answer is due. */
   settled?: CommandResult;
 }

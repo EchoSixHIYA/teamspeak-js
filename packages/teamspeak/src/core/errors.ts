@@ -55,7 +55,7 @@ export class TeamspeakError extends Error {
     if (!Object.hasOwn(this, "kind")) return false;
     if (typeof value !== "object" || value === null) return false;
     const kinds: unknown = (value as { [BRAND]?: unknown })[BRAND];
-    return Array.isArray(kinds) && kinds.includes((this as typeof TeamspeakError).kind);
+    return Array.isArray(kinds) && kinds.includes(this.kind);
   }
 }
 

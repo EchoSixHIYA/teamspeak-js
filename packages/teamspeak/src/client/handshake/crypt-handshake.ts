@@ -49,6 +49,7 @@ export function processInit1(crypt: Crypt, data: Uint8Array | null): Uint8Array 
       return buildInit1Step3Packet(data);
     case 3:
       return buildInit1Step4Packet(crypt, data);
+    case undefined:
     default:
       return null;
   }

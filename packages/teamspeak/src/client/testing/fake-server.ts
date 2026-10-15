@@ -48,7 +48,7 @@ export class FakeSocket implements DatagramSocket {
   on(event: string, listener: (...args: never[]) => void): this {
     if (event === "message") this.#message.push(listener as (message: Uint8Array) => void);
     if (event === "error") this.#error.push(listener as (error: Error) => void);
-    if (event === "close") this.#close.push(listener as () => void);
+    if (event === "close") this.#close.push(listener);
     return this;
   }
 
@@ -63,8 +63,8 @@ export class FakeSocket implements DatagramSocket {
   }
 
   /** Hand the client one datagram, synchronously, as the socket would. */
-  deliver(datagram: Uint8Array): void {
-    const buffer = Buffer.from(datagram);
+  deliver(data: Uint8Array): void {
+    const buffer = Buffer.from(data);
     for (const listener of this.#message) listener(buffer);
   }
 }

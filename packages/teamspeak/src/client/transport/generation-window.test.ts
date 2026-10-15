@@ -83,7 +83,7 @@ describe("GenerationWindow", () => {
       inside: kind === "in",
       future: kind === "ahead",
     });
-    const cases: { name: string; advance: number; probes: Probe[] }[] = [
+    const cases: Array<{ name: string; advance: number; probes: Probe[] }> = [
       {
         name: "just past the wrap",
         advance: MOD + 1,
@@ -135,6 +135,7 @@ describe("GenerationWindow", () => {
     ];
 
     for (const c of cases) {
+      // oxlint-disable-next-line vitest/valid-title -- c.name is a string
       it(c.name, () => {
         const w = new GenerationWindow(MOD, SIZE);
         w.advance(c.advance);

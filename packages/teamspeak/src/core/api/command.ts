@@ -61,7 +61,7 @@ async function query(
   params: Params = [],
   options?: CommandOptions,
   passwords: readonly string[] = [],
-): Promise<Record<string, string>[]> {
+): Promise<Array<Record<string, string>>> {
   return client.send({ command, params, passwords }, commandOptions(options));
 }
 
@@ -86,7 +86,7 @@ async function list(
   params: Params = [],
   options?: CommandOptions,
   how: { readonly noMatch?: number; readonly passwords?: readonly string[] } = {},
-): Promise<Record<string, string>[]> {
+): Promise<Array<Record<string, string>>> {
   const { noMatch, passwords } = how;
   try {
     return await query(client, command, params, options, passwords);
@@ -133,7 +133,7 @@ async function* pages<T>(
   advanced: (previous: T, next: T) => boolean,
   options: PagingOptions = {},
 ): AsyncGenerator<T, void, undefined> {
-  const { pageSize = DEFAULT_PAGE_SIZE, ...commandOptions } = options;
+  const { pageSize = DEFAULT_PAGE_SIZE, ...rest } = options;
   if (!Number.isInteger(pageSize) || pageSize < 1) {
     throw new RangeError(`a page size is a positive integer, not ${pageSize}`);
   }
@@ -142,7 +142,7 @@ async function* pages<T>(
   let fullPage = 0;
   let last: T | undefined;
   for (;;) {
-    let rows: Record<string, string>[];
+    let rows: Array<Record<string, string>>;
     try {
       rows = await query(
         client,
@@ -151,7 +151,7 @@ async function* pages<T>(
           ["start", start],
           ["duration", pageSize],
         ],
-        commandOptions,
+        rest,
       );
     } catch (err) {
       if (isEmptyResult(err)) return;
@@ -176,7 +176,7 @@ async function* pages<T>(
  * answered, which is a NoDataError rather than a row of empty fields.
  */
 function firstRow(
-  rows: readonly Record<string, string>[],
+  rows: ReadonlyArray<Record<string, string>>,
   command: string,
   key?: string,
 ): Record<string, string> {
@@ -371,7 +371,7 @@ export { str, big, num, uint, U16, U32, bool, icon, date, durationMs };
  * should the name repeat across group types.
  */
 export function createdGroupID(
-  rows: readonly Record<string, string>[],
+  rows: ReadonlyArray<Record<string, string>>,
   idKey: "sgid" | "cgid",
   name: string,
   command: string,

@@ -28,7 +28,7 @@ export interface Packet {
 }
 
 export function packetType(p: Packet): PacketType {
-  return (p.typeFlagged & 0x0f) as PacketType;
+  return p.typeFlagged & 0x0f;
 }
 
 export function packetFlags(p: Packet): number {

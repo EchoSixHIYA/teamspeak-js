@@ -191,7 +191,7 @@ for (let i = 0; i < candidates.length; i++) {
     await client.connect();
     await client.waitConnected(AbortSignal.timeout(10_000));
   }
-  const [name, cmd] = candidates[i]!;
+  const [name, cmd] = candidates[i];
   try {
     const rows = await client.execCommandWithResponse(cmd, 3000);
     available.push(name);

@@ -149,14 +149,14 @@ await me.execCommand(`complainadd tcldbid=${victimDbid} message=probe`, 5000).ca
 await me.execCommand(`ftcreatedir cid=1 cpw= dirname=\\/probe${tag}`, 5000).catch(() => {});
 
 /** Rows of one named response, read off the wire while the client cannot. */
-async function rowsOf(cmd: string, response: string): Promise<Record<string, string>[]> {
+async function rowsOf(cmd: string, response: string): Promise<Array<Record<string, string>>> {
   const start = timeline.length;
   await me.execCommand(cmd, 5000).catch(() => {});
   await sleep(300);
   const seen = timeline.slice(start);
   const first = seen.findIndex((a) => a.name === response);
   if (first === -1) return [];
-  const rows = [seen[first]!.params];
+  const rows = [seen[first].params];
   for (const a of seen.slice(first + 1)) {
     if (a.name !== "") break;
     rows.push({ ...rows[rows.length - 1], ...a.params });
@@ -269,7 +269,7 @@ const fmt = (m: Map<string, number>) =>
 
 const results: Record<string, unknown> = {};
 for (const q of queries) {
-  const name = q.split(" ")[0]!;
+  const name = q.split(" ")[0];
   const s = await measure(q);
   results[name] = {
     error: s.error,

@@ -33,7 +33,8 @@ import {
 } from "@honeybbq/teamspeak";
 import { AlreadyConnectedError, HandshakeError, RemovedError } from "./errors.js";
 import { abortable, abortReason } from "./abort.js";
-import { Identity, Crypt } from "./crypto/index.js";
+import type { Identity } from "./crypto/index.js";
+import { Crypt } from "./crypto/index.js";
 import { RESOLVE_BUDGET_MS, Resolver } from "./discovery/resolver.js";
 import { PacketHandler } from "./transport/handler.js";
 import { PacketType } from "./transport/packet.js";
@@ -51,6 +52,7 @@ import {
 } from "./handshake.js";
 import type { CommandExecutor, CommandRequest } from "@honeybbq/teamspeak";
 import { handleNotification } from "./notifications.js";
+import type { NotificationResult } from "./notifications.js";
 import { parseCommand } from "../core/internal.js";
 import { CommandThrottle } from "./throttle.js";
 import { splitCommandRows, sleep } from "../core/internal.js";
@@ -655,6 +657,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * Rejects with a NotConnectedError unless the client is connected: while it
    * is still connecting, the session's keys may not exist yet.
    */
+  // oxlint-disable-next-line typescript/array-type -- the public API report spells this `[]`; respelling it changes the report
   exec(command: string, options: CommandOptions = {}): Promise<Record<string, string>[]> {
     return this.#exec(command, options, false);
   }
@@ -705,6 +708,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
    * protocol expects `base64(sha1(password))`, where ServerQuery takes the
    * password itself.
    */
+  // oxlint-disable-next-line typescript/array-type -- the public API report spells this `[]`; respelling it changes the report
   send(request: CommandRequest, options: CommandOptions = {}): Promise<Record<string, string>[]> {
     return this.#send(request, options);
   }
@@ -719,7 +723,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     command: string,
     options: CommandOptions,
     internal: boolean,
-  ): Promise<Record<string, string>[]> {
+  ): Promise<Array<Record<string, string>>> {
     if (!commandChannel.hasSubscribers) return this.#execUntraced(command, options, internal);
     const trace: CommandTrace = { command: parseCommand(command)?.name ?? "", client: this };
     return commandChannel.tracePromise(() => this.#execUntraced(command, options, internal), trace);
@@ -729,7 +733,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
     command: string,
     options: CommandOptions,
     internal: boolean,
-  ): Promise<Record<string, string>[]> {
+  ): Promise<Array<Record<string, string>>> {
     const { signal, timeout = DEFAULT_COMMAND_TIMEOUT_MS } = options;
     signal?.throwIfAborted();
     // A command sent on no socket used to vanish and surface 10 seconds later
@@ -812,7 +816,7 @@ export class Client implements CommandExecutor, AsyncDisposable {
   once<K extends keyof EventMap>(event: K, listener: Listener<K>): Unsubscribe {
     const unsubscribe = this.on(event, ((payload: EventMap[K]) => {
       unsubscribe();
-      (listener as (payload: EventMap[K]) => void)(payload);
+      listener(payload);
     }) as Listener<K>);
     return unsubscribe;
   }
@@ -1400,11 +1404,13 @@ export class Client implements CommandExecutor, AsyncDisposable {
     // under the public dummy key can fail an attempt, never stop the client.
     if (err?.code === ErrorCode.ConnectFailedBanned) {
       this.#logger.warn("banned by the server, closing the connection");
-      setImmediate(() => this.disconnect().catch(() => {}));
+      setImmediate(() => {
+        this.disconnect().catch(() => {});
+      });
     }
   }
 
-  #processNotificationResult(result: import("./notifications.js").NotificationResult): void {
+  #processNotificationResult(result: NotificationResult): void {
     switch (result.kind) {
       case "clientEnter": {
         const info = result.info;
@@ -1461,6 +1467,8 @@ export class Client implements CommandExecutor, AsyncDisposable {
         break;
       case "poked":
         this.#emitServerEvent({ name: "poked", payload: result.event });
+        break;
+      case "unknown":
         break;
     }
   }

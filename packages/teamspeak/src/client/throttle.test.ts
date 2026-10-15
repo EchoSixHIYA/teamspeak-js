@@ -49,7 +49,7 @@ describe("CommandThrottle", () => {
     try {
       const t = new CommandThrottle();
       const order: number[] = [];
-      const waits: Promise<void>[] = [];
+      const waits: Array<Promise<void>> = [];
       for (let i = 0; i < 12; i++) waits.push(t.wait().then(() => void order.push(i)));
       // A token is due at 250 ms, and the sleepers woke 10 ms after it.
       await vi.advanceTimersByTimeAsync(255);

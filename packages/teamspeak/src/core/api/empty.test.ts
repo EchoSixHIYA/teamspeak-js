@@ -141,7 +141,7 @@ describe("empty results", () => {
 });
 
 /** An executor that answers every command with `rows`. */
-const answering = (rows: Record<string, string>[]): CommandExecutor => ({
+const answering = (rows: Array<Record<string, string>>): CommandExecutor => ({
   send: async () => rows,
 });
 

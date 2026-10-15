@@ -85,7 +85,7 @@ describe("discovery reads", () => {
 
 describe("orderSrvRecords", () => {
   const rec = (name: string, priority: number, weight: number) => ({ name, priority, weight });
-  const names = (records: { name: string }[]) => records.map((r) => r.name);
+  const names = (records: Array<{ name: string }>) => records.map((r) => r.name);
 
   it("tries the lowest priority first, whatever order DNS gave", () => {
     const out = orderSrvRecords([rec("c", 20, 1), rec("a", 5, 1), rec("b", 10, 1)], () => 0);

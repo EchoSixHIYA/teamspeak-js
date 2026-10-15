@@ -11,12 +11,13 @@
 
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
+import type * as TS from "typescript";
 
 // The compiler API ships with TypeScript 5's JavaScript implementation; the
 // repository builds with TypeScript 7, which has none, so this loads the API
 // the same way a bundler plugin would, from a 5.x copy.
 const require = createRequire(import.meta.url);
-const ts = require("typescript-api") as typeof import("typescript");
+const ts = require("typescript-api") as typeof TS;
 
 const entries = [
   "packages/teamspeak/dist/core/index.d.ts",
@@ -28,9 +29,9 @@ const program = ts.createProgram(entries, { skipLibCheck: true, noEmit: true });
 const checker = program.getTypeChecker();
 
 const undocumented = new Set<string>();
-const seen = new Set<import("typescript").Symbol>();
+const seen = new Set<TS.Symbol>();
 
-function documented(symbol: import("typescript").Symbol): boolean {
+function documented(symbol: TS.Symbol): boolean {
   if (symbol.getDocumentationComment(checker).length > 0) return true;
   // A symbol whose declarations sit outside these packages (a re-exported
   // Node or lib type) is not ours to document.
@@ -39,7 +40,7 @@ function documented(symbol: import("typescript").Symbol): boolean {
   );
 }
 
-function where(symbol: import("typescript").Symbol): string {
+function where(symbol: TS.Symbol): string {
   const decl = symbol.declarations?.[0];
   if (!decl) return symbol.getName();
   const file = decl.getSourceFile();
@@ -47,7 +48,7 @@ function where(symbol: import("typescript").Symbol): string {
   return `${file.fileName.replace(process.cwd() + "/", "")}:${line + 1}`;
 }
 
-function visit(symbol: import("typescript").Symbol, name: string): void {
+function visit(symbol: TS.Symbol, name: string): void {
   if (symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
   if (seen.has(symbol)) return;
   seen.add(symbol);
@@ -59,7 +60,7 @@ function visit(symbol: import("typescript").Symbol, name: string): void {
   for (const member of checker.getPropertiesOfType(checker.getDeclaredTypeOfSymbol(symbol))) {
     const decl = member.valueDeclaration ?? member.declarations?.[0];
     if (!decl) continue;
-    const modifiers = ts.getCombinedModifierFlags(decl as import("typescript").Declaration);
+    const modifiers = ts.getCombinedModifierFlags(decl);
     if (modifiers & (ts.ModifierFlags.Private | ts.ModifierFlags.Protected)) continue;
     if (member.getName().startsWith("__") || member.getName().startsWith("#")) continue;
     if (!documented(member)) undocumented.add(`${where(member)}: ${name}.${member.getName()}`);
@@ -91,8 +92,8 @@ const broken = ts
   .filter((d) => d.file?.fileName.includes("/packages/"))
   .map((d) => {
     const { line } = d.file!.getLineAndCharacterOfPosition(d.start ?? 0);
-    const where = d.file!.fileName.replace(process.cwd() + "/", "");
-    return `${where}:${line + 1}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`;
+    const file = d.file!.fileName.replace(process.cwd() + "/", "");
+    return `${file}:${line + 1}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`;
   });
 for (const line of broken) console.log(line);
 if (broken.length > 0) {

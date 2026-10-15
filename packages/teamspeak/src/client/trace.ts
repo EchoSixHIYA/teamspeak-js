@@ -151,7 +151,6 @@ export interface ReconnectScheduledInfo {
 }
 
 /** A connected session is about to be left with `disconnect()`. It has no fields yet. */
-// oxlint-disable-next-line no-empty-interface -- fields are added here later
 export interface DisconnectStartInfo {}
 
 /** The goodbye of `disconnect()` is over. */

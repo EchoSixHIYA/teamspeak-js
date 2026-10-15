@@ -45,6 +45,7 @@ export interface CommandOptions {
 /** A connection the typed commands can run on. */
 export interface CommandExecutor {
   /** Send a command and return the rows that answer it. */
+  // oxlint-disable-next-line typescript/array-type -- the public API report spells this `[]`; respelling it changes the report
   send(request: CommandRequest, options?: CommandOptions): Promise<Record<string, string>[]>;
 }
 

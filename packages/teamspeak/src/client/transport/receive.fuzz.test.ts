@@ -199,6 +199,7 @@ async function startedClient(): Promise<{ client: Client; socket: FakeSocket }> 
     socketFactory: () => (socket = new FakeSocket()),
   });
   client.connect().catch(() => {});
+  // oxlint-disable-next-line no-unmodified-loop-condition -- the socket factory assigns it
   for (let i = 0; i < 100 && socket === undefined; i++) await settle();
   return { client, socket: socket! };
 }
@@ -281,6 +282,7 @@ describe("the receive path", () => {
       socketFactory: () => (socket = new FakeSocket()),
     });
     const connecting = client.connect();
+    // oxlint-disable-next-line no-unmodified-loop-condition -- the socket factory assigns it
     for (let i = 0; i < 100 && socket === undefined; i++) await settle();
 
     const step3 = new Uint8Array(233);
@@ -469,6 +471,7 @@ describe("garbage before the handshake", () => {
       () => (outcome = "resolved"),
       (error: Error) => (outcome = error.name),
     );
+    // oxlint-disable-next-line no-unmodified-loop-condition -- the socket factory assigns it
     for (let i = 0; i < 100 && socket === undefined; i++) await settle();
     const crypt = clientInternals(client).crypt;
     socket!.deliver(

@@ -45,6 +45,8 @@ const block = fc
           properties.length,
           ...properties.flatMap((p) => [p.length, ...p]),
         ]);
+      case 7:
+      case 32:
       default:
         return head;
     }

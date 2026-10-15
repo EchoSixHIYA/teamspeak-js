@@ -204,8 +204,8 @@ export function parseIdentity(s: string): Identity {
     ecdh.setPrivateKey(padded);
     const pub = ecdh.getPublicKey(null, "uncompressed"); // 65 bytes: 0x04 || x(32) || y(32)
 
-    const x = Buffer.from(pub.slice(1, 33)).toString("base64url");
-    const y = Buffer.from(pub.slice(33, 65)).toString("base64url");
+    const x = Buffer.from(pub.subarray(1, 33)).toString("base64url");
+    const y = Buffer.from(pub.subarray(33, 65)).toString("base64url");
     const d = padded.toString("base64url");
 
     const jwk = { kty: "EC", crv: "P-256", d, x, y };

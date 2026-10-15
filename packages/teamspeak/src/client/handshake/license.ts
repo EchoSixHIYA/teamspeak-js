@@ -161,7 +161,7 @@ function parseBlockPayload(
     case LicenseBlockType.Ephemeral:
       return { payload: { issuer: "", serverType: 0, properties: [], read: 0 }, payloadRead: 0 };
     default:
-      throw new Error(`invalid license block type: ${blockType}`);
+      throw new Error(`invalid license block type: ${String(blockType)}`);
   }
 }
 
@@ -200,7 +200,7 @@ function deriveKeyFromBlock(block: LicenseBlock, parent: Uint8Array): Uint8Array
 
   const res = scalarMultFull(negPub, scalar).add(negPar);
   const raw = res.toBytes();
-  const final = new Uint8Array(raw.length) as Uint8Array<ArrayBuffer>;
+  const final = new Uint8Array(raw.length);
   final.set(raw);
   final[31] = (final[31] !== undefined ? final[31] : 0) ^ 0x80;
 

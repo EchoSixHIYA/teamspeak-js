@@ -1,6 +1,6 @@
 import { asClientFileTransferID, asServerFileTransferID } from "@honeybbq/teamspeak";
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { createServer, type Server } from "node:net";
+import { createServer, type Server, type Socket } from "node:net";
 import { Duplex, PassThrough, Readable, Writable } from "node:stream";
 import type { FileDownloadInfo, FileUploadInfo } from "@honeybbq/teamspeak";
 import { FileTransferError } from "./errors.js";
@@ -26,7 +26,7 @@ function recordingStream(fail?: Error): { stream: Duplex; written: string[] } {
 }
 
 /** A local TCP server; `handle` gets each connection. */
-async function listen(handle: (socket: import("node:net").Socket) => void): Promise<Server> {
+async function listen(handle: (socket: Socket) => void): Promise<Server> {
   const server = createServer(handle);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   return server;
@@ -137,10 +137,10 @@ describe("file transfer limits", () => {
     fileTransferKey: "key",
     port: 0,
     size: 5n,
-  } as FileDownloadInfo;
+  };
 
   async function download(
-    send: (socket: import("node:net").Socket) => void,
+    send: (socket: Socket) => void,
     size: bigint,
     options: { idleTimeoutMs?: number } = {},
   ): Promise<{ error: unknown; written: string }> {
@@ -184,7 +184,7 @@ describe("file transfer limits", () => {
   });
 
   it("fails a transfer that goes idle, with a TimeoutError cause, and destroys the socket", async () => {
-    let serverSide: import("node:net").Socket | undefined;
+    let serverSide: Socket | undefined;
     const { error } = await download(
       (socket) => {
         serverSide = socket;
@@ -420,6 +420,7 @@ describe("a file transfer trace", () => {
           progress: () => {
             throw boom;
           },
+          // oxlint-disable-next-line typescript/no-misused-promises -- a hook that rejects is the case under test
           done: async () => {
             throw rejection;
           },

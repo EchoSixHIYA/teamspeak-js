@@ -10,7 +10,7 @@ import { generateIdentitySync } from "../crypto/identity.js";
 import { processInit1 } from "../handshake/crypt-handshake.js";
 import { FakeSocket, init1Packet } from "../testing/fake-server.js";
 import { PacketHandler } from "./handler.js";
-import { PacketType } from "./packet.js";
+import { PacketType, packetType } from "./packet.js";
 
 const RESEND_DUE_MS = 600;
 
@@ -19,7 +19,7 @@ function startedHandler(): { handler: PacketHandler; socket: FakeSocket; step0: 
   const crypt = new Crypt(generateIdentitySync(1));
   const handler = new PacketHandler(crypt);
   handler.onPacket = (p) => {
-    if ((p.typeFlagged & 0x0f) !== PacketType.Init1) return;
+    if (packetType(p) !== PacketType.Init1) return;
     // From inside delivery, as the client does: the next step goes out while the
     // Init1 it answers is still being handled.
     const response = processInit1(crypt, p.data);

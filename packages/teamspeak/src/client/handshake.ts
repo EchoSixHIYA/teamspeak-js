@@ -87,8 +87,8 @@ function sendClientEkPacket(client: ClientInternals, beta: string): Uint8Array {
 function buildClientEkProof(client: ClientInternals, publicKey: Uint8Array, beta: string): string {
   const betaBytes = Buffer.from(beta, "base64");
   const toSign = new Uint8Array(86);
-  toSign.set(publicKey.slice(0, 32));
-  toSign.set(betaBytes.slice(0, Math.min(54, betaBytes.length)), 32);
+  toSign.set(publicKey.subarray(0, 32));
+  toSign.set(betaBytes.subarray(0, Math.min(54, betaBytes.length)), 32);
   const sig = sign(identityPrivateKey(client.crypt.identity), toSign);
   return Buffer.from(sig).toString("base64");
 }

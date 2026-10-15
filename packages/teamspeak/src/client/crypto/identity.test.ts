@@ -41,6 +41,7 @@ describe("Identity", () => {
 
     for (const printed of [
       String(id),
+      // oxlint-disable-next-line typescript/restrict-template-expressions -- the template form is one of the leaks under test
       `${id}`,
       JSON.stringify({ id }),
       inspect(id),

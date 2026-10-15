@@ -43,8 +43,8 @@ describe("instanceof across copies of the package", () => {
     expect(refused instanceof core.NotConnectedError).toBe(false);
     expect(new core.NotConnectedError() instanceof other.NotConnectedError).toBe(true);
 
-    class ServerError extends Error {}
-    expect(new ServerError() instanceof core.ServerError).toBe(false);
+    class Impostor extends Error {}
+    expect(new Impostor() instanceof core.ServerError).toBe(false);
     // What `instanceof` asks for a value that is not an object at all.
     expect(core.TeamspeakError[Symbol.hasInstance](null)).toBe(false);
   });
@@ -74,7 +74,7 @@ describe("exported tables", () => {
 
 describe("error names", () => {
   it("are on the prototype, not an own enumerable property", async () => {
-    const { ServerError, TeamspeakError, CommandTimeoutError, NotConnectedError, NoDataError } =
+    const { TeamspeakError, CommandTimeoutError, NotConnectedError, NoDataError } =
       await import("./errors.js");
     const errors = [
       new TeamspeakError("x"),

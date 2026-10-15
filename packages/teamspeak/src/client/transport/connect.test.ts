@@ -21,7 +21,7 @@ function recordingSocket(family: 4 | 6): { socket: UdpSocket; connects: Array<[n
     setImmediate(cb);
   }) as unknown as UdpSocket["connect"];
   socket.connect = connect;
-  socket.close = (() => socket) as unknown as UdpSocket["close"];
+  socket.close = () => socket;
   (socket as unknown as { _family: 4 | 6 })._family = family;
 
   return { socket, connects };

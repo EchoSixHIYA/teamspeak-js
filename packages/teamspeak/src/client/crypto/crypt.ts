@@ -1,4 +1,5 @@
 import { createHash, createECDH, randomBytes } from "node:crypto";
+import type { KeyObject } from "node:crypto";
 import { HandshakeError, FakeSignatureMismatchError } from "../errors.js";
 import type { Identity } from "./identity.js";
 import { identityPrivateKey, importPublicKey } from "./identity.js";
@@ -153,8 +154,8 @@ export class Crypt {
 
       const hash = createHash("sha256").update(tmpToHash).digest();
       kn = {
-        key: Uint8Array.from(hash.slice(0, 16)),
-        nonce: Uint8Array.from(hash.slice(16, 32)),
+        key: Uint8Array.from(hash.subarray(0, 16)),
+        nonce: Uint8Array.from(hash.subarray(16, 32)),
         gen: generationID,
       };
       this.#cachedKeys.set(cacheKey, kn);
@@ -214,7 +215,7 @@ export class Crypt {
     return eax.decrypt(nonce, header, ciphertext, tag);
   }
 
-  #getSharedSecret(serverPubKey: import("node:crypto").KeyObject): Uint8Array {
+  #getSharedSecret(serverPubKey: KeyObject): Uint8Array {
     const privJwk = identityPrivateKey(this.identity).export({ format: "jwk" }) as {
       d: string;
     };

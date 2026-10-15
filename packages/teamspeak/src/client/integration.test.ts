@@ -12,7 +12,7 @@ import { clientInternals } from "./client.js";
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { createSocket } from "node:dgram";
+import { createSocket, type Socket } from "node:dgram";
 import { generateIdentitySync } from "./crypto/identity.js";
 import { Client, ClientStatus } from "./client.js";
 import type { ClientTrace } from "./trace.js";
@@ -82,7 +82,7 @@ beforeAll(async () => {
   if (SKIP) return;
 
   const identity = generateIdentitySync(8);
-  const client = new Client(identity, ADDR!, "ts-js-integ", {
+  const client = new Client(identity, ADDR, "ts-js-integ", {
     serverPassword: SERVER_PASSWORD,
     defaultChannel: DEFAULT_CHANNEL,
     defaultChannelPassword: DEFAULT_CHANNEL_PASSWORD,
@@ -539,7 +539,7 @@ describe.skipIf(SKIP)("Integration — live TeamSpeak server", () => {
     // refuses a reconnect from the same identity with 521 "too many clones
     // already connected" until it reaps the zombie, so the loop has to keep
     // trying rather than give up on the first refusal.
-    let socket: import("node:dgram").Socket | undefined;
+    let socket: Socket | undefined;
     const recovering = new Client(generateIdentitySync(8), ADDR!, "ts-js-reconnect", {
       defaultChannel: DEFAULT_CHANNEL,
       reconnect: { backoff: { initialDelayMs: 500, maxDelayMs: 4_000 } },

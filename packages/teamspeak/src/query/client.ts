@@ -1,7 +1,7 @@
+import type { TeamspeakError } from "@honeybbq/teamspeak";
 import {
   CommandTimeoutError,
   NotConnectedError,
-  TeamspeakError,
   type CommandExecutor,
   type CommandOptions,
   type CommandRequest,
@@ -18,8 +18,8 @@ import type { QueryTransport } from "./transport.js";
 const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
 
 interface Pending {
-  readonly rows: Record<string, string>[];
-  resolve(rows: Record<string, string>[]): void;
+  readonly rows: Array<Record<string, string>>;
+  resolve(rows: Array<Record<string, string>>): void;
   reject(error: unknown): void;
 }
 
@@ -60,7 +60,10 @@ export class QueryClient implements CommandExecutor {
    * password itself and hashes it server-side, where the voice protocol wants
    * the hash.
    */
-  send(request: CommandRequest, options: CommandOptions = {}): Promise<Record<string, string>[]> {
+  send(
+    request: CommandRequest,
+    options: CommandOptions = {},
+  ): Promise<Array<Record<string, string>>> {
     return this.exec(
       encodeRequest(request, (password) => password),
       options,
@@ -68,7 +71,7 @@ export class QueryClient implements CommandExecutor {
   }
 
   /** Send a raw command line and return the rows that answer it. */
-  exec(line: string, options: CommandOptions = {}): Promise<Record<string, string>[]> {
+  exec(line: string, options: CommandOptions = {}): Promise<Array<Record<string, string>>> {
     const run = this.#queue.then(() => this.#execNow(line, options));
     // The queue moves on whatever this command's outcome.
     this.#queue = run.catch(() => {});
@@ -83,14 +86,14 @@ export class QueryClient implements CommandExecutor {
     await this.#transport.close();
   }
 
-  async #execNow(line: string, options: CommandOptions): Promise<Record<string, string>[]> {
+  async #execNow(line: string, options: CommandOptions): Promise<Array<Record<string, string>>> {
     const { signal, timeout = DEFAULT_COMMAND_TIMEOUT_MS } = options;
     signal?.throwIfAborted();
     if (this.#closed) throw new NotConnectedError();
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     let onAbort: (() => void) | undefined;
-    const answered = new Promise<Record<string, string>[]>((resolve, reject) => {
+    const answered = new Promise<Array<Record<string, string>>>((resolve, reject) => {
       this.#pending = { rows: [], resolve, reject };
       timer = setTimeout(
         () => reject(new CommandTimeoutError(parseCommand(line)?.name ?? "")),

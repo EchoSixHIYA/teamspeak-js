@@ -72,7 +72,7 @@ const voicePassword = (password: string): string =>
 
 const fakeClient = () => {
   const execCommandWithResponse = vi
-    .fn<(cmd: string, timeoutMs: number) => Promise<Record<string, string>[]>>()
+    .fn<(cmd: string, timeoutMs: number) => Promise<Array<Record<string, string>>>>()
     .mockResolvedValue([]);
   const client: CommandExecutor = {
     send: (request) => execCommandWithResponse(encodeRequest(request, voicePassword), 10_000),
@@ -212,7 +212,7 @@ describe("file transfer negotiation", () => {
     await initFileUpload(client, asChannelID(1n), "/b", 3n);
 
     const ids = execCommandWithResponse.mock.calls.map(
-      ([cmd]) => /clientftfid=(\d+)/.exec(String(cmd))?.[1],
+      ([cmd]) => /clientftfid=(\d+)/.exec(cmd)?.[1],
     );
     expect(ids[0]).toBeDefined();
     expect(ids[0]).not.toBe(ids[1]);
@@ -226,7 +226,7 @@ describe("file transfer negotiation", () => {
     await initFileUpload(client, asChannelID(1n), "/a", 3n, { overwrite: true });
 
     const flags = execCommandWithResponse.mock.calls.map(
-      ([cmd]) => /overwrite=(\d)/.exec(String(cmd))?.[1],
+      ([cmd]) => /overwrite=(\d)/.exec(cmd)?.[1],
     );
     expect(flags).toEqual(["0", "1"]);
   });
@@ -252,7 +252,7 @@ describe("file transfer negotiation", () => {
  * An executor that records each request's wire form and the options it was
  * sent with, answering from a queue of row sets or errors.
  */
-const recordingClient = (...answers: Array<Record<string, string>[] | Error>) => {
+const recordingClient = (...answers: Array<Array<Record<string, string>> | Error>) => {
   const sent: string[] = [];
   const options: Array<CommandOptions | undefined> = [];
   const client: CommandExecutor = {
@@ -689,7 +689,7 @@ describe("other fixes", () => {
 });
 
 describe("iterateClientDatabase", () => {
-  const page = (...ids: number[]): Record<string, string>[] =>
+  const page = (...ids: number[]): Array<Record<string, string>> =>
     ids.map((id) => ({ cldbid: String(id), client_nickname: `c${id}` }));
 
   const collect = async (iterable: AsyncIterable<{ databaseID: bigint }>): Promise<bigint[]> => {

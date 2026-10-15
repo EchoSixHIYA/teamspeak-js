@@ -484,12 +484,13 @@ export class PacketHandler {
     const parsed = parseS2CHeader(header);
     // Init1 belongs to the start of the handshake; once crypto init has
     // completed, another one can only restart a session that is already set up.
-    if ((parsed.typeFlagged & 0x0f) === PacketType.Init1 && this.#crypt.cryptoInitComplete) return;
+    const parsedType: PacketType = parsed.typeFlagged & 0x0f;
+    if (parsedType === PacketType.Init1 && this.#crypt.cryptoInitComplete) return;
 
     const p: Packet = {
       ...parsed,
       clientID: 0,
-      generationID: this.#resolveGeneration(parsed.id, parsed.typeFlagged & 0x0f),
+      generationID: this.#resolveGeneration(parsed.id, parsedType),
       data: new Uint8Array(0),
       receivedAt: performance.now(),
     };
@@ -514,8 +515,8 @@ export class PacketHandler {
     this.#updatePostReceiveState(p);
   }
 
-  #resolveGeneration(id: number, pType: number): number {
-    switch (pType as PacketType) {
+  #resolveGeneration(id: number, pType: PacketType): number {
+    switch (pType) {
       case PacketType.Command:
         return this.#recvWindowCommand.getGeneration(id);
       case PacketType.CommandLow:
@@ -524,6 +525,11 @@ export class PacketHandler {
         return this.#sendWindowCommand.getGeneration(id);
       case PacketType.AckLow:
         return this.#sendWindowCommandLow.getGeneration(id);
+      case PacketType.Voice:
+      case PacketType.VoiceWhisper:
+      case PacketType.Ping:
+      case PacketType.Pong:
+      case PacketType.Init1:
       default:
         return 0;
     }
@@ -537,7 +543,6 @@ export class PacketHandler {
   ): { plaintext: Uint8Array; dummyUsed: boolean } | null {
     const unencrypted = (packetFlags(p) & PacketFlags.Unencrypted) !== 0;
     const dummy = !this.#crypt.cryptoInitComplete;
-    let dummyUsed = dummy;
     const pType = packetType(p);
     const gen = p.generationID;
 
@@ -564,7 +569,7 @@ export class PacketHandler {
         dummy,
         unencrypted,
       );
-      return { plaintext, dummyUsed };
+      return { plaintext, dummyUsed: dummy };
     } catch {
       // Before crypto init only the dummy key exists: there is no other key
       // to try.
@@ -617,7 +622,7 @@ export class PacketHandler {
     const queue = pType === PacketType.Command ? this.#commandQueue : this.#commandLowQueue;
     const held = queue.get(p.id)?.data.length ?? 0;
     // The packet the queue waits for is always taken: it is what drains it.
-    const next = pType === PacketType.Command ? this.#_nextCommandID : this.#_nextCommandLowID;
+    const next = pType === PacketType.Command ? this.#nextCommandID : this.#nextCommandLowID;
     if (p.id !== next && this.#queuedBytes - held + p.data.length > MAX_QUEUED_BYTES) {
       // Not acknowledged: the server sends it again.
       this.#logger.debug("dropped a command packet: the receive queues are full", { id: p.id });
@@ -659,7 +664,7 @@ export class PacketHandler {
     }
 
     while (true) {
-      const current = isCommand ? this.#_nextCommandID : this.#_nextCommandLowID;
+      const current = isCommand ? this.#nextCommandID : this.#nextCommandLowID;
       const packet = queue.get(current);
       if (packet === undefined) break;
 
@@ -667,8 +672,8 @@ export class PacketHandler {
       if (!result) break;
 
       const [reassembled, newNext] = result;
-      if (isCommand) this.#_nextCommandID = newNext;
-      else this.#_nextCommandLowID = newNext;
+      if (isCommand) this.#nextCommandID = newNext;
+      else this.#nextCommandLowID = newNext;
 
       if (reassembled === null) {
         this.#logger.debug("dropped a command over the reassembly limit", { id: current });
@@ -693,21 +698,21 @@ export class PacketHandler {
     this.#queuedBytes -= held.data.length;
   }
 
-  #_nextCommandID = 0;
-  #_nextCommandLowID = 0;
+  #nextCommandID = 0;
+  #nextCommandLowID = 0;
 
   #fastForwardMissingPackets(
     queue: Map<number, Packet>,
     win: GenerationWindow,
     isCommand: boolean,
   ): void {
-    let nextID = isCommand ? this.#_nextCommandID : this.#_nextCommandLowID;
+    let nextID = isCommand ? this.#nextCommandID : this.#nextCommandLowID;
     while (!queue.has(nextID) && hasOldNewerPacket(queue, nextID)) {
       nextID = (nextID + 1) & 0xffff;
       win.advance(1);
     }
-    if (isCommand) this.#_nextCommandID = nextID;
-    else this.#_nextCommandLowID = nextID;
+    if (isCommand) this.#nextCommandID = nextID;
+    else this.#nextCommandLowID = nextID;
   }
 
   #tryReassemble(

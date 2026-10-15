@@ -167,18 +167,16 @@ describe("a successful attempt", () => {
     const order: string[] = [];
     let seenStatus: string | undefined;
     let seenID: number | undefined;
-    let clientRef: Client | undefined;
     const { client, sockets } = makeClient({
       trace: {
         sessionStart: (info) => {
           order.push("sessionStart");
-          seenStatus = clientRef!.status;
+          seenStatus = client.status;
           seenID = info.clientID;
-          expect(clientRef!.clientID).toBe(info.clientID);
+          expect(client.clientID).toBe(info.clientID);
         },
       },
     });
-    clientRef = client;
     client.on("connected", () => order.push("connected"));
     const connecting = client.connect().then(() => order.push("resolved"));
     await handshake(client, sockets);
@@ -513,6 +511,7 @@ describe("a hook that fails", () => {
       resolveStart: () => {
         throw boom;
       },
+      // oxlint-disable-next-line typescript/no-misused-promises -- a hook that rejects is the case under test
       handshakeDone: async () => {
         throw rejection;
       },

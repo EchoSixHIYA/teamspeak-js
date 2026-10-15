@@ -75,8 +75,8 @@ describe("connect() interrupted", () => {
   it("never starts a socket that finishes connecting after disconnect()", async () => {
     let socket: SlowSocket | undefined;
     const client = clientOn(() => (socket = new SlowSocket()));
-    const connected: unknown[] = [];
-    client.on("connected", () => connected.push(true));
+    const connectedEvents: unknown[] = [];
+    client.on("connected", () => connectedEvents.push(true));
 
     const connecting = client.connect();
     connecting.catch(() => {}); // asserted below, after the socket finishes
@@ -90,7 +90,7 @@ describe("connect() interrupted", () => {
     // No Init1 went out: the handshake never began.
     expect(socket!.sent).toEqual([]);
     expect(clientInternals(client).handler.isOpen).toBe(false);
-    expect(connected).toEqual([]);
+    expect(connectedEvents).toEqual([]);
   });
 
   it("abandons a resolver that ignores the signal", async () => {

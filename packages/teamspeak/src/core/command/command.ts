@@ -1,4 +1,4 @@
-const ESCAPE_MAP: [string, string][] = [
+const ESCAPE_MAP: Array<[string, string]> = [
   ["\\", "\\\\"],
   ["/", "\\/"],
   [" ", "\\s"],
@@ -78,6 +78,7 @@ export function unescape(s: string): string {
           result += "\x0B";
           i += 2;
           break;
+        case undefined:
         default:
           result += s[i] ?? "";
           i++;
