@@ -63,7 +63,12 @@ export class StreamTransport implements QueryTransport {
   close(): Promise<void> {
     if (this.#ended) return Promise.resolve();
     this.#closing = true;
+    // Ending the stream is not enough to hear it close. An SSH session channel
+    // is half-open, so `end()` sends EOF and stops there without reporting
+    // 'close', and the hook that releases the connection underneath would never
+    // run; the close is owed here as well as from the stream's own event.
     this.#stream.end();
+    this.#handleClose();
     return Promise.resolve();
   }
 

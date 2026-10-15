@@ -112,6 +112,62 @@ describe("StreamTransport", () => {
     stream.emitClose();
     expect(released).toBe(1);
   });
+
+  // An SSH session channel is half-open: `end()` sends EOF and reports no
+  // 'close', so a transport that only released on that event left the
+  // connection underneath open and the process unable to exit.
+  it("releases what it sits on when the stream ends without reporting it", async () => {
+    const stream = new FakeStream();
+    // The stream is ended but stays silent, as an SSH channel does.
+    stream.end = () => {
+      stream.ended = true;
+    };
+    let released = 0;
+    const closed: Array<Error | undefined> = [];
+    const transport = new StreamTransport(stream, () => released++);
+    transport.onClose = (error) => closed.push(error);
+
+    await transport.close();
+
+    expect(stream.ended).toBe(true);
+    expect(released).toBe(1);
+    // A close() the caller asked for reports no failure, and a command sent
+    // afterwards is refused rather than written to a stream that is gone.
+    expect(closed).toEqual([undefined]);
+    await expect(transport.send("x")).rejects.toThrow("closed");
+  });
+
+  it("still releases once when the stream reports the close as well", async () => {
+    const stream = new FakeStream();
+    let released = 0;
+    const closed: Array<Error | undefined> = [];
+    const transport = new StreamTransport(stream, () => released++);
+    transport.onClose = (error) => closed.push(error);
+
+    await transport.close();
+    // The stream's own 'close' arriving afterwards is not a second close.
+    stream.emitClose();
+
+    expect(released).toBe(1);
+    expect(closed).toEqual([undefined]);
+  });
+
+  it("reports the close as deliberate when the caller asks for it after a failure", async () => {
+    const stream = new FakeStream();
+    let released = 0;
+    const closed: Array<Error | undefined> = [];
+    const transport = new StreamTransport(stream, () => released++);
+    transport.onClose = (error) => closed.push(error);
+
+    // The connection failed, and the caller closes it anyway on the way out:
+    // the close is theirs, so it is reported as deliberate and once.
+    stream.emitError(new Error("reset"));
+    await transport.close();
+    stream.emitClose();
+
+    expect(released).toBe(1);
+    expect(closed).toEqual([undefined]);
+  });
 });
 
 describe("connectTcp", () => {

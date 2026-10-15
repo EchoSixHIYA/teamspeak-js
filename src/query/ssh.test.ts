@@ -23,10 +23,37 @@ import type {
 const fake = vi.hoisted(() => {
   type Listener = (argument?: unknown) => void;
 
+  /** The shell channel: enough of a duplex stream for the transport to run on. */
+  class FakeChannel {
+    written: string[] = [];
+    ended = false;
+    #handlers = new Map<string, Listener[]>();
+
+    write(data: string, callback: (error?: Error | null) => void): void {
+      this.written.push(data);
+      callback();
+    }
+    end(): void {
+      this.ended = true;
+      // Half-open, as the real channel is: ending it does not report a close.
+    }
+    on(event: string, listener: Listener): this {
+      this.#handlers.set(event, [...(this.#handlers.get(event) ?? []), listener]);
+      return this;
+    }
+    once(event: string, listener: Listener): this {
+      return this.on(event, listener);
+    }
+    emit(event: string, argument?: unknown): void {
+      for (const listener of this.#handlers.get(event) ?? []) listener(argument);
+    }
+  }
+
   class FakeClient {
     static instances: FakeClient[] = [];
     config: Parameters<SshClient["connect"]>[0] | undefined;
     ended = false;
+    channel = new FakeChannel();
     #once = new Map<string, Listener[]>();
 
     constructor() {
@@ -34,6 +61,10 @@ const fake = vi.hoisted(() => {
     }
     connect(config: Parameters<SshClient["connect"]>[0]): void {
       this.config = config;
+    }
+    // The shell the transport runs on, handed over as ssh2 hands one over.
+    shell(_pty: false, callback: (error: Error | undefined, channel: unknown) => void): void {
+      callback(undefined, this.channel);
     }
     once(event: string, listener: Listener): this {
       this.#once.set(event, [...(this.#once.get(event) ?? []), listener]);
@@ -343,6 +374,89 @@ describe("the check ssh2 is given", () => {
     expect(typeof client.config!.hostVerifier).toBe("function");
     abort.abort(new Error("done"));
     await outcome;
+  });
+});
+
+describe("closing the transport", () => {
+  /** Connect far enough to hold a live transport, which needs the shell. */
+  async function live(policy: SshHostKeyPolicy) {
+    const connecting = connectSsh(dialOptions(policy));
+    await vi.waitFor(() => expect(fake.FakeClient.instances.at(-1)?.config).toBeDefined());
+    const ssh = fake.FakeClient.instances.at(-1)!;
+    ssh.emit("ready");
+    return { ssh, transport: await connecting };
+  }
+
+  it("ends the SSH client when the transport is closed", async () => {
+    const { ssh, transport } = await live({ hostKey: () => {} });
+    expect(ssh.ended).toBe(false);
+
+    await transport.close();
+
+    // Not merely the shell channel: the connection underneath it is released,
+    // which is what lets a process that connected over SSH exit.
+    expect(ssh.channel.ended).toBe(true);
+    expect(ssh.ended).toBe(true);
+  });
+
+  it("ends it once, however many times close() is called", async () => {
+    const { ssh, transport } = await live({ hostKey: () => {} });
+    await transport.close();
+    await transport.close();
+    expect(ssh.ended).toBe(true);
+  });
+
+  it("ends it when the connection drops rather than when it is closed", async () => {
+    const { ssh, transport } = await live({ hostKey: () => {} });
+    // The server side going away: the channel reports the close itself.
+    ssh.channel.emit("close");
+    expect(ssh.ended).toBe(true);
+    // The transport knows it is over, and says so without a failure.
+    await expect(transport.send("x")).rejects.toThrow("closed");
+  });
+
+  /** A whole `QueryClient` over the fake client, connected and ready to be left. */
+  async function connected() {
+    const client = new QueryClient({
+      transport: {
+        kind: "ssh",
+        host: "ts.example.com",
+        username: "serveradmin",
+        password: PASSWORD,
+        hostKey: () => {},
+      },
+      events: false,
+    });
+    const connecting = client.connect();
+    await vi.waitFor(() => expect(fake.FakeClient.instances.at(-1)?.config).toBeDefined());
+    const ssh = fake.FakeClient.instances.at(-1)!;
+    ssh.emit("ready");
+    // The client installs its line handler once the open transport comes back,
+    // which is a microtask later: feeding the server's lines before that loses
+    // them, and the connection then waits for an answer that already arrived.
+    await vi.waitFor(() => expect(client.transport).toBeDefined());
+    // The two banner lines the transport drops, then the setup's own answer.
+    ssh.channel.emit("data", Buffer.from("TS3\n\rWelcome.\n\r"));
+    ssh.channel.emit("data", Buffer.from("version=6.0.0-beta13.1 build=1 platform=Linux\n\r"));
+    ssh.channel.emit("data", Buffer.from("error id=0 msg=ok\n\r"));
+    await connecting;
+    return { ssh, client };
+  }
+
+  it("ends the SSH client when a QueryClient disconnects", async () => {
+    const { ssh, client } = await connected();
+    expect(ssh.ended).toBe(false);
+
+    // The whole path an application takes, not only the transport's own close.
+    await client.disconnect();
+
+    expect(ssh.ended).toBe(true);
+  });
+
+  it("ends the SSH client when `await using` disposes the QueryClient", async () => {
+    const { ssh, client } = await connected();
+    await client[Symbol.asyncDispose]();
+    expect(ssh.ended).toBe(true);
   });
 });
 
