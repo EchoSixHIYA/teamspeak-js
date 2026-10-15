@@ -1,127 +1,80 @@
 import { describe, expect, it } from "vitest";
-import { mergeSections, readSection, renderBody } from "./release-notes.mts";
+import { readSection, renderBody } from "./release-notes.mts";
 
-const client = `# @honeybbq/teamspeak-client
+const changelog = `# @honeybbq/teamspeak
 
 ## 1.0.0-beta.2
 
 ### Major Changes
 
-- aaaaaaa: Shared breaking change.
-- bbbbbbb: Client only.
+- [#12](https://github.com/HoneyBBQ/teamspeak-js/pull/12) [\`aaaaaaa\`](https://github.com/HoneyBBQ/teamspeak-js/commit/aaaaaaa) Thanks [@user](https://github.com/user)! - With a pull request.
 
   A second paragraph.
 
+- [\`bbbbbbb\`](https://github.com/HoneyBBQ/teamspeak-js/commit/bbbbbbb) Thanks [@user](https://github.com/user)! - Commit only.
+
 ### Patch Changes
 
-- ccccccc: Same text, different bump.
-- Updated dependencies [aaaaaaa]
-- Updated dependencies [ccccccc]
-  - @honeybbq/teamspeak-core@1.0.0-beta.2
+- Updated dependencies []:
+  - @honeybbq/teamspeak@1.0.0-beta.2
+- Plain entry.
 
 ## 1.0.0-beta.1
 
 ### Patch Changes
 
-- 1111111: Old.
+- Old.
 `;
 
-const core = `# @honeybbq/teamspeak-core
-
-## 1.0.0-beta.2
-
-### Major Changes
-
-- aaaaaaa: Shared breaking change.
-- ccccccc: Same text, different bump.
-
-### Minor Changes
-
-- ddddddd: Core only.
-
-### Patch Changes
-
-- eeeeeee: Core fix.
-
-## 1.0.0-beta.1
-
-### Patch Changes
-
-- 1111111: Old.
-`;
+const withPR =
+  "- [#12](https://github.com/HoneyBBQ/teamspeak-js/pull/12) [`aaaaaaa`](https://github.com/HoneyBBQ/teamspeak-js/commit/aaaaaaa) Thanks [@user](https://github.com/user)! - With a pull request.\n\n  A second paragraph.";
+const commitOnly =
+  "- [`bbbbbbb`](https://github.com/HoneyBBQ/teamspeak-js/commit/bbbbbbb) Thanks [@user](https://github.com/user)! - Commit only.";
 
 describe("readSection", () => {
-  it("strips the hash prefix, keeps paragraphs, and stops at the next version", () => {
-    const section = readSection(client, "1.0.0-beta.2", "client");
-    expect(section.get("Major Changes")).toEqual([
-      "- Shared breaking change.",
-      "- Client only.\n\n  A second paragraph.",
-    ]);
-    expect(section.get("Patch Changes")).toEqual(["- Same text, different bump."]);
+  it("keeps an entry with a pull request link verbatim, with its paragraphs", () => {
+    const section = readSection(changelog, "1.0.0-beta.2", "pkg");
+    expect(section.get("Major Changes")?.[0]).toBe(withPR);
   });
 
-  it("drops the dependency-update entries and their nested lines", () => {
-    const text = [...readSection(client, "1.0.0-beta.2", "client").values()].flat().join("\n");
+  it("keeps an entry with only a commit link verbatim", () => {
+    const section = readSection(changelog, "1.0.0-beta.2", "pkg");
+    expect(section.get("Major Changes")?.[1]).toBe(commitOnly);
+  });
+
+  it("stops at the next version, and drops the dependency-update entries", () => {
+    const section = readSection(changelog, "1.0.0-beta.2", "pkg");
+    expect(section.get("Patch Changes")).toEqual(["- Plain entry."]);
+    const text = [...section.values()].flat().join("\n");
     expect(text).not.toContain("Updated dependencies");
-    expect(text).not.toContain("teamspeak-core@");
+    expect(text).not.toContain("Old.");
   });
 
   it("throws when the version has no section", () => {
-    expect(() => readSection(client, "1.0.0-beta.9", "client")).toThrow(
+    expect(() => readSection(changelog, "1.0.0-beta.9", "pkg")).toThrow(
       /no section "## 1.0.0-beta.9"/,
     );
   });
 
   it("throws when the section has no entries", () => {
-    expect(() => readSection("## 1.0.0\n\n", "1.0.0", "core")).toThrow(/no entries/);
+    expect(() => readSection("## 1.0.0\n\n", "1.0.0", "pkg")).toThrow(/no entries/);
   });
 
   it("does not match a version that only starts the same", () => {
-    expect(() => readSection(client, "1.0.0-beta", "client")).toThrow();
-  });
-});
-
-describe("mergeSections", () => {
-  const merged = mergeSections(
-    readSection(client, "1.0.0-beta.2", "client"),
-    readSection(core, "1.0.0-beta.2", "core"),
-  );
-
-  it("lists an entry present in both packages once", () => {
-    const all = [...merged.values()].flat();
-    expect(all.filter((e) => e === "- Shared breaking change.")).toHaveLength(1);
-  });
-
-  it("lists an entry once even when the packages bump it differently", () => {
-    const all = [...merged.values()].flat();
-    expect(all.filter((e) => e === "- Same text, different bump.")).toHaveLength(1);
-    expect(merged.get("Major Changes")).toContain("- Same text, different bump.");
-    expect(merged.get("Patch Changes")).not.toContain("- Same text, different bump.");
-  });
-
-  it("adds core-only entries to the matching group", () => {
-    expect(merged.get("Minor Changes")).toEqual(["- Core only."]);
-    expect(merged.get("Patch Changes")).toEqual(["- Core fix."]);
-  });
-
-  it("keeps the groups in changesets' order", () => {
-    expect([...merged.keys()]).toEqual(["Major Changes", "Minor Changes", "Patch Changes"]);
+    expect(() => readSection(changelog, "1.0.0-beta", "pkg")).toThrow();
   });
 });
 
 describe("renderBody", () => {
-  it("starts with the install line and has no hash or dependency lines", () => {
-    const merged = mergeSections(
-      readSection(client, "1.0.0-beta.2", "client"),
-      readSection(core, "1.0.0-beta.2", "core"),
-    );
-    const body = renderBody("1.0.0-beta.2", merged);
+  it("starts with the install line and lists the groups in order", () => {
+    const body = renderBody("1.0.0-beta.2", readSection(changelog, "1.0.0-beta.2", "pkg"));
     expect(
       body.startsWith(
-        "Install:\n\n```sh\nnpm install @honeybbq/teamspeak-client@1.0.0-beta.2\n```\n\n### Major Changes",
+        "Install:\n\n```sh\nnpm install @honeybbq/teamspeak@1.0.0-beta.2\n```\n\n### Major Changes",
       ),
     ).toBe(true);
-    expect(body).not.toMatch(/^- [0-9a-f]{7}: /m);
+    expect(body.indexOf("### Major Changes")).toBeLessThan(body.indexOf("### Patch Changes"));
+    expect(body).toContain(withPR);
     expect(body).not.toContain("Updated dependencies");
   });
 });

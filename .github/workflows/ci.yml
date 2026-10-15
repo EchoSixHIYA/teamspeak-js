@@ -91,6 +91,8 @@ jobs:
       # land without showing up in the commit that makes it. To accept a
       # deliberate change: pnpm api:report
       - run: pnpm api:check
+      # Packing @honeybbq/teamspeak runs its prepack script, which copies the
+      # root README in; the forwarding package has its own README.
       - name: Check the packed packages
         run: |
           mkdir -p "$RUNNER_TEMP/packs"
