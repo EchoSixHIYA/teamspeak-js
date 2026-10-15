@@ -4,6 +4,37 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.6
+
+### Major Changes
+
+- [#52](https://github.com/HoneyBBQ/teamspeak-js/pull/52) [`d1f1208`](https://github.com/HoneyBBQ/teamspeak-js/commit/d1f1208ce162f588c27ce614264e79ccd7153cae) - The last API changes before 1.0, for anyone on a beta:
+
+  - `CommandOptions.timeout` is `timeoutMs`, like every other duration. Write `{ timeoutMs: 5_000 }`; `timeout` is no longer read.
+  - `getClientInfo` is `getClientProperties`. It still answers the raw property map.
+  - `addServerGroupPermission(client, sgid, { permission, value, negated, skip })` is `addServerGroupPermission(client, sgid, permission, value, { negated, skip })`, as its siblings. `ServerGroupPermission` is gone; the options are `ServerGroupPermissionOptions`.
+  - `getClientIDs` answers `ClientMatch[]` (`id`, `nickname`) instead of `ClientID[]`: read `match.id`. `getClientNameByDBID` answers a `ClientDatabaseName` (`databaseID`, `name`) instead of a string: read `.name`.
+  - `updateMessageFlag(client, id, read)` is `updateMessageFlag(client, id, { read })`, a `MessageFlags`.
+  - `connected` delivers a `ConnectedEvent` (`reconnected`), and `disconnected` a `DisconnectedEvent` (`error`, `willReconnect`) instead of the bare error: write `client.on("disconnected", ({ error }) => …)`.
+  - `TextMessageEvent.invokerGroups` is `undefined` for a sender the client has not seen, where it was `[]`. Check it before use. `ClientMovedEvent` has a `reasonMessage`.
+  - `resolveNicknames: true` is `nicknameLookup: true`.
+  - `sendWhisper(data, [clid], codec)` is `sendWhisper(data, { clients: [clid] }, codec)`. The client's whisper has no channel targets, so `WhisperTargets` has only `clients`. `sendVoice` takes a reserved `VoiceOptions` after the codec.
+  - `packetChannel` is `incomingChannel`, `honeybbq:teamspeak:packet` is `honeybbq:teamspeak:incoming`, and `PacketTrace` is `IncomingTrace`: it reports every command the server sends, not packets.
+
+- [#54](https://github.com/HoneyBBQ/teamspeak-js/pull/54) [`92c5496`](https://github.com/HoneyBBQ/teamspeak-js/commit/92c5496f313b73b0dd747636e6035570ec2a7773) - The types every client shares moved from `@honeybbq/teamspeak/client` to `@honeybbq/teamspeak`, so a second client can use them without a second home for each. For anyone on a beta, import each of these from `@honeybbq/teamspeak`:
+
+  - `ClientStatus`, `Unsubscribe`, `Listener`, `ConnectedEvent`, `DisconnectedEvent` and `ServerFamily`.
+  - `ReconnectOptions`, `BackoffPolicy`, `defaultBackoffPolicy` and `backoffDelay`. `defaultShouldRetry` stays in `@honeybbq/teamspeak/client`.
+  - `AlreadyConnectedError`.
+
+  `Listener` now takes the event map as well: `Listener<EventMap, "textMessage">`. `client.on` infers payloads as before. `EventMap` stays in the client and extends the new `ServerEventMap` and `SessionEventMap`, which the core exports; it has the same keys and payloads.
+
+### Minor Changes
+
+- [#49](https://github.com/HoneyBBQ/teamspeak-js/pull/49) [`75d6034`](https://github.com/HoneyBBQ/teamspeak-js/commit/75d6034473aa27639f215a2372890c66f1fd3600) - The `version` option of `Client` chooses the platform, version and signature that `clientinit` sends, and `@honeybbq/teamspeak/versions` exports the versions a server accepts, one constant each: `new Client(identity, addr, nick, { version: Windows_3_6_2_1695203293 })`. Without the option the client sends what it always did. `ClientVersion` is exported from `@honeybbq/teamspeak`.
+
+- [#50](https://github.com/HoneyBBQ/teamspeak-js/pull/50) [`3cea2a1`](https://github.com/HoneyBBQ/teamspeak-js/commit/3cea2a163bc2c3202b829bb6f51a84cb846a167c) - `HostMessageMode` from `@honeybbq/teamspeak` names the host message modes: `None`, `Log`, `Modal` and `ModalQuit`. Compare `capabilities.hostMessageMode` with them: `capabilities.hostMessageMode === HostMessageMode.ModalQuit`. The field stays a `number`, since a server may send a value the table does not name.
+
 ## 1.0.0-beta.5
 
 ### Major Changes
