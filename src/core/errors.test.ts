@@ -62,6 +62,7 @@ describe("exported tables", () => {
       core.Reason,
       core.Codec,
       core.GroupType,
+      core.HostMessageMode,
       core.noopLogger,
     ]) {
       expect(Object.isFrozen(table)).toBe(true);
@@ -69,6 +70,13 @@ describe("exported tables", () => {
     expect(() => {
       (core.ErrorCode as { OK: number }).OK = 5;
     }).toThrow(TypeError);
+  });
+});
+
+describe("host message modes", () => {
+  it("name the numbers the server sends", async () => {
+    const { HostMessageMode } = await import("./index.js");
+    expect({ ...HostMessageMode }).toEqual({ None: 0, Log: 1, Modal: 2, ModalQuit: 3 });
   });
 });
 

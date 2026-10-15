@@ -30,6 +30,7 @@
     "eventNameValues",
     "groupNameModeValues",
     "groupTypeValues",
+    "hostMessageModeValues",
     "logLevelValues",
     "notificationNameValues",
     "permissionNameValues",

@@ -48,6 +48,24 @@ export const GroupNameMode: typeof groupNameModeValues =
 export type GroupNameMode = (typeof GroupNameMode)[keyof typeof GroupNameMode];
 
 /** The values of the table below, before freezing. */
+const hostMessageModeValues = {
+  /** Show nothing. */
+  None: 0,
+  /** Show the message in the log. */
+  Log: 1,
+  /** Show the message in a modal dialog. */
+  Modal: 2,
+  /** Show the message in a modal dialog, then disconnect. */
+  ModalQuit: 3,
+} as const;
+/** How a server's host message is to be shown (`virtualserver_hostmessage_mode`). */
+export const HostMessageMode: typeof hostMessageModeValues =
+  /* @__PURE__ */ Object.freeze(hostMessageModeValues);
+
+/** A host message mode. */
+export type HostMessageMode = (typeof HostMessageMode)[keyof typeof HostMessageMode];
+
+/** The values of the table below, before freezing. */
 const privilegeKeyTypeValues = {
   /** The key grants a server group. */
   ServerGroup: 0,

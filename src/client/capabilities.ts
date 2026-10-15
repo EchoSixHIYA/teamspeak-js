@@ -57,9 +57,9 @@ export interface ServerCapabilities {
   /** The host message (`virtualserver_hostmessage`) the server wants shown on connecting. */
   readonly hostMessage: string;
   /**
-   * How the host message is to be shown (`virtualserver_hostmessage_mode`):
-   * 0 not at all, 1 in the chat log, 2 as a modal dialog, 3 as a modal dialog
-   * after which the client is disconnected.
+   * How the host message is to be shown (`virtualserver_hostmessage_mode`).
+   * Compare it with `HostMessageMode`; a server may send a value the table
+   * does not name.
    */
   readonly hostMessageMode: number;
 }

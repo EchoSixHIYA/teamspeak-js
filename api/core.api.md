@@ -1117,6 +1117,22 @@ const groupTypeValues: {
     readonly Query: 2;
 };
 
+// Warning: (ae-forgotten-export) The symbol "hostMessageModeValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const HostMessageMode: typeof hostMessageModeValues;
+
+// @public
+export type HostMessageMode = (typeof HostMessageMode)[keyof typeof HostMessageMode];
+
+// @public
+const hostMessageModeValues: {
+    readonly None: 0;
+    readonly Log: 1;
+    readonly Modal: 2;
+    readonly ModalQuit: 3;
+};
+
 // @public
 export type IconID = number & {
     readonly __brand: "IconID";
