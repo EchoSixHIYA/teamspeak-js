@@ -4,6 +4,44 @@ Until 1.0.0-beta.4 this package was published as `@honeybbq/teamspeak-core`, and
 `@honeybbq/teamspeak-client` was a second package. The sections below, down to
 the last version heading, are the core's history; the client's is at the bottom.
 
+## 1.0.0-beta.5
+
+### Major Changes
+
+- [#46](https://github.com/HoneyBBQ/teamspeak-js/pull/46) [`65ae22b`](https://github.com/HoneyBBQ/teamspeak-js/commit/65ae22b2c97d6e40f5346c3bab618224b33574e8) - `getChannelInfo` used to report `totalClients`, `totalFamilyClients` and `neededSubscribePower` as 0, whatever the channel held. The server does not send them for a single channel, so they are now `undefined` there. Use `listChannels` for live counts.
+
+  `Binding.port` is now `number | undefined`: it is undefined when the server reports no port. `Binding.subsystem` is now filled in, with the subsystem you asked for or `voice`.
+
+- [#42](https://github.com/HoneyBBQ/teamspeak-js/pull/42) [`4283667`](https://github.com/HoneyBBQ/teamspeak-js/commit/4283667904bc9be87489fd6fd5e1d45e6f0f757f) - `@honeybbq/teamspeak-core` and `@honeybbq/teamspeak-client` are now one package, `@honeybbq/teamspeak`, with two entry points. The ServerQuery client will join it as a third in a 1.x release.
+
+  Each entry exports only its own symbols, so the client entry no longer re-exports the core:
+
+  | You imported                                                                                                       | Import it from now on        |
+  | ------------------------------------------------------------------------------------------------------------------ | ---------------------------- |
+  | `Client`, `Identity`, `ClientStatus`, the client's errors, `commandChannel`, ... from `@honeybbq/teamspeak-client` | `@honeybbq/teamspeak/client` |
+  | `listChannels`, `ErrorCode`, `TeamspeakError`, ids, events, ... from `@honeybbq/teamspeak-client`                  | `@honeybbq/teamspeak`        |
+  | anything from `@honeybbq/teamspeak-core`                                                                           | `@honeybbq/teamspeak`        |
+
+  ```ts
+  // before
+  import { Client, listChannels, ErrorCode } from "@honeybbq/teamspeak-client";
+  // after
+  import { Client } from "@honeybbq/teamspeak/client";
+  import { listChannels, ErrorCode } from "@honeybbq/teamspeak";
+  ```
+
+  Replace `@honeybbq/teamspeak-core` and `@honeybbq/teamspeak-client` with `@honeybbq/teamspeak` in your `package.json`. Nothing else about the API changed.
+
+  `@honeybbq/teamspeak-core` and `@honeybbq/teamspeak-client` are deprecated on npm and get no further releases; 1.0 is published only as `@honeybbq/teamspeak`. `@honeybbq/teamspeak-core/internal` is gone.
+
+### Minor Changes
+
+- [#44](https://github.com/HoneyBBQ/teamspeak-js/pull/44) [`9f72ca4`](https://github.com/HoneyBBQ/teamspeak-js/commit/9f72ca467ea562a1e2c883584cdfa16f37366350) - `EventName` from `@honeybbq/teamspeak/client` names the client's events as constants: `client.on(EventName.TextMessage, (message) => { ... })`. The string names keep working and mean the same, so existing code needs no change.
+
+### Patch Changes
+
+- [#42](https://github.com/HoneyBBQ/teamspeak-js/pull/42) [`0fec038`](https://github.com/HoneyBBQ/teamspeak-js/commit/0fec038efd7bb8df83a40d3b4e907297ce36fb11) - `ErrorCode.ProvisioningNoPermission` is 0x111a (4378), the code the server reports. It was 0x111 (273), so comparing a `ServerError`'s code with it never matched.
+
 ## 1.0.0-beta.4
 
 ### Patch Changes
