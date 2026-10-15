@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { createChannel, editChannel, addChannelPermission, listChannels } from "./channels.js";
+import {
+  createChannel,
+  editChannel,
+  addChannelPermission,
+  getChannelInfo,
+  listChannels,
+} from "./channels.js";
 import {
   iterateClientDatabase,
   kickClient,
@@ -680,6 +686,44 @@ describe("other fixes", () => {
       description: "",
       uid: "",
     });
+  });
+
+  it("leaves the counts undefined when channelinfo does not carry them", async () => {
+    const { client } = recordingClient([{ pid: "2", channel_name: "Room" }]);
+    const info = await getChannelInfo(client, asChannelID(5n));
+
+    expect(info.totalClients).toBeUndefined();
+    expect(info.totalFamilyClients).toBeUndefined();
+    expect(info.neededSubscribePower).toBeUndefined();
+  });
+
+  it("reads zero counts from channellist as zero", async () => {
+    const { client } = recordingClient([
+      {
+        cid: "5",
+        total_clients: "0",
+        total_clients_family: "0",
+        channel_needed_subscribe_power: "0",
+      },
+    ]);
+    const [channel] = await listChannels(client);
+
+    expect(channel).toMatchObject({
+      totalClients: 0,
+      totalFamilyClients: 0,
+      neededSubscribePower: 0,
+    });
+  });
+
+  it("fills a binding's subsystem and leaves a missing port undefined", async () => {
+    const { client } = recordingClient([{ ip: "0.0.0.0" }], [{ ip: "::", port: "9987" }]);
+
+    expect(await listBindings(client)).toEqual([
+      { subsystem: "voice", ip: "0.0.0.0", port: undefined },
+    ]);
+    expect(await listBindings(client, { subsystem: "query" })).toEqual([
+      { subsystem: "query", ip: "::", port: 9987 },
+    ]);
   });
 
   it("reads an empty list as empty, not as a refusal", async () => {

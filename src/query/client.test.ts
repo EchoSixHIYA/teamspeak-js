@@ -173,4 +173,132 @@ describe("QueryClient", () => {
     await expect(answered).rejects.toBeInstanceOf(NotConnectedError);
     await expect(client.exec("whoami")).rejects.toBeInstanceOf(NotConnectedError);
   });
+
+  it("logs in and selects a server with the query's own syntax", async () => {
+    const transport = new FakeTransport();
+    const client = new QueryClient(transport);
+
+    const login = client.login("serveradmin", "pa ss");
+    await transport.sentCount(1);
+    transport.receive("error id=0 msg=ok");
+    await login;
+    const used = client.use({ id: 1 }, { nickname: "probe bot" });
+    await transport.sentCount(2);
+    transport.receive("error id=0 msg=ok");
+    await used;
+    const byPort = client.use({ port: 9987 });
+    await transport.sentCount(3);
+    transport.receive("error id=0 msg=ok");
+    await byPort;
+
+    expect(transport.sent).toEqual([
+      "login client_login_name=serveradmin client_login_password=pa\\sss",
+      "use sid=1 client_nickname=probe\\sbot",
+      "use port=9987",
+    ]);
+  });
+
+  it("registers for a notification category", async () => {
+    const transport = new FakeTransport();
+    const client = new QueryClient(transport);
+    const registered = client.registerNotifications("channel", 0);
+    await transport.sentCount(1);
+    transport.receive("error id=0 msg=ok");
+    await registered;
+    expect(transport.sent).toEqual(["servernotifyregister event=channel id=0"]);
+  });
+
+  it("hands each notification row to the listeners, unescaped", async () => {
+    const transport = new FakeTransport();
+    const client = new QueryClient(transport);
+    const seen: unknown[] = [];
+    const stop = client.onNotification((e) => seen.push(e));
+
+    transport.receive(
+      "notifycliententerview clid=5 client_nickname=a\\sb|clid=6 client_nickname=c",
+      "notifytextmessage targetmode=1 msg=hi",
+    );
+    stop();
+    transport.receive("notifytextmessage msg=ignored");
+
+    expect(seen).toEqual([
+      { name: "notifycliententerview", params: { clid: "5", client_nickname: "a b" } },
+      { name: "notifycliententerview", params: { clid: "6", client_nickname: "c" } },
+      { name: "notifytextmessage", params: { targetmode: "1", msg: "hi" } },
+    ]);
+  });
+
+  // The voice protocol leaves out the fields a row repeats; ServerQuery never
+  // does, so a row that lacks one must stay without it.
+  it("does not complete a row from the row before it", async () => {
+    const transport = new FakeTransport();
+    const client = new QueryClient(transport);
+    const answered = client.exec("x");
+    await transport.sentCount(1);
+    transport.receive("a=1 b=2|a=3", "error id=0 msg=ok");
+    expect(await answered).toEqual([{ a: "1", b: "2" }, { a: "3" }]);
+  });
+
+  it("does not take the late answer of a slow send for the next command's", async () => {
+    // A transport whose send carries the whole round trip.
+    class SlowTransport extends FakeTransport {
+      override async send(line: string): Promise<void> {
+        this.sent.push(line);
+        if (line === "slow") {
+          await new Promise((r) => setTimeout(r, 30));
+          this.receive("late=1", "error id=0 msg=ok");
+        }
+      }
+    }
+    const transport = new SlowTransport();
+    const client = new QueryClient(transport);
+
+    await expect(client.exec("slow", { timeout: 5 })).rejects.toBeInstanceOf(CommandTimeoutError);
+    const next = client.exec("next");
+    await new Promise((r) => setTimeout(r, 50));
+    transport.receive("mine=1", "error id=0 msg=ok");
+
+    expect(await next).toEqual([{ mine: "1" }]);
+  });
+
+  it("rejects with the transport's error when a send fails, and expects no answer", async () => {
+    class FailingTransport extends FakeTransport {
+      fail = true;
+      override async send(line: string): Promise<void> {
+        this.sent.push(line);
+        if (this.fail) {
+          this.fail = false;
+          throw new Error("http 502");
+        }
+      }
+    }
+    const transport = new FailingTransport();
+    const client = new QueryClient(transport);
+    await expect(client.exec("a")).rejects.toThrow("http 502");
+    const next = client.exec("b");
+    await new Promise((r) => setTimeout(r, 10));
+    transport.receive("ok=1", "error id=0 msg=ok");
+    expect(await next).toEqual([{ ok: "1" }]);
+  });
+
+  // ftinitupload answers `error id=0` and reports its refusal in the row.
+  it("reads a refused transfer negotiation as the error it is", async () => {
+    const transport = new FakeTransport();
+    const client = new QueryClient(transport);
+
+    const refused = client.exec("ftinitupload clientftfid=2 name=/a cid=1");
+    await transport.sentCount(1);
+    transport.receive(
+      "clientftfid=2 status=2058 msg=file\\sis\\sin\\suse size=0",
+      "error id=0 msg=ok",
+    );
+    await expect(refused).rejects.toMatchObject({ code: 2058 });
+
+    const granted = client.exec("ftinitupload clientftfid=3 name=/a cid=1");
+    await transport.sentCount(2);
+    transport.receive("clientftfid=3 serverftfid=1 ftkey=k port=30033", "error id=0 msg=ok");
+    expect(await granted).toEqual([
+      { clientftfid: "3", serverftfid: "1", ftkey: "k", port: "30033" },
+    ]);
+  });
 });

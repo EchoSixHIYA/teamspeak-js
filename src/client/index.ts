@@ -10,6 +10,7 @@
 
 // The client
 export { Client, ClientStatus } from "./client.js";
+export { EventName } from "./types.js";
 
 export type {
   EventMap,

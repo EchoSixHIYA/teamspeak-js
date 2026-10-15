@@ -138,7 +138,7 @@ export type BanOptions = BanFields;
 // @public
 export interface Binding {
     readonly ip: string;
-    readonly port: number;
+    readonly port: number | undefined;
     readonly subsystem: string;
 }
 
@@ -161,13 +161,13 @@ export interface Channel {
     readonly maxClients: number;
     readonly maxFamilyClients: number;
     readonly name: string;
-    readonly neededSubscribePower: number;
+    readonly neededSubscribePower: number | undefined;
     readonly neededTalkPower: number;
     readonly order: ChannelID;
     readonly parentID: ChannelID;
     readonly topic: string;
-    readonly totalClients: number;
-    readonly totalFamilyClients: number;
+    readonly totalClients: number | undefined;
+    readonly totalFamilyClients: number | undefined;
     readonly uid: ChannelUID;
 }
 

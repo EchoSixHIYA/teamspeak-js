@@ -784,6 +784,13 @@ export class Client implements CommandExecutor, AsyncDisposable {
   /**
    * Listen for an event. Returns a function that removes the listener.
    *
+   * The event is named by an {@link EventName} constant or by its string, and
+   * the listener's payload type follows from it:
+   *
+   * ```ts
+   * client.on(EventName.TextMessage, (message) => console.log(message.message));
+   * ```
+   *
    * A listener that throws does not stop the others: the rest of the event's
    * listeners, and the events after it, are still delivered, and the exception
    * is rethrown on its own, from a microtask, so it surfaces as an

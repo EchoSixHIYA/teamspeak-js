@@ -251,6 +251,28 @@ export interface EventMap {
 // @public
 export type EventMiddleware = (next: (event: ServerEvent) => void) => (event: ServerEvent) => void;
 
+// Warning: (ae-forgotten-export) The symbol "eventNameValues" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const EventName: typeof eventNameValues;
+
+// @public
+export type EventName = (typeof EventName)[keyof typeof EventName];
+
+// @public
+const eventNameValues: {
+    readonly TextMessage: "textMessage";
+    readonly ClientEnter: "clientEnter";
+    readonly ClientLeave: "clientLeave";
+    readonly ClientMoved: "clientMoved";
+    readonly Poked: "poked";
+    readonly VoiceData: "voiceData";
+    readonly Notification: "notification";
+    readonly Connected: "connected";
+    readonly Disconnected: "disconnected";
+    readonly Kicked: "kicked";
+};
+
 // @public
 export interface FileTransferDialDoneInfo {
     readonly addr: string;
