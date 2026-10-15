@@ -320,6 +320,10 @@ const num = (row: Record<string, string>, key: string): number => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+/** Read a number field that may be absent: undefined when the key is missing, else as {@link num}. */
+const optNum = (row: Record<string, string>, key: string): number | undefined =>
+  row[key] === undefined ? undefined : num(row, key);
+
 /** Read a boolean field: the protocol writes 0/1. */
 const bool = (row: Record<string, string>, key: string): boolean => num(row, key) !== 0;
 
@@ -454,18 +458,25 @@ export interface Channel {
    * (`channel_maxfamilyclients`); -1 for no limit.
    */
   readonly maxFamilyClients: number;
-  /** How many clients are in the channel now (`total_clients`). */
-  readonly totalClients: number;
+  /**
+   * How many clients are in the channel now (`total_clients`).
+   * `listChannels` reports it; `getChannelInfo` leaves it undefined, because
+   * `channelinfo` does not carry it.
+   */
+  readonly totalClients: number | undefined;
   /**
    * How many clients are in the channel and its subchannels now
-   * (`total_clients_family`).
+   * (`total_clients_family`). `listChannels` reports it; `getChannelInfo`
+   * leaves it undefined, because `channelinfo` does not carry it.
    */
-  readonly totalFamilyClients: number;
+  readonly totalFamilyClients: number | undefined;
   /**
    * The subscribe power a client needs to subscribe to the channel
-   * (`channel_needed_subscribe_power`).
+   * (`channel_needed_subscribe_power`). `listChannels` reports it;
+   * `getChannelInfo` leaves it undefined, because `channelinfo` does not
+   * carry it.
    */
-  readonly neededSubscribePower: number;
+  readonly neededSubscribePower: number | undefined;
   /** The talk power a client needs to speak here. */
   readonly neededTalkPower: number;
   /** The channel's icon, or undefined for none. */
@@ -494,9 +505,9 @@ function parseChannel(row: Record<string, string>): Channel {
     codecQuality: num(row, "channel_codec_quality"),
     maxClients: num(row, "channel_maxclients"),
     maxFamilyClients: num(row, "channel_maxfamilyclients"),
-    totalClients: num(row, "total_clients"),
-    totalFamilyClients: num(row, "total_clients_family"),
-    neededSubscribePower: num(row, "channel_needed_subscribe_power"),
+    totalClients: optNum(row, "total_clients"),
+    totalFamilyClients: optNum(row, "total_clients_family"),
+    neededSubscribePower: optNum(row, "channel_needed_subscribe_power"),
     neededTalkPower: num(row, "channel_needed_talk_power"),
     iconID: icon(row, "channel_icon_id"),
     uid: asChannelUID(str(row, "channel_unique_identifier")),
