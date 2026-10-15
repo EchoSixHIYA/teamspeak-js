@@ -9,18 +9,14 @@
  */
 
 // The client
-export { Client, ClientStatus } from "./client.js";
+export { Client } from "./client.js";
 export { EventName } from "./types.js";
 
 export type {
-  ConnectedEvent,
-  DisconnectedEvent,
   EventMap,
   EventMiddleware,
-  Listener,
   ServerEvent,
   ServerEventName,
-  Unsubscribe,
   VoiceOptions,
   WhisperTargets,
   AddrResolver,
@@ -32,7 +28,6 @@ export type {
 } from "./types.js";
 
 export {
-  AlreadyConnectedError,
   FileTransferError,
   HandshakeError,
   InvalidAddressError,
@@ -78,15 +73,14 @@ export type {
 
 // Server capabilities, read from the handshake
 export { unknownServerCapabilities } from "./capabilities.js";
-export type { ServerCapabilities, ServerFamily } from "./capabilities.js";
+export type { ServerCapabilities } from "./capabilities.js";
 
 // Tracing points for diagnostics_channel subscribers
 export { commandChannel, incomingChannel } from "./diagnostics.js";
 export type { CommandTrace, IncomingTrace } from "./diagnostics.js";
 
 // Reconnection policy
-export { backoffDelay, defaultShouldRetry, defaultBackoffPolicy } from "./reconnect.js";
-export type { ReconnectOptions, BackoffPolicy } from "./reconnect.js";
+export { defaultShouldRetry } from "./reconnect.js";
 
 // Identity
 export {

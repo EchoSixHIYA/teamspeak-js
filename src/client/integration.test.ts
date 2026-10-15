@@ -14,10 +14,10 @@ import { clientInternals } from "./client.js";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createSocket, type Socket } from "node:dgram";
 import { generateIdentitySync } from "./crypto/identity.js";
-import { Client, ClientStatus } from "./client.js";
+import { Client } from "./client.js";
 import type { ClientTrace } from "./trace.js";
 import { Readable, Writable } from "node:stream";
-import { listChannels, getChannelInfo, createChannel } from "@honeybbq/teamspeak";
+import { ClientStatus, listChannels, getChannelInfo, createChannel } from "@honeybbq/teamspeak";
 import {
   listClients,
   getClientProperties,

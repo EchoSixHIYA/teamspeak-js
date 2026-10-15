@@ -541,12 +541,12 @@ with the same semantics, apart from what the languages make differ:
 
 ## Entry points
 
-| Import from                    | What it is                                                                                                        |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `@honeybbq/teamspeak`          | What every TeamSpeak connection shares: the command language, ids, errors, the typed commands and the event types |
-| `@honeybbq/teamspeak/client`   | The voice client, identities, file transfers, diagnostics and reconnection                                        |
-| `@honeybbq/teamspeak/versions` | Client versions a server accepts, for the client's `version` option; data only, one export each                   |
-| `@honeybbq/teamspeak/query`    | A ServerQuery client running the same typed commands; coming in a 1.x release                                     |
+| Import from                    | What it is                                                                                                                                           |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@honeybbq/teamspeak`          | What every TeamSpeak connection shares: the command language, ids, errors, the typed commands, the event types and the status and reconnection types |
+| `@honeybbq/teamspeak/client`   | The voice client, identities, file transfers, diagnostics and its retry policy                                                                       |
+| `@honeybbq/teamspeak/versions` | Client versions a server accepts, for the client's `version` option; data only, one export each                                                      |
+| `@honeybbq/teamspeak/query`    | A ServerQuery client running the same typed commands; coming in a 1.x release                                                                        |
 
 Each entry exports only its own symbols. The client entry does not re-export
 the core, so a program imports the `Client` from `@honeybbq/teamspeak/client`
