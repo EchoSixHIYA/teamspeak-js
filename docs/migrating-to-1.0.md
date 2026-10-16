@@ -312,7 +312,33 @@ for await (const message of client.events("textMessage", { signal })) { … }
 Listeners run one at a time, in arrival order. A listener that throws does not
 stop the others: its exception surfaces as an `uncaughtException`, as an
 EventEmitter listener's would, and the event still reaches the listeners after
-it. `disconnected` delivers a `DisconnectedEvent`: its `error` is `undefined`
+it.
+
+A notification arrives on two layers at once. One is the typed events — the
+ones an event map names. The other is `notification`, the catch-all: it
+carries every notification the server sends with its wire name and unescaped
+parameters, the ones that have a typed event among them, and it is delivered
+after the event that notification produced. So a notification is never taken
+out of the catch-all by being given a typed event, and adding one is additive,
+a minor change — as is any key an event map gains; `EventMap`, `ServerEventMap`
+and `SessionEventMap` never lose a key in a minor release.
+
+Five of the names `NotificationName` lists have a typed event:
+`notifytextmessage`, `notifycliententerview`, `notifyclientleftview`,
+`notifyclientmoved` and `notifyclientpoke`. They are the notifications that
+describe this client's own session as it happens: who comes into view, moves or
+leaves, and the two that address this client directly, a message and a poke.
+The three about other clients are at the same time what the client's view of
+who is present is kept from, which the move and message payloads are then
+completed from. That is the shape they share, not a test that picks them out of
+the other 61: several notifications left to `notification` are just as
+unprompted and just as much about the session, such as `notifyclientupdated` or
+`notifyserveredited`, and none of the five is a command's answer. So promoting
+one is a judgement against that shape rather than a rule that decides itself.
+Adding such an event is a minor change, and the notification stays on the
+catch-all.
+
+`disconnected` delivers a `DisconnectedEvent`: its `error` is `undefined`
 only after `disconnect()`, and otherwise the cause, such as a `RemovedError`
 for a kick or a `ConnectionTimeoutError`; its `willReconnect` says whether the
 reconnect loop will try again (0.x gave the bare `Error | undefined`).

@@ -61,6 +61,12 @@ export type {
  * written for one client reads the other. `connected` and `disconnected` come
  * from this client's own lifecycle.
  *
+ * A notification reaches this client on two layers at once, as it does the
+ * voice client: the typed event for it, if it has one, and then `notification`,
+ * which carries every notification with its wire name and unescaped parameters.
+ * So a typed event added here is additive — the notification it names stays on
+ * the catch-all — and none of these keys is removed in a minor release.
+ *
  * @experimental Part of the `@honeybbq/teamspeak/query` entry, which may
  * change in a minor release.
  */
