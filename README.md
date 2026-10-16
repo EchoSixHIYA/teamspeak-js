@@ -172,8 +172,10 @@ for await (const msg of client.events("textMessage", { signal })) {
 }
 ```
 
-`notification` delivers every notification as it arrived, for the ones the SDK
-does not model. `NotificationName` names them:
+`notification` is the catch-all: it delivers every notification the server
+sends, as it arrived, the ones that also have a typed event among them, after
+that event. It is how to reach one the SDK does not model; `NotificationName`
+names the known ones:
 
 ```typescript
 import { NotificationName } from "@honeybbq/teamspeak";

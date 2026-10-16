@@ -121,7 +121,13 @@ export interface VoiceDataEvent {
 
 /**
  * A notification from the server, as it arrived: the escape hatch for one the
- * SDK does not model. Match its `name` against `NotificationName`.
+ * SDK does not model, and for the ones it does. Match its `name` against
+ * `NotificationName`.
+ *
+ * This is the catch-all layer: the client delivers every notification as one
+ * of these, including the ones that also have a typed event of their own,
+ * which it delivers first. So a notification is never taken out of the
+ * catch-all by being given a typed event.
  */
 export interface NotificationEvent {
   /** The notification's name, such as `notifyserveredited`; `NotificationName` lists the known ones. */
@@ -155,7 +161,13 @@ export interface DisconnectedEvent {
   readonly willReconnect: boolean;
 }
 
-/** The events a server sends, by name, that every kind of client delivers. */
+/**
+ * The events a server sends, by name, that every kind of client delivers.
+ *
+ * These are the modelled events; `notification` carries every notification
+ * besides, after the event it produced. Gaining a key is an additive change,
+ * so a minor release may add one; none is ever removed in a minor.
+ */
 export interface ServerEventMap {
   /** A text message to this client, its channel or the server. */
   textMessage: TextMessageEvent;
@@ -167,12 +179,22 @@ export interface ServerEventMap {
   clientMoved: ClientMovedEvent;
   /**
    * Every notification the server sends, modelled or not, after any event it
-   * produces.
+   * produces. A notification with an event of its own still arrives here: this
+   * is the catch-all layer, so the typed event is delivered alongside it, never
+   * instead of it.
    */
   notification: NotificationEvent;
 }
 
-/** The events about a connection's own life, by name, that every kind of client delivers. */
+/**
+ * The events about a connection's own life, by name, that every kind of client
+ * delivers.
+ *
+ * These come from the client's own lifecycle rather than from a notification,
+ * so no catch-all carries them: `connected`, `disconnected` and `kicked` are
+ * the whole story for what they report. Gaining a key is additive, and none is
+ * removed in a minor release.
+ */
 export interface SessionEventMap {
   /** The handshake completing, on `connect()` and on every reconnection. */
   connected: ConnectedEvent;

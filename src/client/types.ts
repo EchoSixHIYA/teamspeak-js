@@ -15,9 +15,14 @@ import type { ClientTrace } from "./trace.js";
 // ---- Events ---------------------------------------------------------------
 
 /**
- * The events `Client.on()` takes, and what each delivers. May gain events in a
- * minor release; code that handles every event generically should expect
- * names it does not know.
+ * The events `Client.on()` takes, and what each delivers.
+ *
+ * The typed events here are the first of the two layers a notification
+ * reaches; the second is `notification`, which carries every notification the
+ * server sends, the ones with an event here among them, after that event. So a
+ * typed event is only ever added, never removed, and adding one takes nothing
+ * away from the catch-all. May gain events in a minor release; code that
+ * handles every event generically should expect names it does not know.
  */
 export interface EventMap extends ServerEventMap, SessionEventMap {
   /** This client being poked. */
@@ -58,7 +63,10 @@ const eventNameValues = {
   Poked: "poked",
   /** Audio from another client. Only decoded with a listener or event middleware. */
   VoiceData: "voiceData",
-  /** Every notification the server sends, modelled or not, after any event it produces. */
+  /**
+   * Every notification the server sends, modelled or not, after any event it
+   * produces; one with a typed event arrives here as well, not only there.
+   */
   Notification: "notification",
   /** The handshake completing, on `connect()` and on every reconnection. */
   Connected: "connected",
