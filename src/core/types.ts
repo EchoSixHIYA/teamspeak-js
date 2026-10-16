@@ -29,6 +29,10 @@ export interface ClientVersion {
  * options, and returns the rows that answer it, or throws. So it can observe,
  * time, retry, or answer a command itself without sending it.
  *
+ * It wraps `send` rather than the interface — its type names that one method,
+ * `CommandExecutor["send"]` — so `send` is the whole seam between a client
+ * and a middleware.
+ *
  * Only the typed commands, which reach the client through `send`, pass
  * through it. Raw lines sent with `exec` or `execNoWait` and the client's own
  * handshake-time commands do not. A request's parameters can hold passwords

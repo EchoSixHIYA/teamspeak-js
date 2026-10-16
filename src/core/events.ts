@@ -190,10 +190,16 @@ export interface ServerEventMap {
  * The events about a connection's own life, by name, that every kind of client
  * delivers.
  *
- * These come from the client's own lifecycle rather than from a notification,
- * so no catch-all carries them: `connected`, `disconnected` and `kicked` are
- * the whole story for what they report. Gaining a key is additive, and none is
- * removed in a minor release.
+ * `connected` and `disconnected` come from the client's own lifecycle rather
+ * than from a notification, so nothing on the catch-all carries them. `kicked`
+ * is not of that kind: it is derived from the `notifyclientleftview` or
+ * `notifyclientmoved` that reports this client kicked, so that notification
+ * reaches the catch-all as well. What the three share is the delivery, not the
+ * origin: they go out on the client's own path, which event middleware does
+ * not see, because they are about the connection rather than about the
+ * server's event stream. `kicked` is the convenience event for the one case it
+ * names, this client kicked from the server or from its channel. Gaining a key
+ * is additive, and none is removed in a minor release.
  */
 export interface SessionEventMap {
   /** The handshake completing, on `connect()` and on every reconnection. */
@@ -203,6 +209,11 @@ export interface SessionEventMap {
    * the event says why and whether the reconnect loop will try again.
    */
   disconnected: DisconnectedEvent;
-  /** A kick from the server also ends the connection, which `disconnected` reports. */
+  /**
+   * This client being kicked from its channel or the server: derived from the
+   * `notifyclientmoved` or `notifyclientleftview` that reports it, so that
+   * notification also arrives on the catch-all. A kick from the server ends
+   * the connection as well, which `disconnected` reports.
+   */
   kicked: KickedEvent;
 }

@@ -42,7 +42,17 @@ export interface CommandOptions {
   readonly timeoutMs?: number | undefined;
 }
 
-/** A connection the typed commands can run on. */
+/**
+ * A connection the typed commands can run on.
+ *
+ * It is deliberately this narrow. A caller implements it to run the typed
+ * commands over a transport of their own, and `CommandMiddleware` wraps its
+ * `send`, so a method added here would break every implementation and every
+ * middleware along with it: this interface gains no methods in a minor
+ * release. A new capability arrives as an interface, a function or an option
+ * of its own instead, and an implementer or a middleware author may rely on
+ * that.
+ */
 export interface CommandExecutor {
   /** Send a command and return the rows that answer it. */
   // oxlint-disable-next-line typescript/array-type -- the public API report spells this `[]`; respelling it changes the report
