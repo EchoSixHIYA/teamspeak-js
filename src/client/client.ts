@@ -135,6 +135,8 @@ export interface ClientInternals {
   readonly initOptions: ClientInitOptions;
   nickname: string;
   clid: number;
+  /** The clients this one knows of, as its events and `invokerGroups` read them. */
+  readonly clients: ReadonlyMap<number, ClientEnterEvent>;
   capabilities: ServerCapabilities;
   /** Mark the attempt in progress connected. */
   markConnected(initServer?: Readonly<Record<string, string>>): void;
@@ -443,6 +445,9 @@ export class Client implements CommandExecutor, AsyncDisposable {
       },
       set clid(value) {
         self.#clid = value;
+      },
+      get clients() {
+        return self.#clients;
       },
       get capabilities() {
         return self.#capabilities;
@@ -1509,6 +1514,22 @@ export class Client implements CommandExecutor, AsyncDisposable {
         break;
       case "textMessage":
         this.#emitServerEvent({ name: "textMessage", payload: result.message });
+        break;
+      case "clientUpdated":
+        // The server may rename a client, this one included.
+        if (result.event.clientID === this.#clid && "nickname" in result.event.changes) {
+          this.#nickname = result.event.changes.nickname ?? this.#nickname;
+        }
+        this.#emitServerEvent({ name: "clientUpdated", payload: result.event });
+        break;
+      case "clientServerGroupAdded":
+        this.#emitServerEvent({ name: "clientServerGroupAdded", payload: result.event });
+        break;
+      case "clientServerGroupRemoved":
+        this.#emitServerEvent({ name: "clientServerGroupRemoved", payload: result.event });
+        break;
+      case "clientChannelGroupChanged":
+        this.#emitServerEvent({ name: "clientChannelGroupChanged", payload: result.event });
         break;
       case "poked":
         this.#emitServerEvent({ name: "poked", payload: result.event });
